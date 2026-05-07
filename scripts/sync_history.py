@@ -31,12 +31,16 @@ BASE_URL = "https://lm-api-reads.fantasy.espn.com/apis/v3/games/flb"
 # what extract_standings() would produce. abbrev is what the trophy room maps
 # via HISTORICAL_ABBREV_OVERRIDES in app.js — keep them consistent.
 MANUAL_HISTORY = {
-    # 2017: [
-    #     {"rank": 1, "abbrev": "Jeff", "name": "Jeff"},
-    #     {"rank": 2, "abbrev": "...", "name": "..."},
-    #     {"rank": 3, "abbrev": "...", "name": "..."},
-    # ],
-    # 2018: [...],
+    2017: [
+        {"rank": 1, "abbrev": "Jeff",   "name": "Jeff"},
+        {"rank": 2, "abbrev": "SHAR",   "name": "Saxton"},
+        {"rank": 3, "abbrev": "Harris", "name": "Harris"},
+    ],
+    2018: [
+        {"rank": 1, "abbrev": "Jeff",   "name": "Jeff"},
+        {"rank": 2, "abbrev": "SHAR",   "name": "Saxton"},
+        {"rank": 3, "abbrev": "Heller", "name": "Heller"},
+    ],
 }
 
 
