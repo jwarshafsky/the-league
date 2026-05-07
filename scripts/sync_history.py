@@ -32,14 +32,15 @@ BASE_URL = "https://lm-api-reads.fantasy.espn.com/apis/v3/games/flb"
 # via HISTORICAL_ABBREV_OVERRIDES in app.js — keep them consistent.
 MANUAL_HISTORY = {
     2017: [
-        {"rank": 1, "abbrev": "Jeff",   "name": "Jeff"},
-        {"rank": 2, "abbrev": "SHAR",   "name": "Saxton"},
-        {"rank": 3, "abbrev": "Harris", "name": "Harris"},
+        {"rank": 1, "abbrev": "Jeff",   "name": "Jeff",   "points": 96},
+        {"rank": 2, "abbrev": "SHAR",   "name": "Saxton", "points": 89},
+        {"rank": 3, "abbrev": "Harris", "name": "Harris", "points": 87.5},
     ],
+    # 2018: Saxton and Heller tied for 2nd at 83 — no 3rd place finisher.
     2018: [
-        {"rank": 1, "abbrev": "Jeff",   "name": "Jeff"},
-        {"rank": 2, "abbrev": "SHAR",   "name": "Saxton"},
-        {"rank": 3, "abbrev": "Heller", "name": "Heller"},
+        {"rank": 1, "abbrev": "Jeff",   "name": "Jeff",   "points": 118.5},
+        {"rank": 2, "abbrev": "SHAR",   "name": "Saxton", "points": 83},
+        {"rank": 2, "abbrev": "Heller", "name": "Heller", "points": 83},
     ],
 }
 
