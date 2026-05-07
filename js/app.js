@@ -1337,9 +1337,8 @@ function updateEligibleKeepersView() {
   const selectedKeepers = players.filter(p => teamSelections[p.name]?.keeper);
   // Keeper cost reflects 2027 price (next year's keeper budget impact).
   const totalKeeperCost = selectedKeepers.reduce((s, p) => s + (p.nextYearPrice || 0), 0);
-  // Draft dollars = base $260 + net dollars received in trades − keeper cost.
-  const draftDollarBase = getDraftDollarBalances()[teamId] ?? 260;
-  const draftBudget = draftDollarBase - totalKeeperCost;
+  // Draft Dollars are static: $260 ± net trades. Keeper cost is shown separately.
+  const draftDollars = getDraftDollarBalances()[teamId] ?? 260;
   const minorKeeperCount = Object.values(teamSelections).filter(s => s.minorKeeper).length;
   const rule5Count = Object.values(teamSelections).filter(s => s.rule5).length;
 
@@ -1364,7 +1363,7 @@ function updateEligibleKeepersView() {
         <div class="summary-label">Keeper Cost</div>
       </div>
       <div class="summary-item">
-        <div class="summary-value" id="ek-draft-budget" style="color:var(--accent)">$${draftBudget}</div>
+        <div class="summary-value" id="ek-draft-budget" style="color:var(--accent)">$${draftDollars}</div>
         <div class="summary-label">Draft Dollars</div>
       </div>
     </div>
@@ -1471,8 +1470,8 @@ function renderEligibleTable(players, teamId, teamSelections) {
           <th>2026 $</th>
           <th>2027 $</th>
           <th>Contract</th>
-          <th style="text-align:center">Keep</th>
           <th style="text-align:center">Rule 5</th>
+          <th style="text-align:center">Keep</th>
           <th style="text-align:center">On the Block</th>
         </tr>
       </thead>
@@ -1513,10 +1512,10 @@ function renderEligibleTable(players, teamId, teamSelections) {
               <td>${nextPriceCell}</td>
               <td><span class="contract-tag contract-${p.contractStatus}">${p.contractLabel}</span></td>
               <td style="text-align:center">
-                <input type="checkbox" ${isKeeper ? 'checked' : ''} ${blockedAttr} onchange="toggleEligibleKeeper('${teamId}','${nameEsc}','keeper',this.checked)" style="width:18px;height:18px;cursor:${blockedCursor};accent-color:var(--green)">
+                <input type="checkbox" ${isRule5 ? 'checked' : ''} ${blockedAttr} onchange="toggleEligibleKeeper('${teamId}','${nameEsc}','rule5',this.checked)" style="width:18px;height:18px;cursor:${blockedCursor};accent-color:var(--accent)">
               </td>
               <td style="text-align:center">
-                <input type="checkbox" ${isRule5 ? 'checked' : ''} ${blockedAttr} onchange="toggleEligibleKeeper('${teamId}','${nameEsc}','rule5',this.checked)" style="width:18px;height:18px;cursor:${blockedCursor};accent-color:var(--accent)">
+                <input type="checkbox" ${isKeeper ? 'checked' : ''} ${blockedAttr} onchange="toggleEligibleKeeper('${teamId}','${nameEsc}','keeper',this.checked)" style="width:18px;height:18px;cursor:${blockedCursor};accent-color:var(--green)">
               </td>
               <td style="text-align:center">
                 <input type="checkbox" ${isTradeBlock ? 'checked' : ''} ${blockedAttr} onchange="toggleEligibleKeeper('${teamId}','${nameEsc}','tradeBlock',this.checked)" style="width:18px;height:18px;cursor:${blockedCursor};accent-color:var(--orange)">
@@ -1558,8 +1557,8 @@ function renderMinorsEligibleTable(minors, teamId, teamSelections) {
           <th>2026 $</th>
           <th>2027 $</th>
           <th>Contract</th>
-          <th style="text-align:center">Keep</th>
           <th style="text-align:center">Rule 5</th>
+          <th style="text-align:center">Keep*</th>
           <th style="text-align:center">On the Block</th>
         </tr>
       </thead>
@@ -1610,10 +1609,10 @@ function renderMinorsEligibleTable(minors, teamId, teamSelections) {
               <td><span style="color:var(--text-dim)">—</span></td>
               <td><span class="contract-tag contract-${contractStatusClass}">${contractLabel}</span></td>
               <td style="text-align:center">
-                <input type="checkbox" ${isMinorKeeper ? 'checked' : ''} ${blockedAttr} onchange="toggleEligibleKeeper('${teamId}','${nameEsc}','minorKeeper',this.checked)" style="width:18px;height:18px;cursor:${blockedCursor};accent-color:var(--green)">
-              </td>
-              <td style="text-align:center">
                 <input type="checkbox" ${isRule5 ? 'checked' : ''} ${blockedAttr} onchange="toggleEligibleKeeper('${teamId}','${nameEsc}','rule5',this.checked)" style="width:18px;height:18px;cursor:${blockedCursor};accent-color:var(--accent)">
+              </td>
+              <td style="text-align:center" title="${!isRule5 ? 'Player must be Rule 5 protected first' : ''}">
+                <input type="checkbox" ${isMinorKeeper ? 'checked' : ''} ${blocked || !isRule5 ? 'disabled' : ''} onchange="toggleEligibleKeeper('${teamId}','${nameEsc}','minorKeeper',this.checked)" style="width:18px;height:18px;cursor:${blocked || !isRule5 ? 'not-allowed' : 'pointer'};accent-color:var(--green);${!isRule5 && !blocked ? 'opacity:0.4' : ''}">
               </td>
               <td style="text-align:center">
                 <input type="checkbox" ${isTradeBlock ? 'checked' : ''} ${blockedAttr} onchange="toggleEligibleKeeper('${teamId}','${nameEsc}','tradeBlock',this.checked)" style="width:18px;height:18px;cursor:${blockedCursor};accent-color:var(--orange)">
@@ -1623,6 +1622,7 @@ function renderMinorsEligibleTable(minors, teamId, teamSelections) {
         }).join("")}
       </tbody>
     </table>
+    <div style="font-size:0.72rem;color:var(--text-dim);margin-top:6px">* Keep requires Rule 5 protection first.</div>
   `;
 }
 
@@ -1662,6 +1662,11 @@ function toggleEligibleKeeper(teamId, playerName, field, checked) {
 
   selections[teamId][playerName][field] = checked;
 
+  // If Rule 5 is unchecked, also un-keep the player (Keep requires Rule 5).
+  if (field === 'rule5' && !checked) {
+    selections[teamId][playerName].minorKeeper = false;
+  }
+
   // Clean up empty entries
   const s = selections[teamId][playerName];
   if (!s.keeper && !s.minorKeeper && !s.tradeBlock && !s.rule5) {
@@ -1670,27 +1675,9 @@ function toggleEligibleKeeper(teamId, playerName, field, checked) {
 
   saveEligibleKeeperSelections(selections);
 
-  // Update summary bar without full re-render (to preserve scroll)
-  const team = LEAGUE_DATA.teams.find(t => t.id === teamId);
-  const players = getEligiblePlayers(team);
-  const teamSel = selections[teamId] || {};
-  const selectedKeepers = players.filter(p => teamSel[p.name]?.keeper);
-  const totalCost = selectedKeepers.reduce((s, p) => s + (p.price || 0), 0);
-  const budget = 260 - totalCost;
-  const minorKeeperCount = Object.values(teamSel).filter(x => x.minorKeeper).length;
-  const rule5Count = Object.values(teamSel).filter(x => x.rule5).length;
-  const colorFor = (cur, cap) => cur > cap ? 'var(--red)' : cur === cap ? 'var(--green)' : 'var(--yellow)';
-
-  const countEl = document.getElementById("ek-keeper-count");
-  const minorEl = document.getElementById("ek-minor-count");
-  const rule5El = document.getElementById("ek-rule5-count");
-  const costEl = document.getElementById("ek-keeper-cost");
-  const budgetEl = document.getElementById("ek-draft-budget");
-  if (countEl) { countEl.textContent = `${selectedKeepers.length}/8`; countEl.style.color = colorFor(selectedKeepers.length, 8); }
-  if (minorEl) { minorEl.textContent = `${minorKeeperCount}/10`; minorEl.style.color = colorFor(minorKeeperCount, 10); }
-  if (rule5El) { rule5El.textContent = `${rule5Count}/25`; rule5El.style.color = colorFor(rule5Count, 25); }
-  if (costEl) costEl.textContent = `$${totalCost}`;
-  if (budgetEl) budgetEl.textContent = `$${budget}`;
+  // Full re-render so the Keep checkbox visibly updates when Rule 5 toggles,
+  // and the summary bar reflects current keeper cost from 2027 prices.
+  if (typeof updateEligibleKeepersView === "function") updateEligibleKeepersView();
 }
 
 function renderAllTeamsEligibleSummary(container) {
