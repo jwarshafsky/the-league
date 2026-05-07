@@ -66,18 +66,23 @@ function getMinorLeagueContractStatus(player, currentSeason) {
 
   const callUpYearLabel = `${currentSeason + 1} Must Call Up`;
   let eligibilityWarning = null;
-  if (player.statType === "AB" && player.careerStat >= 300) {
-    eligibilityWarning = callUpYearLabel;
-    yearsRemaining = 0;
-  } else if (player.statType === "IP" && player.careerStat >= 75) {
-    eligibilityWarning = callUpYearLabel;
-    yearsRemaining = 0;
-  } else if (player.statType === "AB" && player.careerStat >= 200) {
-    eligibilityWarning = callUpYearLabel;
-    yearsRemaining = Math.min(yearsRemaining, 1);
-  } else if (player.statType === "IP" && player.careerStat >= 50) {
-    eligibilityWarning = callUpYearLabel;
-    yearsRemaining = Math.min(yearsRemaining, 1);
+  // Stat-based caps only apply after the first year on roster — a freshly
+  // drafted player keeps their full contract regardless of pre-existing
+  // MLB stats (e.g. Christian Scott drafted 2026 with 53 career IP).
+  if (yearsHeld > 0) {
+    if (player.statType === "AB" && player.careerStat >= 300) {
+      eligibilityWarning = callUpYearLabel;
+      yearsRemaining = 0;
+    } else if (player.statType === "IP" && player.careerStat >= 75) {
+      eligibilityWarning = callUpYearLabel;
+      yearsRemaining = 0;
+    } else if (player.statType === "AB" && player.careerStat >= 200) {
+      eligibilityWarning = callUpYearLabel;
+      yearsRemaining = Math.min(yearsRemaining, 1);
+    } else if (player.statType === "IP" && player.careerStat >= 50) {
+      eligibilityWarning = callUpYearLabel;
+      yearsRemaining = Math.min(yearsRemaining, 1);
+    }
   }
 
   return {
