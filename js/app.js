@@ -1688,20 +1688,15 @@ function renderAllTeamsEligibleSummary(container) {
             <span style="color:var(--green);font-weight:600">$${keeperCost}</span> keeper cost
             &middot; <span style="color:var(--accent);font-weight:600">$${draftDollars}</span> draft dollars
           </div>
-          <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:6px">
+          <div style="display:flex;flex-wrap:wrap;gap:4px;align-items:center;margin-top:6px">
+            <span style="font-size:0.7rem;color:var(--text-dim);font-weight:700;text-transform:uppercase;letter-spacing:0.05em">Keepers:</span>
             ${keepers.map(p => `<span style="font-size:0.75rem;background:rgba(34,197,94,0.15);color:var(--green);padding:2px 8px;border-radius:10px">${p.name} ${p.nextYearPrice != null ? `$${p.nextYearPrice}` : '$TBD'}</span>`).join('')}
           </div>
         ` : '<div style="font-size:0.82rem;color:var(--text-dim)">No keepers selected yet</div>'}
         ${tradeBlock.length ? `
-          <div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:4px">
+          <div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:4px;align-items:center">
+            <span style="font-size:0.7rem;color:var(--text-dim);font-weight:700;text-transform:uppercase;letter-spacing:0.05em">Trade Block:</span>
             ${tradeBlock.map(p => `<span style="font-size:0.72rem;background:rgba(249,115,22,0.15);color:var(--orange);padding:2px 7px;border-radius:10px">${p.name}</span>`).join('')}
-            <span style="font-size:0.7rem;color:var(--text-dim);align-self:center">trade block</span>
-          </div>
-        ` : ''}
-        ${rule5.length ? `
-          <div style="margin-top:4px;display:flex;flex-wrap:wrap;gap:4px">
-            ${rule5.map(p => `<span style="font-size:0.72rem;background:rgba(59,130,246,0.15);color:var(--accent);padding:2px 7px;border-radius:10px">${p.name}</span>`).join('')}
-            <span style="font-size:0.7rem;color:var(--text-dim);align-self:center">Rule 5 protected</span>
           </div>
         ` : ''}
       </div>
