@@ -523,13 +523,69 @@ function saveTrades(trades) {
 function renderTradesView() {
   const trades = getTrades();
   return `
-    <div style="display:flex;gap:10px;margin-bottom:16px">
-      <button class="trade-btn" onclick="showTradeForm()">New Trade</button>
+    <div style="display:flex;flex-wrap:wrap;gap:16px;align-items:flex-start">
+      <div style="flex:1 1 320px;min-width:280px">
+        <div style="display:flex;gap:10px;margin-bottom:16px">
+          <button class="trade-btn" onclick="showTradeForm()">New Trade</button>
+        </div>
+        <div id="trade-form-container"></div>
+        <div class="section-header">Trade Log <span class="section-count">${trades.length}</span></div>
+        <div id="trade-log">
+          ${trades.length ? trades.slice().reverse().map((t, i) => renderTradeCard(t, trades.length - 1 - i)).join("") : '<p style="color:var(--text-dim)">No trades recorded yet.</p>'}
+        </div>
+      </div>
+      <div style="flex:0 1 220px;min-width:200px">
+        ${renderDraftDollarsPanel()}
+      </div>
     </div>
-    <div id="trade-form-container"></div>
-    <div class="section-header">Trade Log <span class="section-count">${trades.length}</span></div>
-    <div id="trade-log">
-      ${trades.length ? trades.slice().reverse().map((t, i) => renderTradeCard(t, trades.length - 1 - i)).join("") : '<p style="color:var(--text-dim)">No trades recorded yet.</p>'}
+  `;
+}
+
+// --- Draft Dollars (trade-adjusted) ---
+
+function parseDraftDollarsAmount(asset) {
+  if (asset && asset.amount != null) return Number(asset.amount) || 0;
+  const m = (asset && asset.value || "").match(/\$(\d+)/);
+  return m ? parseInt(m[1], 10) : 0;
+}
+
+function getDraftDollarBalances() {
+  const balances = Object.fromEntries(LEAGUE_DATA.teams.map(t => [t.id, 260]));
+  let trades = [];
+  try { trades = JSON.parse(localStorage.getItem("flm_trades") || "[]"); } catch {}
+  for (const trade of trades) {
+    const sides = [
+      { receives: trade.team1Receives, fromTeam: trade.team2, toTeam: trade.team1 },
+      { receives: trade.team2Receives, fromTeam: trade.team1, toTeam: trade.team2 }
+    ];
+    for (const side of sides) {
+      for (const asset of (side.receives || [])) {
+        if (asset.type !== "draft_dollars") continue;
+        const amount = parseDraftDollarsAmount(asset);
+        if (balances[side.toTeam] != null) balances[side.toTeam] += amount;
+        if (balances[side.fromTeam] != null) balances[side.fromTeam] -= amount;
+      }
+    }
+  }
+  return balances;
+}
+
+function renderDraftDollarsPanel() {
+  const balances = getDraftDollarBalances();
+  const rows = LEAGUE_DATA.teams.map(t => ({ ...t, balance: balances[t.id] ?? 260 }));
+  // Same display order as the league teams list (reads naturally).
+  return `
+    <div class="section-header">Draft Dollars</div>
+    <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:8px 10px">
+      ${rows.map(t => {
+        const diff = t.balance - 260;
+        const diffStr = diff > 0 ? `+$${diff}` : diff < 0 ? `-$${Math.abs(diff)}` : "";
+        const diffColor = diff > 0 ? "var(--green)" : diff < 0 ? "var(--red)" : "var(--text-dim)";
+        return `<div style="display:flex;justify-content:space-between;align-items:baseline;padding:5px 0;border-bottom:1px solid var(--border);font-size:0.85rem">
+          <span style="color:var(--text)">${t.name}</span>
+          <span><span style="color:var(--text-bright);font-weight:600">$${t.balance}</span>${diffStr ? ` <span style="color:${diffColor};font-size:0.72rem">${diffStr}</span>` : ""}</span>
+        </div>`;
+      }).join("")}
     </div>
   `;
 }
@@ -739,9 +795,11 @@ function addTradeAsset(prefix) {
     const [type, name] = [val.split(":")[0], val.substring(val.indexOf(":") + 1)];
     asset = { type, value: name };
   } else if (val === "draft_dollars") {
-    asset = { type: "draft_dollars", value: `$${detail.value || "0"} draft dollars` };
+    const amount = parseInt(detail.value || "0", 10) || 0;
+    asset = { type: "draft_dollars", value: `$${amount} draft dollars`, amount };
   } else if (val === "faab") {
-    asset = { type: "faab", value: `$${detail.value || "0"} FAAB` };
+    const amount = parseInt(detail.value || "0", 10) || 0;
+    asset = { type: "faab", value: `$${amount} FAAB`, amount };
   } else if (val.startsWith("milb_pick:R")) {
     const m = val.match(/^milb_pick:R(\d+)P(\d+)$/);
     if (m) {
@@ -1279,7 +1337,9 @@ function updateEligibleKeepersView() {
   const selectedKeepers = players.filter(p => teamSelections[p.name]?.keeper);
   // Keeper cost reflects 2027 price (next year's keeper budget impact).
   const totalKeeperCost = selectedKeepers.reduce((s, p) => s + (p.nextYearPrice || 0), 0);
-  const draftBudget = 260 - totalKeeperCost;
+  // Draft dollars = base $260 + net dollars received in trades − keeper cost.
+  const draftDollarBase = getDraftDollarBalances()[teamId] ?? 260;
+  const draftBudget = draftDollarBase - totalKeeperCost;
   const minorKeeperCount = Object.values(teamSelections).filter(s => s.minorKeeper).length;
   const rule5Count = Object.values(teamSelections).filter(s => s.rule5).length;
 
@@ -1305,7 +1365,7 @@ function updateEligibleKeepersView() {
       </div>
       <div class="summary-item">
         <div class="summary-value" id="ek-draft-budget" style="color:var(--accent)">$${draftBudget}</div>
-        <div class="summary-label">Draft Budget</div>
+        <div class="summary-label">Draft Dollars</div>
       </div>
     </div>
 
