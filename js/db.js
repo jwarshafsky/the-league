@@ -185,7 +185,71 @@ function _subscribeToChanges() {
   } catch (e) {
     console.warn("Realtime subscribe failed:", e);
   }
+
+  _setupPresence();
 }
+
+// --- Realtime presence: who else is on the site right now ---
+
+let _presenceChannel = null;
+let _onlineTeams = [];          // [{ teamId, teamName, isCommissioner }]
+const _presenceListeners = [];
+
+function onPresenceChange(fn) {
+  _presenceListeners.push(fn);
+  fn(_onlineTeams);
+}
+
+function _firePresence() {
+  _presenceListeners.forEach(fn => { try { fn(_onlineTeams); } catch (e) { console.error(e); } });
+}
+
+function _setupPresence() {
+  if (_presenceChannel) return;
+  if (typeof currentUser === "undefined" || !currentUser || !currentOwner) return;
+  const team = LEAGUE_DATA.teams.find(t => t.id === currentOwner.team_id);
+  const payload = {
+    user_id: currentUser.id,
+    team_id: currentOwner.team_id,
+    team_name: team ? team.name : currentOwner.team_id,
+    is_commissioner: !!currentOwner.is_commissioner,
+    joined_at: new Date().toISOString(),
+  };
+
+  _presenceChannel = supabaseClient.channel("presence-online", {
+    config: { presence: { key: currentUser.id } },
+  });
+
+  const sync = () => {
+    const state = _presenceChannel.presenceState();
+    const seen = new Map();
+    Object.values(state).flat().forEach(p => {
+      if (!p || !p.team_id) return;
+      // De-dupe: one card per team_id even if multiple tabs.
+      if (!seen.has(p.team_id)) {
+        seen.set(p.team_id, {
+          teamId: p.team_id,
+          teamName: p.team_name,
+          isCommissioner: !!p.is_commissioner,
+        });
+      }
+    });
+    _onlineTeams = Array.from(seen.values()).sort((a, b) => a.teamName.localeCompare(b.teamName));
+    _firePresence();
+  };
+
+  _presenceChannel
+    .on("presence", { event: "sync" }, sync)
+    .on("presence", { event: "join" }, sync)
+    .on("presence", { event: "leave" }, sync)
+    .subscribe(async (status) => {
+      if (status === "SUBSCRIBED") {
+        try { await _presenceChannel.track(payload); } catch (e) { console.warn("presence track error:", e); }
+      }
+    });
+}
+
+function dbGetOnlineTeams() { return _onlineTeams; }
 
 // --- Public sync getters (read from cache) ---
 

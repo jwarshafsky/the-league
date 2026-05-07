@@ -3232,7 +3232,7 @@ function renderHeaderUser() {
   if (!userBar) {
     userBar = document.createElement("div");
     userBar.id = "user-bar";
-    userBar.style.cssText = "position:absolute;top:8px;right:12px;display:flex;align-items:center;gap:8px;font-size:0.72rem;color:rgba(255,255,255,0.85)";
+    userBar.style.cssText = "position:absolute;top:8px;right:12px;display:flex;align-items:center;gap:10px;font-size:0.72rem;color:rgba(255,255,255,0.85)";
     document.querySelector(".app-header").appendChild(userBar);
   }
   if (!currentUser) { userBar.style.display = "none"; return; }
@@ -3241,10 +3241,24 @@ function renderHeaderUser() {
     ? (LEAGUE_DATA.teams.find(t => t.id === currentOwner.team_id)?.name || currentOwner.team_id)
     : "—";
   const adminTag = currentOwner?.is_commissioner ? ' <span style="color:var(--yellow);font-weight:700">★</span>' : "";
+
+  // Online indicator (excludes self).
+  const online = (typeof dbGetOnlineTeams === "function") ? dbGetOnlineTeams() : [];
+  const others = online.filter(t => t.teamId !== currentOwner?.team_id);
+  const onlineHtml = others.length
+    ? `<span title="Online: ${others.map(t => t.teamName).join(", ")}" style="display:flex;align-items:center;gap:4px"><span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:#22c55e;box-shadow:0 0 6px rgba(34,197,94,0.7)"></span>${others.length} online</span>`
+    : `<span style="color:rgba(255,255,255,0.45)" title="No other owners online">no one else online</span>`;
+
   userBar.innerHTML = `
+    ${onlineHtml}
     <span>${teamName}${adminTag}</span>
     <button onclick="signOut()" style="background:rgba(0,0,0,0.25);border:1px solid rgba(255,255,255,0.2);color:white;padding:3px 8px;border-radius:4px;font-size:0.7rem;cursor:pointer">Sign Out</button>
   `;
+}
+
+// Re-render the header bar whenever someone joins or leaves.
+if (typeof onPresenceChange === "function") {
+  onPresenceChange(() => renderHeaderUser());
 }
 
 function showAppForAuthedUser() {
