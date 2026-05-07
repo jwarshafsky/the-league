@@ -256,11 +256,11 @@ function updateRostersView() {
   const team = LEAGUE_DATA.teams.find(t => t.id === teamId);
   if (!team) return;
 
-  // Mark MILB players who were dropped/traded away on ESPN so the table
-  // can show a "Dropped" status, similar to callups.
+  // Tag each minor with their current ESPN status so the table can show
+  // "Dropped" / "Traded" / "Active" appropriately.
   const minorsWithDropFlag = team.minors.map(p => ({
     ...p,
-    _droppedFromTeam: isMinorDroppedFromTeam(p.name, team.id),
+    _teamStatus: getMinorTeamStatus(p.name, team.id),
   }));
   container.innerHTML = `
     ${team.callups.length ? `
@@ -277,14 +277,32 @@ function updateRostersView() {
   `;
 }
 
-function isMinorDroppedFromTeam(playerName, teamId) {
+// Returns "on-roster" | "traded" | "dropped" | null (null = not enough info / true prospect).
+function getMinorTeamStatus(playerName, teamId) {
   const snap = getEspnSnapshot();
-  if (!snap) return false;
+  if (!snap) return null;
   const espnTeam = snap.teams.find(t => ESPN_ABBREV_TO_LOCAL[t.abbrev] === teamId);
-  if (!espnTeam) return false;
+  if (!espnTeam) return null;
+  if (espnTeam.roster.some(r => r.name === playerName)) return "on-roster";
+  // Player is in our local data for this team but not on their ESPN roster.
   const onAnyEspnRoster = snap.teams.some(t => t.roster.some(r => r.name === playerName));
-  if (!onAnyEspnRoster) return false;     // true prospect, not in ESPN at all
-  return !espnTeam.roster.some(r => r.name === playerName);
+  if (!onAnyEspnRoster) return null;       // pure prospect, ESPN doesn't track
+  // Walk the ESPN events feed for the most recent event involving this team
+  // for this player. A TRADE outbound = traded; a DROP = dropped.
+  const playerId = getPlayerIdByName(playerName);
+  if (!playerId) return "dropped";
+  const teamEspnId = espnTeam.espnId;
+  const teamEvents = (snap.events || [])
+    .filter(e => e.playerId === playerId && (
+      e.teamId === teamEspnId || e.fromTeamId === teamEspnId || e.toTeamId === teamEspnId
+    ))
+    .sort((a, b) => (b.date || 0) - (a.date || 0));
+  for (const ev of teamEvents) {
+    if (ev.type === "TRADE" && ev.fromTeamId === teamEspnId) return "traded";
+    if (ev.type === "DROP"  && ev.teamId === teamEspnId)     return "dropped";
+    if (ev.type === "ADD"   && ev.toTeamId === teamEspnId)   return "on-roster";
+  }
+  return "dropped";
 }
 
 function getCurrentMinors(team) {
@@ -432,7 +450,12 @@ function renderMinorsTable(players) {
               <td class="player-year">${p.yearAcquired}</td>
               <td class="${statClass}">${statDisplay}</td>
               <td><span style="color:var(--text-dim);font-size:0.8rem">${ms.yearsRemaining !== null ? ms.yearsRemaining : '—'}</span></td>
-              <td>${p._droppedFromTeam ? '<span style="color:var(--orange);font-size:0.8rem">Dropped</span>' : ms.eligibilityWarning ? `<span style="color:var(--orange);font-size:0.8rem">${ms.eligibilityWarning}</span>` : '<span style="color:var(--green);font-size:0.8rem">Active</span>'}</td>
+              <td>${
+                p._teamStatus === "dropped" ? '<span style="color:var(--orange);font-size:0.8rem">Dropped</span>' :
+                p._teamStatus === "traded"  ? '<span style="color:var(--accent);font-size:0.8rem">Traded</span>' :
+                ms.eligibilityWarning ? `<span style="color:var(--orange);font-size:0.8rem">${ms.eligibilityWarning}</span>` :
+                '<span style="color:var(--green);font-size:0.8rem">Active</span>'
+              }</td>
             </tr>
           `;
         }).join("")}
