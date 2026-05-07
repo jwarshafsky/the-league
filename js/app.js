@@ -1326,7 +1326,7 @@ function getEligiblePlayers(team) {
             nextYearPrice: 6,
             canKeepNextYear: true,
             status: "new",
-            label: basis.source === "fa-after-drop" ? "Dropped → FA $6" : "FA — $6 next yr",
+            label: "FA — $6",
           };
         } else if (basis.contractType === "callup" && basis.price == null) {
           // A callup without an MLB price still rides their MILB contract,
