@@ -66,23 +66,13 @@ function getMinorLeagueContractStatus(player, currentSeason) {
 
   const callUpYearLabel = `${currentSeason + 1} Must Call Up`;
   let eligibilityWarning = null;
-  // Stat-based caps on years-remaining only apply after the first year on
-  // roster. A freshly drafted player keeps their full contract regardless of
-  // pre-existing MLB stats (e.g. Christian Scott, drafted 2026 with 53 IP,
-  // still has 3 yrs left even though he must be called up next year).
-  // The "Must Call Up" warning, however, applies in either case.
-  if (player.statType === "AB" && player.careerStat >= 300) {
+  // Years remaining always reflects the raw contract length. The "must call
+  // up" status is signaled via eligibilityWarning, displayed as a badge.
+  if (
+    (player.statType === "AB" && player.careerStat >= 200) ||
+    (player.statType === "IP" && player.careerStat >= 50)
+  ) {
     eligibilityWarning = callUpYearLabel;
-    if (yearsHeld > 0) yearsRemaining = 0;
-  } else if (player.statType === "IP" && player.careerStat >= 75) {
-    eligibilityWarning = callUpYearLabel;
-    if (yearsHeld > 0) yearsRemaining = 0;
-  } else if (player.statType === "AB" && player.careerStat >= 200) {
-    eligibilityWarning = callUpYearLabel;
-    if (yearsHeld > 0) yearsRemaining = Math.min(yearsRemaining, 1);
-  } else if (player.statType === "IP" && player.careerStat >= 50) {
-    eligibilityWarning = callUpYearLabel;
-    if (yearsHeld > 0) yearsRemaining = Math.min(yearsRemaining, 1);
   }
 
   return {
@@ -1468,15 +1458,12 @@ function renderMinorsEligibleTable(minors, teamId, teamSelections) {
             : isTradeBlock ? 'background:rgba(249,115,22,0.08)'
             : '';
           const nameEsc = p.name.replace(/'/g, "\\'");
-          // Eligibility / contract status for minors
+          // Contract reflects raw years left. "Must Call Up" is shown as a
+          // separate badge next to the player's career stat.
           const ms = getMinorLeagueContractStatus(p, CURRENT_SEASON);
-          const mustCallUp = (p.statType === "AB" && p.careerStat >= 300) || (p.statType === "IP" && p.careerStat >= 75);
           const isKeepable = ms.yearsRemaining === null || ms.yearsRemaining > 0;
           let contractLabel, contractStatusClass;
-          if (mustCallUp) {
-            contractLabel = `${CURRENT_SEASON + 1} Must Call Up`;
-            contractStatusClass = "final";
-          } else if (ms.yearsRemaining !== null) {
+          if (ms.yearsRemaining !== null) {
             const yrs = ms.yearsRemaining;
             contractLabel = yrs === 0 ? "Final yr" : `${yrs} yr${yrs === 1 ? "" : "s"} left`;
             contractStatusClass = yrs === 0 ? "final" : yrs === 1 ? "expiring" : "mid";
@@ -1496,6 +1483,7 @@ function renderMinorsEligibleTable(minors, teamId, teamSelections) {
                 ${p.sentDown ? ' <span style="color:var(--red);font-size:0.65rem;font-weight:700">$10 fee</span>' : ''}
                 <div style="font-size:0.7rem;color:var(--text-dim);margin-top:2px">
                   <span class="${statClass}">${p.careerStat} ${p.statType}</span>
+                  ${ms.eligibilityWarning ? ` <span style="color:var(--orange);font-weight:700;margin-left:4px">${ms.eligibilityWarning}</span>` : ''}
                 </div>
               </td>
               <td>${sourceTag}</td>
