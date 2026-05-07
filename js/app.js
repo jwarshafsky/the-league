@@ -2109,8 +2109,14 @@ async function kickOffProspectRefresh() {
 
 function resetDraftConfirm() {
   if (!confirm("Reset the entire 2027 draft? All picks and order customizations will be lost.")) return;
-  localStorage.removeItem("flm_draft_2027");
-  switchTab("draft");
+  if (typeof saveDraftAsync === "function") {
+    saveDraftAsync(null)
+      .then(() => switchTab("draft"))
+      .catch(err => alert("Reset failed: " + err.message));
+  } else {
+    localStorage.removeItem("flm_draft_2027");
+    switchTab("draft");
+  }
 }
 
 function setDraftButtonActive(which) {
@@ -2731,6 +2737,18 @@ function getRule5State() {
   catch { return null; }
 }
 
+function resetRule5Draft() {
+  if (!confirm("Reset entire Rule 5 draft?")) return;
+  if (typeof saveRule5Async === "function") {
+    saveRule5Async(null)
+      .then(() => switchTab("rule5"))
+      .catch(err => alert("Reset failed: " + err.message));
+  } else {
+    localStorage.removeItem("flm_rule5");
+    switchTab("rule5");
+  }
+}
+
 function saveRule5State(state) {
   if (typeof saveRule5Async === "function") {
     saveRule5Async(state).catch(err => alert("Save failed: " + err.message));
@@ -2851,7 +2869,7 @@ function renderRule5View() {
     return `
       <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap">
         <span style="color:var(--text-dim);font-size:0.8rem;align-self:center">Pool loaded ${new Date(state.loadedAt).toLocaleString()} · ${pool.length} players</span>
-        ${commish ? `<button class="trade-btn trade-btn-cancel" style="margin-left:auto" onclick="if(confirm('Reload Rule 5 pool? This wipes setup.')){localStorage.removeItem('flm_rule5');switchTab('rule5')}">Reload</button>` : ''}
+        ${commish ? `<button class="trade-btn trade-btn-cancel" style="margin-left:auto" onclick="resetRule5Draft()">Reload</button>` : ''}
       </div>
       <div class="keeper-projection">
         <h3>Draft Order (Round 1)</h3>
@@ -2916,7 +2934,7 @@ function renderRule5View() {
   return `
     <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap">
       <span style="color:var(--text-dim);font-size:0.8rem;align-self:center">Pool loaded ${new Date(state.loadedAt).toLocaleString()}</span>
-      ${commish ? `<button class="trade-btn trade-btn-cancel" style="margin-left:auto" onclick="if(confirm('Reset entire Rule 5 draft?')){localStorage.removeItem('flm_rule5');switchTab('rule5')}">Reset</button>` : ''}
+      ${commish ? `<button class="trade-btn trade-btn-cancel" style="margin-left:auto" onclick="resetRule5Draft()">Reset</button>` : ''}
     </div>
     <div class="summary-bar">
       <div class="summary-item">
