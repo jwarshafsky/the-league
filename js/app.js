@@ -655,9 +655,23 @@ function renderTeamAssetPicker(selectId, containerId, prefix) {
   const team = LEAGUE_DATA.teams.find(t => t.id === teamId);
   if (!team) return;
 
-  const majorOptions = team.majors.map((p, i) => `<option value="major:${p.name}">${p.name} ($${p.price})</option>`).join("");
-  const callupOptions = team.callups.map(p => `<option value="callup:${p.name}">${p.name}</option>`).join("");
-  const minorOptions = team.minors.map(p => `<option value="minor:${p.name}">${p.name}</option>`).join("");
+  // Pull majors from the live ESPN roster (includes in-season pickups + callups).
+  // Fall back to data.js keepers + callups if no snapshot is loaded.
+  const snap = getEspnSnapshot();
+  const espnTeam = snap ? snap.teams.find(t => ESPN_ABBREV_TO_LOCAL[t.abbrev] === teamId) : null;
+  const priceByName = Object.fromEntries(team.majors.map(p => [p.name, p.price]));
+  const mlbRoster = espnTeam
+    ? [...espnTeam.roster].sort((a, b) => lastName(a.name).localeCompare(lastName(b.name)))
+    : [...team.majors, ...(team.callups || [])].sort((a, b) => lastName(a.name).localeCompare(lastName(b.name)));
+  const majorOptions = mlbRoster.map(p => {
+    const price = priceByName[p.name];
+    const label = price !== undefined ? `${p.name} ($${price})` : p.name;
+    return `<option value="major:${p.name}">${label}</option>`;
+  }).join("");
+  const minorOptions = [...team.minors]
+    .sort((a, b) => lastName(a.name).localeCompare(lastName(b.name)))
+    .map(p => `<option value="minor:${p.name}">${p.name}</option>`)
+    .join("");
 
   container.innerHTML = `
     <div style="margin-top:8px">
@@ -665,7 +679,6 @@ function renderTeamAssetPicker(selectId, containerId, prefix) {
       <select id="${prefix}-player-select" class="trade-select" style="margin-top:2px">
         <option value="">Add player/asset...</option>
         <optgroup label="Major Leaguers">${majorOptions}</optgroup>
-        ${callupOptions ? `<optgroup label="Call-ups">${callupOptions}</optgroup>` : ''}
         <optgroup label="Minor Leaguers">${minorOptions}</optgroup>
         <optgroup label="Other Assets">
           <option value="draft_dollars">Draft Dollars</option>
