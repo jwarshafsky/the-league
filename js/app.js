@@ -662,7 +662,7 @@ function renderDraftDollarsPanel() {
         const diffColor = diff > 0 ? "var(--green)" : diff < 0 ? "var(--red)" : "var(--text-dim)";
         return `<div style="display:flex;justify-content:space-between;align-items:baseline;padding:5px 0;border-bottom:1px solid var(--border);font-size:0.85rem">
           <span style="color:var(--text)">${t.name}</span>
-          <span><span style="color:var(--text-bright);font-weight:600">$${t.balance}</span>${diffStr ? ` <span style="color:${diffColor};font-size:0.72rem">${diffStr}</span>` : ""}</span>
+          <span>${diffStr ? `<span style="color:${diffColor};font-size:0.72rem;margin-right:8px">${diffStr}</span>` : ""}<span style="color:var(--text-bright);font-weight:600">$${t.balance}</span></span>
         </div>`;
       }).join("")}
     </div>
