@@ -663,6 +663,31 @@ function renderTeamAssetPicker(selectId, containerId, prefix) {
     .map(p => `<option value="minor:${p.name}">${p.name}</option>`)
     .join("");
 
+  // Compute the picks this team currently owns (after applying base order +
+  // trade-log overrides), excluding any already queued in this trade form.
+  const draft = getDraft();
+  const queuedPicks = new Set(
+    (tradeAssets[prefix] || [])
+      .filter(a => a.type === "milb_pick" && a.pickRound != null)
+      .map(a => `R${a.pickRound}P${a.pickInRound}`)
+  );
+  const ownedPicks = [];
+  for (let round = 1; round <= draft.rounds; round++) {
+    for (let pickInRound = 1; pickInRound <= draft.baseOrder.length; pickInRound++) {
+      if (queuedPicks.has(`R${round}P${pickInRound}`)) continue;
+      if (getPickOwner(draft, round, pickInRound) !== teamId) continue;
+      ownedPicks.push({ round, pickInRound, baseOwner: getBaseOwner(draft, round, pickInRound) });
+    }
+  }
+  const pickOptions = ownedPicks.map(p => {
+    const baseTeam = LEAGUE_DATA.teams.find(t => t.id === p.baseOwner);
+    const baseName = baseTeam ? baseTeam.name : p.baseOwner;
+    const label = p.baseOwner === teamId
+      ? `${draft.year} Round ${p.round}`
+      : `${draft.year} Round ${p.round} (orig. ${baseName})`;
+    return `<option value="milb_pick:R${p.round}P${p.pickInRound}">${label}</option>`;
+  }).join("");
+
   container.innerHTML = `
     <div style="margin-top:8px">
       <label style="font-size:0.75rem;color:var(--text-dim)">Sends:</label>
@@ -670,26 +695,26 @@ function renderTeamAssetPicker(selectId, containerId, prefix) {
         <option value="">Add player/asset...</option>
         <optgroup label="Major Leaguers">${majorOptions}</optgroup>
         <optgroup label="Minor Leaguers">${minorOptions}</optgroup>
+        ${pickOptions ? `<optgroup label="Minor League Picks">${pickOptions}</optgroup>` : ''}
         <optgroup label="Other Assets">
           <option value="draft_dollars">Draft Dollars</option>
           <option value="faab">FAAB Dollars</option>
-          <option value="milb_pick">Minor League Pick</option>
         </optgroup>
       </select>
       <div style="display:flex;gap:6px;margin-top:6px">
-        <input type="text" id="${prefix}-asset-detail" placeholder="Amount or pick details" style="flex:1;background:var(--bg);color:var(--text);border:1px solid var(--border);padding:6px 8px;border-radius:4px;font-size:0.85rem;display:none">
+        <input type="text" id="${prefix}-asset-detail" placeholder="Dollar amount" style="flex:1;background:var(--bg);color:var(--text);border:1px solid var(--border);padding:6px 8px;border-radius:4px;font-size:0.85rem;display:none">
         <button onclick="addTradeAsset('${prefix}')" class="trade-btn" style="font-size:0.8rem;padding:6px 12px">Add</button>
       </div>
       <div id="${prefix}-asset-list" style="margin-top:6px"></div>
     </div>
   `;
 
-  // Show/hide detail input based on selection
+  // Show/hide detail input based on selection (only $ amounts need it now).
   document.getElementById(`${prefix}-player-select`).addEventListener("change", function() {
     const detail = document.getElementById(`${prefix}-asset-detail`);
-    if (["draft_dollars", "faab", "milb_pick"].includes(this.value)) {
+    if (this.value === "draft_dollars" || this.value === "faab") {
       detail.style.display = "block";
-      detail.placeholder = this.value === "milb_pick" ? "e.g. 2027 1st round" : "Dollar amount";
+      detail.placeholder = "Dollar amount";
     } else {
       detail.style.display = "none";
     }
@@ -709,6 +734,7 @@ function addTradeAsset(prefix) {
   if (!val) return;
 
   let asset;
+  let isPick = false;
   if (val.startsWith("major:") || val.startsWith("minor:") || val.startsWith("callup:")) {
     const [type, name] = [val.split(":")[0], val.substring(val.indexOf(":") + 1)];
     asset = { type, value: name };
@@ -716,8 +742,28 @@ function addTradeAsset(prefix) {
     asset = { type: "draft_dollars", value: `$${detail.value || "0"} draft dollars` };
   } else if (val === "faab") {
     asset = { type: "faab", value: `$${detail.value || "0"} FAAB` };
-  } else if (val === "milb_pick") {
-    asset = { type: "milb_pick", value: detail.value || "MiLB pick" };
+  } else if (val.startsWith("milb_pick:R")) {
+    const m = val.match(/^milb_pick:R(\d+)P(\d+)$/);
+    if (m) {
+      const round = parseInt(m[1]);
+      const pickInRound = parseInt(m[2]);
+      const draft = getDraft();
+      const baseOwner = getBaseOwner(draft, round, pickInRound);
+      const baseTeam = LEAGUE_DATA.teams.find(t => t.id === baseOwner);
+      const baseName = baseTeam ? baseTeam.name : baseOwner;
+      const ownerLabel = baseOwner === tradeAssets.teamIds[prefix]
+        ? ""
+        : ` (orig. ${baseName})`;
+      asset = {
+        type: "milb_pick",
+        value: `${draft.year} Round ${round}${ownerLabel}`,
+        pickRound: round,
+        pickInRound,
+        pickOriginalOwner: baseOwner,
+        pickYear: draft.year,
+      };
+      isPick = true;
+    }
   }
 
   if (asset) {
@@ -726,12 +772,25 @@ function addTradeAsset(prefix) {
     detail.value = "";
     detail.style.display = "none";
     renderAssetList(prefix);
+    // For picks, re-render the picker so the just-added pick drops off the dropdown.
+    if (isPick) {
+      const selectId = prefix === "t1" ? "trade-team1" : "trade-team2";
+      const containerId = prefix === "t1" ? "trade-team1-assets" : "trade-team2-assets";
+      renderTeamAssetPicker(selectId, containerId, prefix);
+    }
   }
 }
 
 function removeTradeAsset(prefix, index) {
+  const removed = tradeAssets[prefix][index];
   tradeAssets[prefix].splice(index, 1);
   renderAssetList(prefix);
+  // If a pick was removed, re-render the picker so it reappears in the dropdown.
+  if (removed && removed.type === "milb_pick" && removed.pickRound != null) {
+    const selectId = prefix === "t1" ? "trade-team1" : "trade-team2";
+    const containerId = prefix === "t1" ? "trade-team1-assets" : "trade-team2-assets";
+    renderTeamAssetPicker(selectId, containerId, prefix);
+  }
 }
 
 function renderAssetList(prefix) {
@@ -1697,9 +1756,14 @@ function getTradeLogOwner(round, draftYear, baseOwner) {
     for (const side of sides) {
       for (const asset of (side.receives || [])) {
         if (asset.type !== "milb_pick") continue;
-        const parsed = parseMilbPickValue(asset.value);
-        if (!parsed || parsed.round !== round) continue;
-        if (parsed.year && parsed.year !== draftYear) continue;
+        // New trades store structured pickRound/pickOriginalOwner/pickYear. Older trades fall back to parsing.
+        const pickRound = asset.pickRound ?? parseMilbPickValue(asset.value)?.round;
+        const pickYear  = asset.pickYear  ?? parseMilbPickValue(asset.value)?.year;
+        const pickOriginalOwner = asset.pickOriginalOwner;
+        if (!pickRound || pickRound !== round) continue;
+        if (pickYear && pickYear !== draftYear) continue;
+        // Structured trades pinpoint exactly which slot — only apply to the matching baseOwner.
+        if (pickOriginalOwner && pickOriginalOwner !== baseOwner) continue;
         if (side.fromTeam === owner) owner = side.toTeam;
       }
     }
