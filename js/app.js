@@ -590,11 +590,12 @@ function updateKeeperCalc() {
 // --- Rendering: Trades Tab ---
 
 function getTrades() {
-  try {
-    return JSON.parse(localStorage.getItem("flm_trades") || "[]");
-  } catch { return []; }
+  if (typeof dbGetTrades === "function") return dbGetTrades();
+  try { return JSON.parse(localStorage.getItem("flm_trades") || "[]"); }
+  catch { return []; }
 }
 
+// Legacy. New code path goes through addTradeAsync / deleteTradeAsync.
 function saveTrades(trades) {
   localStorage.setItem("flm_trades", JSON.stringify(trades));
 }
@@ -960,14 +961,20 @@ function submitTrade() {
     notes
   };
 
-  const trades = getTrades();
-  trades.push(trade);
-  saveTrades(trades);
-
-  // Reset
+  // Reset form state immediately.
   tradeAssets.t1 = [];
   tradeAssets.t2 = [];
-  switchTab("trades");
+
+  if (typeof addTradeAsync === "function") {
+    addTradeAsync(trade)
+      .then(() => switchTab("trades"))
+      .catch(err => alert("Trade save failed: " + err.message));
+  } else {
+    const trades = getTrades();
+    trades.push(trade);
+    saveTrades(trades);
+    switchTab("trades");
+  }
 }
 
 function cancelTrade() {
@@ -979,20 +986,29 @@ function cancelTrade() {
 function deleteTrade(index) {
   if (!confirm("Delete this trade?")) return;
   const trades = getTrades();
-  trades.splice(index, 1);
-  saveTrades(trades);
-  switchTab("trades");
+  const target = trades[index];
+  if (!target) return;
+  if (target._id && typeof deleteTradeAsync === "function") {
+    deleteTradeAsync(target._id)
+      .then(() => switchTab("trades"))
+      .catch(err => alert("Delete failed: " + err.message));
+  } else {
+    trades.splice(index, 1);
+    saveTrades(trades);
+    switchTab("trades");
+  }
 }
 
 
 // --- Rendering: Eligible Keepers Tab ---
 
 function getEligibleKeeperSelections() {
-  try {
-    return JSON.parse(localStorage.getItem("flm_eligible_keepers") || "{}");
-  } catch { return {}; }
+  if (typeof dbGetKeeperSelections === "function") return dbGetKeeperSelections();
+  try { return JSON.parse(localStorage.getItem("flm_eligible_keepers") || "{}"); }
+  catch { return {}; }
 }
 
+// Legacy bulk save — only used in the localStorage-only fallback path.
 function saveEligibleKeeperSelections(data) {
   localStorage.setItem("flm_eligible_keepers", JSON.stringify(data));
 }
@@ -1009,14 +1025,20 @@ function getEspnSnapshot() {
 }
 
 function getCallupPriceOverrides() {
+  if (typeof dbGetCallupOverrides === "function") return dbGetCallupOverrides();
   try { return JSON.parse(localStorage.getItem("flm_callup_prices") || "{}"); }
   catch { return {}; }
 }
 
 function setCallupPriceOverride(playerName, price, year) {
-  const all = getCallupPriceOverrides();
-  all[playerName] = { price: Number(price), year: Number(year) };
-  localStorage.setItem("flm_callup_prices", JSON.stringify(all));
+  if (typeof saveCallupOverrideAsync === "function") {
+    saveCallupOverrideAsync(playerName, Number(price), Number(year))
+      .catch(err => alert("Save failed: " + err.message));
+  } else {
+    const all = JSON.parse(localStorage.getItem("flm_callup_prices") || "{}");
+    all[playerName] = { price: Number(price), year: Number(year) };
+    localStorage.setItem("flm_callup_prices", JSON.stringify(all));
+  }
 }
 
 // Find a player's prior cost basis by name across every team's keeper sheet.
@@ -1068,15 +1090,20 @@ function setCommissioner(flag) {
 }
 
 function getWorkaroundOverrides() {
+  if (typeof dbGetWorkaroundOverrides === "function") return dbGetWorkaroundOverrides();
   try { return JSON.parse(localStorage.getItem("flm_workaround_overrides") || "{}"); }
   catch { return {}; }
 }
 
 function setWorkaroundOverride(playerId, decision) {
-  const all = getWorkaroundOverrides();
+  const all = { ...getWorkaroundOverrides() };
   if (!decision || decision === "auto") delete all[String(playerId)];
   else all[String(playerId)] = decision;
-  localStorage.setItem("flm_workaround_overrides", JSON.stringify(all));
+  if (typeof saveWorkaroundOverridesAsync === "function") {
+    saveWorkaroundOverridesAsync(all).catch(err => alert("Save failed: " + err.message));
+  } else {
+    localStorage.setItem("flm_workaround_overrides", JSON.stringify(all));
+  }
 }
 
 // Returns { presumption, override, needsConfirmation } if the add is a commish workaround,
@@ -1424,12 +1451,17 @@ function toggleCommishEdit() {
 }
 
 function getCommishOverrides() {
+  if (typeof dbGetCommishOverrides === "function") return dbGetCommishOverrides();
   try { return JSON.parse(localStorage.getItem("flm_commish_overrides") || "{}"); }
   catch { return {}; }
 }
 
 function saveCommishOverrides(o) {
-  localStorage.setItem("flm_commish_overrides", JSON.stringify(o));
+  if (typeof saveCommishOverridesAsync === "function") {
+    saveCommishOverridesAsync(o).catch(err => alert("Save failed: " + err.message));
+  } else {
+    localStorage.setItem("flm_commish_overrides", JSON.stringify(o));
+  }
 }
 
 function applyPlayerOverride(player) {
@@ -1849,16 +1881,17 @@ function toggleEligibleKeeper(teamId, playerName, field, checked) {
     selections[teamId][playerName].minorKeeper = false;
   }
 
-  // Clean up empty entries
-  const s = selections[teamId][playerName];
-  if (!s.keeper && !s.minorKeeper && !s.tradeBlock && !s.rule5) {
-    delete selections[teamId][playerName];
+  const flags = { ...(selections[teamId][playerName] || {}) };
+  const allEmpty = !flags.keeper && !flags.minorKeeper && !flags.tradeBlock && !flags.rule5;
+  if (allEmpty) delete selections[teamId][playerName];
+
+  if (typeof setKeeperSelectionAsync === "function") {
+    setKeeperSelectionAsync(teamId, playerName, allEmpty ? {} : flags)
+      .catch(err => alert("Save failed: " + err.message));
+  } else {
+    saveEligibleKeeperSelections(selections);
   }
 
-  saveEligibleKeeperSelections(selections);
-
-  // Full re-render so the Keep checkbox visibly updates when Rule 5 toggles,
-  // and the summary bar reflects current keeper cost from 2027 prices.
   if (typeof updateEligibleKeepersView === "function") updateEligibleKeepersView();
 }
 
@@ -1914,20 +1947,24 @@ const DEFAULT_DRAFT_ORDER = [
   "aj", "josh-doug", "sam", "larry", "jesse", "jeff"
 ];
 
+function _normalizeDraft(stored) {
+  stored.rounds = DRAFT_ROUNDS;
+  stored.picks = (stored.picks || []).filter(p => p.round <= DRAFT_ROUNDS);
+  stored.passed = (stored.passed || []).filter(p => p.round <= DRAFT_ROUNDS);
+  Object.keys(stored.tradedPicks || {}).forEach(k => {
+    if (parseInt(k.split("p")[0], 10) > DRAFT_ROUNDS) delete stored.tradedPicks[k];
+  });
+  return stored;
+}
+
 function getDraft() {
-  try {
-    const stored = JSON.parse(localStorage.getItem("flm_draft_2027") || "null");
-    if (stored && stored.baseOrder && stored.baseOrder.length === 12) {
-      // Normalize to current rounds; drop anything beyond.
-      stored.rounds = DRAFT_ROUNDS;
-      stored.picks = (stored.picks || []).filter(p => p.round <= DRAFT_ROUNDS);
-      stored.passed = (stored.passed || []).filter(p => p.round <= DRAFT_ROUNDS);
-      Object.keys(stored.tradedPicks || {}).forEach(k => {
-        if (parseInt(k.split("p")[0], 10) > DRAFT_ROUNDS) delete stored.tradedPicks[k];
-      });
-      return stored;
-    }
-  } catch {}
+  let stored = null;
+  if (typeof dbGetDraft === "function") {
+    stored = dbGetDraft();
+  } else {
+    try { stored = JSON.parse(localStorage.getItem("flm_draft_2027") || "null"); } catch {}
+  }
+  if (stored && stored.baseOrder && stored.baseOrder.length === 12) return _normalizeDraft(stored);
   return {
     year: DRAFT_YEAR,
     rounds: DRAFT_ROUNDS,
@@ -1940,7 +1977,11 @@ function getDraft() {
 }
 
 function saveDraft(draft) {
-  localStorage.setItem("flm_draft_2027", JSON.stringify(draft));
+  if (typeof saveDraftAsync === "function") {
+    saveDraftAsync(draft).catch(err => alert("Save failed: " + err.message));
+  } else {
+    localStorage.setItem("flm_draft_2027", JSON.stringify(draft));
+  }
 }
 
 function getBaseOwner(draft, round, pickInRound) {
@@ -2685,12 +2726,17 @@ function renderTrophyRow(season) {
 // --- Rule 5 Draft ---
 
 function getRule5State() {
+  if (typeof dbGetRule5 === "function") return dbGetRule5();
   try { return JSON.parse(localStorage.getItem("flm_rule5") || "null"); }
   catch { return null; }
 }
 
 function saveRule5State(state) {
-  localStorage.setItem("flm_rule5", JSON.stringify(state));
+  if (typeof saveRule5Async === "function") {
+    saveRule5Async(state).catch(err => alert("Save failed: " + err.message));
+  } else {
+    localStorage.setItem("flm_rule5", JSON.stringify(state));
+  }
 }
 
 function buildRule5Pool() {
@@ -3204,7 +3250,15 @@ function authGate(user, owner) {
     renderClaimTeamScreen();
     return;
   }
-  showAppForAuthedUser();
+  if (typeof onDbReady === "function") {
+    // Block UI until the league data is loaded from Supabase.
+    document.querySelector(".nav-tabs").style.display = "none";
+    document.getElementById("main-content").innerHTML =
+      '<div style="text-align:center;padding:60px;color:var(--text-dim)">Loading league data…</div>';
+    onDbReady(() => showAppForAuthedUser());
+  } else {
+    showAppForAuthedUser();
+  }
 }
 
 // --- Init ---

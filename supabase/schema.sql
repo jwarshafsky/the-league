@@ -111,14 +111,25 @@ alter table public.trades enable row level security;
 
 drop policy if exists "trades_select_all"     on public.trades;
 drop policy if exists "trades_write_party"    on public.trades;
+drop policy if exists "trades_insert_party"   on public.trades;
+drop policy if exists "trades_update_party"   on public.trades;
+drop policy if exists "trades_delete_admin"   on public.trades;
 
 create policy "trades_select_all"
   on public.trades for select
   using (auth.role() = 'authenticated');
 
--- Anyone party to the trade (or commissioner) can insert/update/delete.
-create policy "trades_write_party"
-  on public.trades for all
+-- Insert/update: parties to the trade or commissioner.
+create policy "trades_insert_party"
+  on public.trades for insert
+  with check (
+    team1 = public.my_team_id()
+    or team2 = public.my_team_id()
+    or public.is_commissioner()
+  );
+
+create policy "trades_update_party"
+  on public.trades for update
   using (
     team1 = public.my_team_id()
     or team2 = public.my_team_id()
@@ -129,6 +140,11 @@ create policy "trades_write_party"
     or team2 = public.my_team_id()
     or public.is_commissioner()
   );
+
+-- Delete: commissioner only.
+create policy "trades_delete_admin"
+  on public.trades for delete
+  using (public.is_commissioner());
 
 
 -- ============================================================================
