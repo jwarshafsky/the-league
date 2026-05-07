@@ -284,13 +284,13 @@ function getMinorTeamStatus(playerName, teamId) {
   const espnTeam = snap.teams.find(t => ESPN_ABBREV_TO_LOCAL[t.abbrev] === teamId);
   if (!espnTeam) return null;
   if (espnTeam.roster.some(r => r.name === playerName)) return "on-roster";
-  // Player is in our local data for this team but not on their ESPN roster.
   const onAnyEspnRoster = snap.teams.some(t => t.roster.some(r => r.name === playerName));
   if (!onAnyEspnRoster) return null;       // pure prospect, ESPN doesn't track
-  // Walk the ESPN events feed for the most recent event involving this team
-  // for this player. A TRADE outbound = traded; a DROP = dropped.
+
   const playerId = getPlayerIdByName(playerName);
   if (!playerId) return "dropped";
+
+  // 1. If ESPN logged a TRADE event — that's the strongest signal.
   const teamEspnId = espnTeam.espnId;
   const teamEvents = (snap.events || [])
     .filter(e => e.playerId === playerId && (
@@ -299,9 +299,28 @@ function getMinorTeamStatus(playerName, teamId) {
     .sort((a, b) => (b.date || 0) - (a.date || 0));
   for (const ev of teamEvents) {
     if (ev.type === "TRADE" && ev.fromTeamId === teamEspnId) return "traded";
-    if (ev.type === "DROP"  && ev.teamId === teamEspnId)     return "dropped";
     if (ev.type === "ADD"   && ev.toTeamId === teamEspnId)   return "on-roster";
+    if (ev.type === "DROP"  && ev.teamId === teamEspnId)     break; // fall through to commish-add check
   }
+
+  // 2. "Manual trade" workaround: commish drops the player on team A, then
+  //    adds them to team B. classifyCommishAdd presumes that's a TRADE
+  //    (unless within 24h of the drop, which is treated as FA reversal).
+  const lastAdd = getMostRecentAddEvent(playerId);
+  if (lastAdd && lastAdd.isCommishWorkaround) {
+    let currentTeamId = null;
+    for (const t of snap.teams) {
+      if (t.roster.some(r => r.name === playerName)) {
+        currentTeamId = ESPN_ABBREV_TO_LOCAL[t.abbrev];
+        break;
+      }
+    }
+    if (currentTeamId) {
+      const cls = classifyCommishAdd(playerName, playerId, currentTeamId, lastAdd);
+      if (cls && cls.decision === "trade") return "traded";
+    }
+  }
+
   return "dropped";
 }
 
