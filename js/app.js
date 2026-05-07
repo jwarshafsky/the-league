@@ -238,21 +238,30 @@ function updateRostersView() {
   if (!teamId) { container.innerHTML = ""; return; }
 
   if (teamId === "all") {
-    container.innerHTML = LEAGUE_DATA.teams.map(team => `
+    container.innerHTML = LEAGUE_DATA.teams.map(team => {
+      const liveCount = getCurrentMinors(team).length;
+      return `
       <div style="margin-bottom:24px">
         <h3 style="color:var(--text-bright);margin-bottom:8px;cursor:pointer" onclick="document.getElementById('rosters-team-select').value='${team.id}';updateRostersView()">
           ${team.name}
-          <span style="color:var(--green);font-size:0.8rem">${team.minors.length} minors</span>
+          <span style="color:var(--green);font-size:0.8rem">${liveCount} minors</span>
         </h3>
         ${renderMinorsCompactTable(team)}
       </div>
-    `).join("");
+      `;
+    }).join("");
     return;
   }
 
   const team = LEAGUE_DATA.teams.find(t => t.id === teamId);
   if (!team) return;
 
+  // Mark MILB players who were dropped/traded away on ESPN so the table
+  // can show a "Dropped" status, similar to callups.
+  const minorsWithDropFlag = team.minors.map(p => ({
+    ...p,
+    _droppedFromTeam: isMinorDroppedFromTeam(p.name, team.id),
+  }));
   container.innerHTML = `
     ${team.callups.length ? `
       <div class="section-header">
@@ -262,16 +271,45 @@ function updateRostersView() {
     ` : ""}
 
     <div class="section-header">
-      Minor League Roster <span class="section-count">${team.minors.length}/10</span>
+      Minor League Roster <span class="section-count">${minorsWithDropFlag.length}/10</span>
     </div>
-    ${renderMinorsTable(team.minors)}
+    ${renderMinorsTable(minorsWithDropFlag)}
   `;
+}
+
+function isMinorDroppedFromTeam(playerName, teamId) {
+  const snap = getEspnSnapshot();
+  if (!snap) return false;
+  const espnTeam = snap.teams.find(t => ESPN_ABBREV_TO_LOCAL[t.abbrev] === teamId);
+  if (!espnTeam) return false;
+  const onAnyEspnRoster = snap.teams.some(t => t.roster.some(r => r.name === playerName));
+  if (!onAnyEspnRoster) return false;     // true prospect, not in ESPN at all
+  return !espnTeam.roster.some(r => r.name === playerName);
+}
+
+function getCurrentMinors(team) {
+  // Filter out MILB players whose ESPN roster spot is now elsewhere (dropped
+  // or traded away). True prospects with no MLB time aren't in ESPN at all
+  // and stay visible.
+  const snap = getEspnSnapshot();
+  if (!snap) return team.minors;
+  const espnTeamByPlayer = {};
+  for (const t of snap.teams) {
+    const localId = ESPN_ABBREV_TO_LOCAL[t.abbrev];
+    if (!localId) continue;
+    for (const r of t.roster) espnTeamByPlayer[r.name] = localId;
+  }
+  return team.minors.filter(p => {
+    const tid = espnTeamByPlayer[p.name];
+    if (!tid) return true;          // not on any ESPN roster → real prospect
+    return tid === team.id;          // on ESPN → must match this team
+  });
 }
 
 function renderMinorsCompactTable(team) {
   // All Teams view: only show MILB-roster players. Callups (already on MLB
   // roster) live on the Eligible Keepers / individual team pages instead.
-  const allPlayers = [...team.minors]
+  const allPlayers = getCurrentMinors(team)
     .map(p => ({ ...p, rosterType: "minors" }))
     .sort((a, b) => lastName(a.name).localeCompare(lastName(b.name)));
   if (!allPlayers.length) return "<p style='color:var(--text-dim)'>No minor league players</p>";
@@ -394,7 +432,7 @@ function renderMinorsTable(players) {
               <td class="player-year">${p.yearAcquired}</td>
               <td class="${statClass}">${statDisplay}</td>
               <td><span style="color:var(--text-dim);font-size:0.8rem">${ms.yearsRemaining !== null ? ms.yearsRemaining : '—'}</span></td>
-              <td>${ms.eligibilityWarning ? `<span style="color:var(--orange);font-size:0.8rem">${ms.eligibilityWarning}</span>` : '<span style="color:var(--green);font-size:0.8rem">Active</span>'}</td>
+              <td>${p._droppedFromTeam ? '<span style="color:var(--orange);font-size:0.8rem">Dropped</span>' : ms.eligibilityWarning ? `<span style="color:var(--orange);font-size:0.8rem">${ms.eligibilityWarning}</span>` : '<span style="color:var(--green);font-size:0.8rem">Active</span>'}</td>
             </tr>
           `;
         }).join("")}
