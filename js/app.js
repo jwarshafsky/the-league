@@ -2189,27 +2189,58 @@ function renderTradedPicksList() {
   const draft = getDraft();
   const container = document.getElementById("traded-picks-list");
   if (!container) return;
-  const entries = Object.entries(draft.tradedPicks);
+
+  const entries = [];
+
+  // Manual overrides from draft.tradedPicks (commissioner-entered).
+  for (const [key, teamId] of Object.entries(draft.tradedPicks)) {
+    const match = key.match(/^(\d+)p(\d+)$/);
+    if (!match) continue;
+    entries.push({
+      round: parseInt(match[1]),
+      pickInRound: parseInt(match[2]),
+      owner: teamId,
+      source: "manual",
+      key,
+    });
+  }
+
+  // Trade-log-derived overrides (skip slots that have a manual override).
+  for (let round = 1; round <= draft.rounds; round++) {
+    for (let pickInRound = 1; pickInRound <= draft.baseOrder.length; pickInRound++) {
+      const key = `${round}p${pickInRound}`;
+      if (draft.tradedPicks[key]) continue;
+      const baseOwner = getBaseOwner(draft, round, pickInRound);
+      const tradeLogOwner = getTradeLogOwner(round, draft.year, baseOwner);
+      if (tradeLogOwner !== baseOwner) {
+        entries.push({
+          round, pickInRound, owner: tradeLogOwner, source: "tradelog",
+        });
+      }
+    }
+  }
+
   if (!entries.length) {
     container.innerHTML = '<div style="color:var(--text-dim);font-size:0.82rem;font-style:italic">No traded picks recorded.</div>';
     return;
   }
-  container.innerHTML = entries.map(([key, teamId]) => {
-    const match = key.match(/^(\d+)p(\d+)$/);
-    if (!match) return "";
-    const round = parseInt(match[1]);
-    const pickInRound = parseInt(match[2]);
-    const origDraft = { ...draft, tradedPicks: {} };
-    const originalOwnerId = getPickOwner(origDraft, round, pickInRound);
-    const original = LEAGUE_DATA.teams.find(t => t.id === originalOwnerId);
-    const newOwner = LEAGUE_DATA.teams.find(t => t.id === teamId);
+
+  entries.sort((a, b) => a.round - b.round || a.pickInRound - b.pickInRound);
+
+  container.innerHTML = entries.map(e => {
+    const baseOwner = getBaseOwner(draft, e.round, e.pickInRound);
+    const original = LEAGUE_DATA.teams.find(t => t.id === baseOwner);
+    const newOwner = LEAGUE_DATA.teams.find(t => t.id === e.owner);
+    const trailing = e.source === "manual"
+      ? `<button onclick="removeTradedPick('${e.key}')" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:0.85rem">x</button>`
+      : `<span style="color:var(--text-dim);font-size:0.7rem;font-style:italic" title="Auto-derived from a trade in the Trades tab">trade log</span>`;
     return `
       <div style="display:flex;align-items:center;gap:8px;padding:8px;background:var(--bg);border:1px solid var(--border);border-radius:6px;margin-bottom:4px;font-size:0.85rem">
-        <span style="color:var(--accent);font-weight:600;min-width:84px">R${round} Pick ${pickInRound}</span>
-        <span style="color:var(--text-dim)">${original ? original.name : originalOwnerId}</span>
+        <span style="color:var(--accent);font-weight:600;min-width:84px">R${e.round} Pick ${e.pickInRound}</span>
+        <span style="color:var(--text-dim)">${original ? original.name : baseOwner}</span>
         <span style="color:var(--text-dim)">&rarr;</span>
-        <span style="color:var(--text-bright);font-weight:600;flex:1">${newOwner ? newOwner.name : teamId}</span>
-        <button onclick="removeTradedPick('${key}')" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:0.85rem">x</button>
+        <span style="color:var(--text-bright);font-weight:600;flex:1">${newOwner ? newOwner.name : e.owner}</span>
+        ${trailing}
       </div>
     `;
   }).join("");
