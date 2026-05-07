@@ -80,13 +80,13 @@ def extract_standings(data):
         rank = t.get("rankCalculatedFinal")
         if not rank or rank <= 0:
             continue
-        # Build a display name: location + nickname when present, else fall back to abbrev.
         full = (t.get("location", "") + " " + t.get("nickname", "")).strip()
         out.append({
             "rank": rank,
             "abbrev": t.get("abbrev", ""),
             "name": full or t.get("abbrev", ""),
             "espnId": t.get("id"),
+            "points": t.get("points"),  # total roto points
         })
     out.sort(key=lambda r: r["rank"])
     return out

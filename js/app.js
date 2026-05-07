@@ -2463,7 +2463,10 @@ function renderTrophyRow(season) {
         <div style="font-size:2.4rem;line-height:1">${emoji}</div>
         <div style="font-size:0.65rem;font-weight:800;color:${accent};letter-spacing:0.12em;text-transform:uppercase;margin-top:6px">${label}</div>
         <div style="margin-top:8px;color:var(--text-bright);font-weight:700;font-size:1rem;line-height:1.35">
-          ${teams.length ? teams.map(t => trophyTeamLabel(t)).join("<br>") : '<span style="color:var(--text-dim);font-weight:400">—</span>'}
+          ${teams.length ? teams.map(t => {
+            const pts = t.points != null ? ` <span style="color:var(--text-dim);font-weight:500;font-size:0.85rem">(${Number.isInteger(t.points) ? t.points : t.points.toFixed(1)})</span>` : "";
+            return `${trophyTeamLabel(t)}${pts}`;
+          }).join("<br>") : '<span style="color:var(--text-dim);font-weight:400">—</span>'}
         </div>
       </div>
     `;
