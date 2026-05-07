@@ -1,0 +1,243 @@
+-- Fantasy League Manager — Supabase schema and RLS policies.
+-- Run this in the Supabase SQL Editor (Project → SQL Editor → New query).
+-- Safe to re-run: idempotent via "if not exists" / "create or replace".
+
+-- ============================================================================
+-- 1. owners — maps auth.users.id → team_id (e.g. "jeff", "matt", ...)
+-- ============================================================================
+create table if not exists public.owners (
+  id              uuid primary key references auth.users(id) on delete cascade,
+  team_id         text unique not null,
+  is_commissioner boolean not null default false,
+  created_at      timestamptz not null default now()
+);
+
+-- Helper: is the current user a commissioner?
+create or replace function public.is_commissioner()
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select coalesce(
+    (select is_commissioner from public.owners where id = auth.uid()),
+    false
+  );
+$$;
+
+-- Helper: what team_id does the current user own?
+create or replace function public.my_team_id()
+returns text
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select team_id from public.owners where id = auth.uid();
+$$;
+
+alter table public.owners enable row level security;
+
+drop policy if exists "owners_select_all"     on public.owners;
+drop policy if exists "owners_insert_self"    on public.owners;
+drop policy if exists "owners_update_admin"   on public.owners;
+drop policy if exists "owners_delete_admin"   on public.owners;
+
+create policy "owners_select_all"
+  on public.owners for select
+  using (auth.role() = 'authenticated');
+
+-- A user can claim an unclaimed team_id by inserting a row for themselves.
+create policy "owners_insert_self"
+  on public.owners for insert
+  with check (id = auth.uid() and not is_commissioner);
+
+-- Only commissioners can update or reassign teams.
+create policy "owners_update_admin"
+  on public.owners for update
+  using (public.is_commissioner());
+
+create policy "owners_delete_admin"
+  on public.owners for delete
+  using (public.is_commissioner());
+
+
+-- ============================================================================
+-- 2. keeper_selections — replaces flm_eligible_keepers in localStorage
+-- ============================================================================
+create table if not exists public.keeper_selections (
+  team_id       text not null,
+  player_name   text not null,
+  keeper        boolean not null default false,
+  minor_keeper  boolean not null default false,
+  rule5         boolean not null default false,
+  trade_block   boolean not null default false,
+  updated_at    timestamptz not null default now(),
+  primary key (team_id, player_name)
+);
+
+alter table public.keeper_selections enable row level security;
+
+drop policy if exists "ks_select_all"      on public.keeper_selections;
+drop policy if exists "ks_write_owner"     on public.keeper_selections;
+
+create policy "ks_select_all"
+  on public.keeper_selections for select
+  using (auth.role() = 'authenticated');
+
+create policy "ks_write_owner"
+  on public.keeper_selections for all
+  using (team_id = public.my_team_id() or public.is_commissioner())
+  with check (team_id = public.my_team_id() or public.is_commissioner());
+
+
+-- ============================================================================
+-- 3. trades — replaces flm_trades
+-- ============================================================================
+create table if not exists public.trades (
+  id              uuid primary key default gen_random_uuid(),
+  date            text not null,
+  team1           text not null,
+  team2           text not null,
+  team1_receives  jsonb not null default '[]'::jsonb,
+  team2_receives  jsonb not null default '[]'::jsonb,
+  notes           text default '',
+  created_by      uuid references auth.users(id),
+  created_at      timestamptz not null default now()
+);
+
+alter table public.trades enable row level security;
+
+drop policy if exists "trades_select_all"     on public.trades;
+drop policy if exists "trades_write_party"    on public.trades;
+
+create policy "trades_select_all"
+  on public.trades for select
+  using (auth.role() = 'authenticated');
+
+-- Anyone party to the trade (or commissioner) can insert/update/delete.
+create policy "trades_write_party"
+  on public.trades for all
+  using (
+    team1 = public.my_team_id()
+    or team2 = public.my_team_id()
+    or public.is_commissioner()
+  )
+  with check (
+    team1 = public.my_team_id()
+    or team2 = public.my_team_id()
+    or public.is_commissioner()
+  );
+
+
+-- ============================================================================
+-- 4. league_state — singleton rows for draft, rule5, etc. (commissioner-only)
+-- ============================================================================
+create table if not exists public.league_state (
+  key         text primary key,        -- e.g. 'draft_2027', 'rule5'
+  state       jsonb not null,
+  updated_at  timestamptz not null default now()
+);
+
+alter table public.league_state enable row level security;
+
+drop policy if exists "ls_select_all"     on public.league_state;
+drop policy if exists "ls_write_admin"    on public.league_state;
+
+create policy "ls_select_all"
+  on public.league_state for select
+  using (auth.role() = 'authenticated');
+
+create policy "ls_write_admin"
+  on public.league_state for all
+  using (public.is_commissioner())
+  with check (public.is_commissioner());
+
+
+-- ============================================================================
+-- 5. callup_overrides — replaces flm_callup_prices (commissioner-only writes)
+-- ============================================================================
+create table if not exists public.callup_overrides (
+  player_name text primary key,
+  price       integer,
+  year        integer,
+  updated_at  timestamptz not null default now()
+);
+
+alter table public.callup_overrides enable row level security;
+
+drop policy if exists "co_select_all"  on public.callup_overrides;
+drop policy if exists "co_write_admin" on public.callup_overrides;
+
+create policy "co_select_all"
+  on public.callup_overrides for select
+  using (auth.role() = 'authenticated');
+
+create policy "co_write_admin"
+  on public.callup_overrides for all
+  using (public.is_commissioner())
+  with check (public.is_commissioner());
+
+
+-- ============================================================================
+-- 6. GRANTs — Supabase by default doesn't grant write privileges to
+--    `authenticated`, so RLS alone isn't enough. Without these, INSERTs
+--    fail with "permission denied for table".
+-- ============================================================================
+grant usage on schema public to authenticated;
+
+grant select, insert, update, delete on table
+  public.owners,
+  public.keeper_selections,
+  public.trades,
+  public.league_state,
+  public.callup_overrides
+to authenticated;
+
+grant execute on function public.is_commissioner() to authenticated;
+grant execute on function public.my_team_id() to authenticated;
+
+
+-- ============================================================================
+-- 7. updated_at triggers (so writes auto-stamp the row)
+-- ============================================================================
+create or replace function public.touch_updated_at()
+returns trigger
+language plpgsql
+as $$
+begin
+  new.updated_at := now();
+  return new;
+end;
+$$;
+
+drop trigger if exists ks_touch on public.keeper_selections;
+create trigger ks_touch before update on public.keeper_selections
+  for each row execute function public.touch_updated_at();
+
+drop trigger if exists ls_touch on public.league_state;
+create trigger ls_touch before update on public.league_state
+  for each row execute function public.touch_updated_at();
+
+drop trigger if exists co_touch on public.callup_overrides;
+create trigger co_touch before update on public.callup_overrides
+  for each row execute function public.touch_updated_at();
+
+
+-- ============================================================================
+-- BOOTSTRAP — run AFTER Jeff has logged in once via magic link.
+-- This claims 'jeff' as Jeff's team and makes him a commissioner.
+-- ============================================================================
+--
+-- insert into public.owners (id, team_id, is_commissioner)
+-- select id, 'jeff', true from auth.users where email = 'jwarshafsky@gmail.com'
+-- on conflict (id) do update
+--   set team_id = excluded.team_id, is_commissioner = excluded.is_commissioner;
+--
+-- Repeat for Dave once you have his email + first login:
+--
+-- insert into public.owners (id, team_id, is_commissioner)
+-- select id, 'dave', true from auth.users where email = 'DAVE_EMAIL_HERE'
+-- on conflict (id) do update
+--   set team_id = excluded.team_id, is_commissioner = excluded.is_commissioner;

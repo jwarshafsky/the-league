@@ -1,0 +1,11 @@
+# OS
+.DS_Store
+
+# Local secrets
+scripts/.env
+
+# Editor / tooling
+.claude/
+*.log
+.vscode/
+.idea/

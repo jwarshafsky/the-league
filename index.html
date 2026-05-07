@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#1e40af">
+  <title>Fantasy League Manager</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+  <header class="app-header">
+    <button class="back-btn" id="back-btn" onclick="goBack()">Back</button>
+    <h1 id="header-title">Fantasy League Manager</h1>
+  </header>
+
+  <nav class="nav-tabs">
+    <button class="nav-tab active" data-tab="eligible" onclick="switchTab('eligible')">Eligible Keepers</button>
+    <button class="nav-tab" data-tab="keepers" onclick="switchTab('keepers')">Keepers</button>
+    <button class="nav-tab" data-tab="rule5" onclick="switchTab('rule5')">Rule 5 Draft</button>
+    <button class="nav-tab" data-tab="draft" onclick="switchTab('draft')">Minors Draft</button>
+    <button class="nav-tab" data-tab="rosters" onclick="switchTab('rosters')">Minors Rosters</button>
+    <button class="nav-tab" data-tab="trades" onclick="switchTab('trades')">Trades</button>
+  </nav>
+
+  <main class="main-content" id="main-content">
+    <!-- Content rendered by JS -->
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+  <script src="js/supabase-client.js"></script>
+  <script src="js/data.js"></script>
+  <script src="js/player-stats-snapshot.js"></script>
+  <script src="js/espn-snapshot.js"></script>
+  <script src="js/prospects.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
