@@ -279,8 +279,11 @@ grant select, insert, update, delete on table
   public.keeper_selections,
   public.trades,
   public.league_state,
-  public.callup_overrides
+  public.callup_overrides,
+  public.invited_emails
 to authenticated;
+
+grant select, insert, update, delete on table public.invited_emails to service_role;
 
 grant execute on function public.is_commissioner() to authenticated;
 grant execute on function public.my_team_id() to authenticated;
