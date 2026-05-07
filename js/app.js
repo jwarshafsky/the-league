@@ -1611,8 +1611,8 @@ function renderMinorsEligibleTable(minors, teamId, teamSelections) {
               <td style="text-align:center">
                 <input type="checkbox" ${isRule5 ? 'checked' : ''} ${blockedAttr} onchange="toggleEligibleKeeper('${teamId}','${nameEsc}','rule5',this.checked)" style="width:18px;height:18px;cursor:${blockedCursor};accent-color:var(--accent)">
               </td>
-              <td style="text-align:center" title="${!isRule5 ? 'Player must be Rule 5 protected first' : ''}">
-                <input type="checkbox" ${isMinorKeeper ? 'checked' : ''} ${blocked || !isRule5 ? 'disabled' : ''} onchange="toggleEligibleKeeper('${teamId}','${nameEsc}','minorKeeper',this.checked)" style="width:18px;height:18px;cursor:${blocked || !isRule5 ? 'not-allowed' : 'pointer'};accent-color:var(--green);${!isRule5 && !blocked ? 'opacity:0.4' : ''}">
+              <td style="text-align:center">
+                <input type="checkbox" ${isMinorKeeper ? 'checked' : ''} ${blockedAttr} onchange="toggleEligibleKeeper('${teamId}','${nameEsc}','minorKeeper',this.checked)" style="width:18px;height:18px;cursor:${blockedCursor};accent-color:var(--green)">
               </td>
               <td style="text-align:center">
                 <input type="checkbox" ${isTradeBlock ? 'checked' : ''} ${blockedAttr} onchange="toggleEligibleKeeper('${teamId}','${nameEsc}','tradeBlock',this.checked)" style="width:18px;height:18px;cursor:${blockedCursor};accent-color:var(--orange)">
@@ -1622,7 +1622,7 @@ function renderMinorsEligibleTable(minors, teamId, teamSelections) {
         }).join("")}
       </tbody>
     </table>
-    <div style="font-size:0.72rem;color:var(--text-dim);margin-top:6px">* Keep requires Rule 5 protection first.</div>
+    <div style="font-size:0.72rem;color:var(--text-dim);margin-top:6px">* Pressing Keep auto-protects via Rule 5. Unchecking Rule 5 unkeeps.</div>
   `;
 }
 
@@ -1649,6 +1649,14 @@ function toggleEligibleKeeper(teamId, playerName, field, checked) {
       event.target.checked = false;
       return;
     }
+    // Cascade auto-checks Rule 5 — enforce its 25 cap too.
+    const wasAlreadyProtected = !!teamSel[playerName]?.rule5;
+    const currentRule5 = Object.values(teamSel).filter(s => s.rule5).length;
+    if (!wasAlreadyProtected && currentRule5 >= 25) {
+      alert("Maximum 25 Rule 5 protections. Deselect one before keeping a new player.");
+      event.target.checked = false;
+      return;
+    }
   }
   if (field === 'rule5' && checked) {
     const teamSel = selections[teamId];
@@ -1662,7 +1670,12 @@ function toggleEligibleKeeper(teamId, playerName, field, checked) {
 
   selections[teamId][playerName][field] = checked;
 
-  // If Rule 5 is unchecked, also un-keep the player (Keep requires Rule 5).
+  // Keep ↔ Rule 5 cascade for MILB:
+  //   - Pressing Keep auto-protects via Rule 5
+  //   - Unchecking Rule 5 also unkeeps
+  if (field === 'minorKeeper' && checked) {
+    selections[teamId][playerName].rule5 = true;
+  }
   if (field === 'rule5' && !checked) {
     selections[teamId][playerName].minorKeeper = false;
   }
@@ -2438,7 +2451,65 @@ function switchTab(tab) {
       title.textContent = "Rule 5 Draft";
       content.innerHTML = renderRule5View();
       break;
+    case "trophy-room":
+      currentView = "trophy-room";
+      title.textContent = "Trophy Room";
+      content.innerHTML = renderTrophyRoomView();
+      break;
   }
+}
+
+// --- Rendering: Trophy Room ---
+
+function renderTrophyRoomView() {
+  if (typeof HISTORY_SNAPSHOT === "undefined" || !HISTORY_SNAPSHOT.seasons?.length) {
+    return '<p style="color:var(--text-dim)">No history loaded. Run <code>python3 scripts/sync_history.py</code> to populate.</p>';
+  }
+  const intro = `
+    <p style="color:var(--text-dim);font-size:0.9rem;margin:0 0 18px">
+      Past league champions. 2020 omitted (COVID-shortened season didn't count).
+    </p>
+  `;
+  return intro + HISTORY_SNAPSHOT.seasons.map(s => renderTrophyRow(s)).join("");
+}
+
+function trophyTeamLabel(team) {
+  // Prefer the current local team name when we recognize the abbrev.
+  const localId = ESPN_ABBREV_TO_LOCAL[team.abbrev];
+  if (localId) {
+    const t = LEAGUE_DATA.teams.find(x => x.id === localId);
+    if (t) return t.name;
+  }
+  return team.name || team.abbrev || "?";
+}
+
+function renderTrophyRow(season) {
+  const ranks = { 1: [], 2: [], 3: [] };
+  for (const t of season.standings) {
+    if (ranks[t.rank]) ranks[t.rank].push(t);
+  }
+  const slot = (rank, color, accent, label, emoji) => {
+    const teams = ranks[rank];
+    return `
+      <div style="flex:1;min-width:140px;background:linear-gradient(135deg, ${color}1f 0%, ${color}0a 100%);border:1px solid ${color}55;border-radius:12px;padding:14px;text-align:center;box-shadow:inset 0 1px 0 ${color}22">
+        <div style="font-size:2.4rem;line-height:1">${emoji}</div>
+        <div style="font-size:0.65rem;font-weight:800;color:${accent};letter-spacing:0.12em;text-transform:uppercase;margin-top:6px">${label}</div>
+        <div style="margin-top:8px;color:var(--text-bright);font-weight:700;font-size:1rem;line-height:1.35">
+          ${teams.length ? teams.map(t => trophyTeamLabel(t)).join("<br>") : '<span style="color:var(--text-dim);font-weight:400">—</span>'}
+        </div>
+      </div>
+    `;
+  };
+  return `
+    <div style="margin-bottom:22px">
+      <div style="font-size:1.5rem;font-weight:800;color:var(--text-bright);margin-bottom:10px;letter-spacing:0.02em">${season.year}</div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap">
+        ${slot(1, '#FFD700', '#D4AF37', 'Champion', '🥇')}
+        ${slot(2, '#C0C0C0', '#A0A0A0', 'Runner-up', '🥈')}
+        ${slot(3, '#CD7F32', '#B5651D', 'Third', '🥉')}
+      </div>
+    </div>
+  `;
 }
 
 // --- Rule 5 Draft ---

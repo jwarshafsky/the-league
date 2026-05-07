@@ -8,7 +8,7 @@
   <meta name="theme-color" content="#1e40af">
   <title>Fantasy League Manager</title>
   <link rel="manifest" href="manifest.json">
-  <link rel="stylesheet" href="css/styles.css?v=6">
+  <link rel="stylesheet" href="css/styles.css?v=7">
 </head>
 <body>
   <header class="app-header">
@@ -23,6 +23,7 @@
     <button class="nav-tab" data-tab="draft" onclick="switchTab('draft')">Minors Draft</button>
     <button class="nav-tab" data-tab="rosters" onclick="switchTab('rosters')">Minors Rosters</button>
     <button class="nav-tab" data-tab="trades" onclick="switchTab('trades')">Trades</button>
+    <button class="nav-tab" data-tab="trophy-room" onclick="switchTab('trophy-room')">Trophy Room</button>
   </nav>
 
   <main class="main-content" id="main-content">
@@ -30,11 +31,12 @@
   </main>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
-  <script src="js/supabase-client.js?v=6"></script>
-  <script src="js/data.js?v=6"></script>
-  <script src="js/player-stats-snapshot.js?v=6"></script>
-  <script src="js/espn-snapshot.js?v=6"></script>
-  <script src="js/prospects.js?v=6"></script>
-  <script src="js/app.js?v=6"></script>
+  <script src="js/supabase-client.js?v=7"></script>
+  <script src="js/data.js?v=7"></script>
+  <script src="js/player-stats-snapshot.js?v=7"></script>
+  <script src="js/espn-snapshot.js?v=7"></script>
+  <script src="js/history-snapshot.js?v=7"></script>
+  <script src="js/prospects.js?v=7"></script>
+  <script src="js/app.js?v=7"></script>
 </body>
 </html>
