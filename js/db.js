@@ -279,10 +279,18 @@ async function setKeeperSelectionAsync(teamId, playerName, flags) {
 
 async function _saveLeagueStateAsync(key, state, cacheField) {
   const prev = _cache[cacheField];
-  _cache[cacheField] = state;
+  // The league_state.state column is NOT NULL, so a "reset" deletes the row
+  // rather than upserting null.
+  const isReset = state === null || state === undefined;
+  _cache[cacheField] = isReset ? null : state;
   try {
-    const { error } = await supabaseClient.from("league_state").upsert({ key, state });
-    if (error) throw error;
+    if (isReset) {
+      const { error } = await supabaseClient.from("league_state").delete().eq("key", key);
+      if (error) throw error;
+    } else {
+      const { error } = await supabaseClient.from("league_state").upsert({ key, state });
+      if (error) throw error;
+    }
   } catch (e) {
     _cache[cacheField] = prev;
     throw e;
