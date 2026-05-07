@@ -631,8 +631,9 @@ function parseDraftDollarsAmount(asset) {
 
 function getDraftDollarBalances() {
   const balances = Object.fromEntries(LEAGUE_DATA.teams.map(t => [t.id, 260]));
-  let trades = [];
-  try { trades = JSON.parse(localStorage.getItem("flm_trades") || "[]"); } catch {}
+  const trades = (typeof dbGetTrades === "function")
+    ? dbGetTrades()
+    : (() => { try { return JSON.parse(localStorage.getItem("flm_trades") || "[]"); } catch { return []; } })();
   for (const trade of trades) {
     const sides = [
       { receives: trade.team1Receives, fromTeam: trade.team2, toTeam: trade.team1 },
@@ -1077,17 +1078,8 @@ function findDraftPick(playerName) {
 }
 
 // --- Commissioner role + workaround override storage ---
-
-function isCommissioner() {
-  // For now, simple localStorage flag (default true since the only user is currently the commish).
-  // Once Supabase is wired up, this comes from auth role.
-  const v = localStorage.getItem("flm_is_commissioner");
-  return v === null ? true : v === "true";
-}
-
-function setCommissioner(flag) {
-  localStorage.setItem("flm_is_commissioner", flag ? "true" : "false");
-}
+// (isCommissioner() — the real, auth-based version — is defined later. The
+// legacy localStorage flag has been retired.)
 
 function getWorkaroundOverrides() {
   if (typeof dbGetWorkaroundOverrides === "function") return dbGetWorkaroundOverrides();
@@ -2013,8 +2005,9 @@ function parseMilbPickValue(value) {
 // Walk the trade log and apply chained transfers of the round-R pick that
 // originally belonged to baseOwner. Returns the final owner (== baseOwner if untouched).
 function getTradeLogOwner(round, draftYear, baseOwner) {
-  let trades = [];
-  try { trades = JSON.parse(localStorage.getItem("flm_trades") || "[]"); } catch {}
+  const trades = (typeof dbGetTrades === "function")
+    ? dbGetTrades()
+    : (() => { try { return JSON.parse(localStorage.getItem("flm_trades") || "[]"); } catch { return []; } })();
   let owner = baseOwner;
   for (const trade of trades) {
     const sides = [
@@ -2771,6 +2764,7 @@ function buildRule5Pool() {
     players.forEach(p => {
       const sel = teamSel[p.name] || {};
       if (sel.keeper || sel.rule5 || !p.canKeepNextYear) return;
+      if (p.yearsRemaining === 0) return;     // contract is up at end of season — not Rule 5 eligible
       pool.push({
         name: p.name,
         playerId: p.playerId,
@@ -2799,6 +2793,7 @@ function buildRule5Pool() {
       const yearsRemaining = p.yearAcquired < 2027
         ? Math.max(0, p.yearAcquired + 3 - CURRENT_SEASON)
         : null; // post-2027 is "call-up + 3" — open ended
+      if (yearsRemaining === 0) return;       // contract expires after this season
       pool.push({
         name: p.name,
         type: "minor",
