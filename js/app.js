@@ -242,7 +242,6 @@ function updateRostersView() {
       <div style="margin-bottom:24px">
         <h3 style="color:var(--text-bright);margin-bottom:8px;cursor:pointer" onclick="document.getElementById('rosters-team-select').value='${team.id}';updateRostersView()">
           ${team.name}
-          <span style="color:var(--purple);font-size:0.8rem">${team.callups.length} call-ups</span>
           <span style="color:var(--green);font-size:0.8rem">${team.minors.length} minors</span>
         </h3>
         ${renderMinorsCompactTable(team)}
@@ -270,14 +269,15 @@ function updateRostersView() {
 }
 
 function renderMinorsCompactTable(team) {
-  const allPlayers = [
-    ...team.callups.map(p => ({ ...p, rosterType: "callup" })),
-    ...team.minors.map(p => ({ ...p, rosterType: "minors" }))
-  ].sort((a, b) => lastName(a.name).localeCompare(lastName(b.name)));
+  // All Teams view: only show MILB-roster players. Callups (already on MLB
+  // roster) live on the Eligible Keepers / individual team pages instead.
+  const allPlayers = [...team.minors]
+    .map(p => ({ ...p, rosterType: "minors" }))
+    .sort((a, b) => lastName(a.name).localeCompare(lastName(b.name)));
   if (!allPlayers.length) return "<p style='color:var(--text-dim)'>No minor league players</p>";
   return `
     <table class="player-table">
-      <thead><tr><th>Player</th><th>Type</th><th>Drafted</th><th>Career</th></tr></thead>
+      <thead><tr><th>Player</th><th>Drafted</th><th>Career</th></tr></thead>
       <tbody>
         ${allPlayers.map(p => {
           let statClass = "";
@@ -285,7 +285,6 @@ function renderMinorsCompactTable(team) {
           else if ((p.statType === "AB" && p.careerStat >= 200) || (p.statType === "IP" && p.careerStat >= 50)) statClass = "stat-caution";
           return `<tr>
             <td><span class="player-name">${p.name}</span>${p.sentDown ? ' <span style="color:var(--red);font-size:0.65rem">$10</span>' : ''}</td>
-            <td><span class="roster-badge ${p.rosterType === 'callup' ? 'badge-callups' : 'badge-minors'}" style="font-size:0.65rem">${p.rosterType === 'callup' ? 'Called Up' : 'Minors'}</span></td>
             <td class="player-year">${p.yearAcquired}</td>
             <td class="${statClass}">${p.careerStat} ${p.statType}</td>
           </tr>`;
