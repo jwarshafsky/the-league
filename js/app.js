@@ -1223,12 +1223,14 @@ function getEligiblePlayers(team) {
             label: basis.source === "fa-after-drop" ? "Dropped → FA $6" : "FA — $6 next yr",
           };
         } else if (basis.contractType === "callup" && basis.price == null) {
-          // A callup without an MLB price still rides their MILB contract.
-          // Pre-2027 picks have a 4-yr MILB contract; once it ends, they're not keepable.
-          const milbYearsHeld = CURRENT_SEASON - basis.yearAcquired;
-          const milbMaxYears = basis.yearAcquired < 2027 ? 4 : 99;
+          // A callup without an MLB price still rides their MILB contract,
+          // which started when they were originally drafted to MiLB — not
+          // when they were called up.
+          const draftYear = basis.originalDraftYear ?? basis.yearAcquired;
+          const milbYearsHeld = CURRENT_SEASON - draftYear;
+          const milbMaxYears = draftYear < 2027 ? 4 : 99;
           const milbYrsAfterThisSeason = Math.max(0, milbMaxYears - milbYearsHeld - 1);
-          if (milbYrsAfterThisSeason > 0 || basis.yearAcquired >= 2027) {
+          if (milbYrsAfterThisSeason > 0 || draftYear >= 2027) {
             cs = {
               yearsKept: 0,
               yearsRemaining: basis.yearAcquired < 2027 ? milbYrsAfterThisSeason : null,
