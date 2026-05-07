@@ -1372,7 +1372,7 @@ function getEligiblePlayers(team) {
     });
   }
 
-  return players;
+  return players.map(applyPlayerOverride);
 }
 
 function renderEligibleKeepersView() {
@@ -1385,8 +1385,17 @@ function renderEligibleKeepersView() {
   } else {
     syncBanner = `<div style="font-size:0.8rem;color:var(--orange);margin-bottom:10px;padding:8px;background:rgba(249,115,22,0.1);border-radius:6px">No ESPN snapshot loaded. Run <code style="color:var(--accent)">bash scripts/sync_espn.sh</code> from the project root to populate eligible keepers from ESPN.</div>`;
   }
+  const editToggle = isCommissioner() ? `
+    <div style="margin-bottom:10px;display:flex;align-items:center;gap:10px">
+      <button onclick="toggleCommishEdit()" class="trade-btn ${isCommishEditMode() ? 'trade-btn-submit' : 'trade-btn-cancel'}" style="font-size:0.78rem">
+        ${isCommishEditMode() ? '✓ Commissioner Edit ON' : 'Commissioner Edit'}
+      </button>
+      ${isCommishEditMode() ? `<span style="color:var(--text-dim);font-size:0.75rem">Click ✏︎ on any row to override.</span>` : ""}
+    </div>
+  ` : "";
   return `
     ${syncBanner}
+    ${editToggle}
     <div class="calc-team-selector">
       <select id="eligible-team-select" onchange="updateEligibleKeepersView()">
         <option value="">Select a team...</option>
@@ -1396,6 +1405,111 @@ function renderEligibleKeepersView() {
     </div>
     <div id="eligible-keepers-content"></div>
   `;
+}
+
+// --- Commissioner edit overrides ---
+
+function isCommissioner() {
+  return !!(typeof currentOwner !== "undefined" && currentOwner && currentOwner.is_commissioner);
+}
+
+function isCommishEditMode() {
+  return localStorage.getItem("flm_commish_edit_mode") === "true";
+}
+
+function toggleCommishEdit() {
+  const next = !isCommishEditMode();
+  localStorage.setItem("flm_commish_edit_mode", next ? "true" : "false");
+  switchTab("eligible");
+}
+
+function getCommishOverrides() {
+  try { return JSON.parse(localStorage.getItem("flm_commish_overrides") || "{}"); }
+  catch { return {}; }
+}
+
+function saveCommishOverrides(o) {
+  localStorage.setItem("flm_commish_overrides", JSON.stringify(o));
+}
+
+function applyPlayerOverride(player) {
+  const o = getCommishOverrides()[player.name];
+  if (!o) return player;
+  const out = { ...player, _commishOverridden: true };
+  if (o.nextYearPrice !== undefined) out.nextYearPrice = o.nextYearPrice;
+  if (o.canKeepNextYear !== undefined) out.canKeepNextYear = o.canKeepNextYear;
+  if (o.contractLabel !== undefined) out.contractLabel = o.contractLabel;
+  if (o.contractStatus !== undefined) out.contractStatus = o.contractStatus;
+  return out;
+}
+
+function openCommishEditor(playerName) {
+  const overrides = getCommishOverrides();
+  const o = overrides[playerName] || {};
+  // Find a sample player object from any team to show defaults.
+  let baseline = null;
+  for (const team of LEAGUE_DATA.teams) {
+    const players = getEligiblePlayers(team);
+    const p = players.find(x => x.name === playerName);
+    if (p) { baseline = p; break; }
+  }
+  const existing = document.getElementById("commish-editor-modal");
+  if (existing) existing.remove();
+  const modal = document.createElement("div");
+  modal.id = "commish-editor-modal";
+  modal.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:1000;display:flex;align-items:center;justify-content:center;padding:16px";
+  modal.onclick = e => { if (e.target === modal) modal.remove(); };
+  const baseLine = (label, value) =>
+    `<div style="color:var(--text-dim);font-size:0.7rem;margin-top:2px">Default: ${value === undefined || value === null ? '—' : value}</div>`;
+  modal.innerHTML = `
+    <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:18px;max-width:440px;width:100%;box-shadow:var(--shadow)">
+      <h3 style="margin:0 0 12px;color:var(--text-bright)">Edit ${playerName}</h3>
+      <p style="color:var(--text-dim);font-size:0.78rem;margin:0 0 14px">Override any field below. Leave blank to keep the default.</p>
+      <label style="display:block;margin-bottom:10px">
+        <div style="color:var(--text-dim);font-size:0.8rem">2027 price ($)</div>
+        <input type="number" id="ce-nextprice" value="${o.nextYearPrice ?? ""}" placeholder="${baseline?.nextYearPrice ?? ""}" style="width:100%;background:var(--bg);color:var(--text);border:1px solid var(--border);padding:8px;border-radius:6px">
+        ${baseline ? baseLine("2027 price", baseline.nextYearPrice) : ""}
+      </label>
+      <label style="display:flex;align-items:center;gap:8px;margin-bottom:10px;color:var(--text)">
+        <input type="checkbox" id="ce-cankeep" ${(o.canKeepNextYear ?? baseline?.canKeepNextYear) ? "checked" : ""} style="width:16px;height:16px">
+        Can be kept next year
+      </label>
+      <label style="display:block;margin-bottom:10px">
+        <div style="color:var(--text-dim);font-size:0.8rem">Contract label</div>
+        <input type="text" id="ce-label" value="${o.contractLabel ?? ""}" placeholder="${baseline?.contractLabel ?? ""}" style="width:100%;background:var(--bg);color:var(--text);border:1px solid var(--border);padding:8px;border-radius:6px">
+        ${baseline ? baseLine("contract label", baseline.contractLabel) : ""}
+      </label>
+      <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap">
+        <button class="trade-btn trade-btn-submit" onclick="saveCommishEditor('${playerName.replace(/'/g, "\\'")}')">Save</button>
+        <button class="trade-btn trade-btn-cancel" onclick="document.getElementById('commish-editor-modal').remove()">Cancel</button>
+        ${overrides[playerName] ? `<button class="trade-btn" style="background:var(--red);margin-left:auto" onclick="clearCommishOverride('${playerName.replace(/'/g, "\\'")}')">Reset to Default</button>` : ""}
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+}
+
+function saveCommishEditor(playerName) {
+  const overrides = getCommishOverrides();
+  const np = document.getElementById("ce-nextprice").value;
+  const ck = document.getElementById("ce-cankeep").checked;
+  const lbl = document.getElementById("ce-label").value.trim();
+  const o = {};
+  if (np !== "") o.nextYearPrice = parseInt(np, 10);
+  o.canKeepNextYear = ck;
+  if (lbl) o.contractLabel = lbl;
+  overrides[playerName] = o;
+  saveCommishOverrides(overrides);
+  document.getElementById("commish-editor-modal").remove();
+  updateEligibleKeepersView();
+}
+
+function clearCommishOverride(playerName) {
+  const overrides = getCommishOverrides();
+  delete overrides[playerName];
+  saveCommishOverrides(overrides);
+  document.getElementById("commish-editor-modal").remove();
+  updateEligibleKeepersView();
 }
 
 function updateEligibleKeepersView() {
@@ -1584,10 +1698,16 @@ function renderEligibleTable(players, teamId, teamSelections) {
           const nameStyle = blocked ? 'color:var(--text-dim)' : '';
           const blockedAttr = blocked ? 'disabled' : '';
           const blockedCursor = blocked ? 'not-allowed' : 'pointer';
+          const editBtn = isCommishEditMode() && isCommissioner()
+            ? ` <button onclick="openCommishEditor('${nameEsc}')" title="Override" style="background:none;border:none;color:var(--accent);cursor:pointer;font-size:0.85rem;padding:0 4px">✏︎</button>`
+            : "";
+          const overrideBadge = p._commishOverridden
+            ? ` <span title="Commish override applied" style="font-size:0.62rem;color:var(--yellow);text-transform:uppercase;font-weight:700">edited</span>`
+            : "";
           return `
             <tr style="${rowBg}">
               <td>
-                <span class="player-name" style="${nameStyle}">${p.name}</span>${injuryTag}
+                <span class="player-name" style="${nameStyle}">${p.name}</span>${injuryTag}${overrideBadge}${editBtn}
                 ${workaroundBadgeHtml(p)}
               </td>
               <td>${sourceBadge(p)}</td>
