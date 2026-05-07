@@ -5,9 +5,10 @@ const SUPABASE_URL = "https://fbllfkrtjsihrkwnbmlw.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_aRh0MmQKrMCr8YnTwv9xIg_1F08WXf2";
 
 // Beta allowlist — only these emails can request a magic link until we open
-// it up league-wide. Add Dave's email when ready.
+// it up league-wide.
 const BETA_ALLOWLIST = [
   "jwarshafsky@gmail.com",
+  "davidwarsh@gmail.com",
 ];
 
 const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
