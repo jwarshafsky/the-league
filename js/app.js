@@ -1244,7 +1244,7 @@ function getEligiblePlayers(team) {
               nextYearPrice: null,
               canKeepNextYear: false,
               status: "final",
-              label: `Expires in ${CURRENT_SEASON}`,
+              label: "Final Year",
             };
           }
         } else {
@@ -1696,13 +1696,16 @@ function toggleEligibleKeeper(teamId, playerName, field, checked) {
 function renderAllTeamsEligibleSummary(container) {
   const selections = getEligibleKeeperSelections();
 
+  const dollarBalances = getDraftDollarBalances();
   container.innerHTML = LEAGUE_DATA.teams.map(team => {
     const players = getEligiblePlayers(team);
     const teamSel = selections[team.id] || {};
-    const keepers = players.filter(p => teamSel[p.name]?.keeper);
+    // Only count players who CAN actually be kept next year.
+    const keepers = players.filter(p => p.canKeepNextYear && teamSel[p.name]?.keeper);
     const tradeBlock = [...players, ...team.minors].filter(p => teamSel[p.name]?.tradeBlock);
     const rule5 = team.minors.filter(p => teamSel[p.name]?.rule5);
-    const keeperCost = keepers.reduce((s, p) => s + p.price, 0);
+    const keeperCost = keepers.reduce((s, p) => s + (p.nextYearPrice || 0), 0);
+    const draftDollars = dollarBalances[team.id] ?? 260;
 
     return `
       <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:14px;margin-bottom:10px;cursor:pointer" onclick="document.getElementById('eligible-team-select').value='${team.id}';updateEligibleKeepersView()">
@@ -1713,10 +1716,10 @@ function renderAllTeamsEligibleSummary(container) {
         ${keepers.length ? `
           <div style="font-size:0.82rem;color:var(--text-dim);margin-bottom:4px">
             <span style="color:var(--green);font-weight:600">$${keeperCost}</span> keeper cost
-            &middot; <span style="color:var(--accent);font-weight:600">$${260 - keeperCost}</span> draft budget
+            &middot; <span style="color:var(--accent);font-weight:600">$${draftDollars}</span> draft dollars
           </div>
           <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:6px">
-            ${keepers.map(p => `<span style="font-size:0.75rem;background:rgba(34,197,94,0.15);color:var(--green);padding:2px 8px;border-radius:10px">${p.name} $${p.price}</span>`).join('')}
+            ${keepers.map(p => `<span style="font-size:0.75rem;background:rgba(34,197,94,0.15);color:var(--green);padding:2px 8px;border-radius:10px">${p.name} ${p.nextYearPrice != null ? `$${p.nextYearPrice}` : '$TBD'}</span>`).join('')}
           </div>
         ` : '<div style="font-size:0.82rem;color:var(--text-dim)">No keepers selected yet</div>'}
         ${tradeBlock.length ? `
@@ -2465,17 +2468,17 @@ function renderTrophyRoomView() {
   if (typeof HISTORY_SNAPSHOT === "undefined" || !HISTORY_SNAPSHOT.seasons?.length) {
     return '<p style="color:var(--text-dim)">No history loaded. Run <code>python3 scripts/sync_history.py</code> to populate.</p>';
   }
-  const intro = `
-    <p style="color:var(--text-dim);font-size:0.9rem;margin:0 0 18px">
-      Past league champions. 2020 omitted (COVID-shortened season didn't count).
-    </p>
-  `;
-  return intro + HISTORY_SNAPSHOT.seasons.map(s => renderTrophyRow(s)).join("");
+  return HISTORY_SNAPSHOT.seasons.map(s => renderTrophyRow(s)).join("");
 }
 
+// Historical abbrevs that don't match the current ESPN_ABBREV_TO_LOCAL map.
+const HISTORICAL_ABBREV_OVERRIDES = {
+  "WAR": "dave",   // 2021 third place
+  "BUST": "matt",  // 2019 third place
+};
+
 function trophyTeamLabel(team) {
-  // Prefer the current local team name when we recognize the abbrev.
-  const localId = ESPN_ABBREV_TO_LOCAL[team.abbrev];
+  const localId = HISTORICAL_ABBREV_OVERRIDES[team.abbrev] || ESPN_ABBREV_TO_LOCAL[team.abbrev];
   if (localId) {
     const t = LEAGUE_DATA.teams.find(x => x.id === localId);
     if (t) return t.name;

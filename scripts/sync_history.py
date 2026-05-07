@@ -21,10 +21,23 @@ OUT_FILE = os.path.join(ROOT_DIR, "js", "history-snapshot.js")
 TMP_DIR = "/tmp/fantasy-league/js"
 
 # Years to fetch. 2020 is excluded (COVID-shortened, doesn't count).
-# Earlier years return empty teams arrays (data missing pre-2019).
-YEARS = [2019, 2021, 2022, 2023, 2024, 2025]
+# Earlier years (2017-2018) typically return 401/404 from the modern ESPN
+# API — fall back to MANUAL_HISTORY below for those years.
+YEARS = [2017, 2018, 2019, 2021, 2022, 2023, 2024, 2025]
 LEAGUE_ID = "1200"
 BASE_URL = "https://lm-api-reads.fantasy.espn.com/apis/v3/games/flb"
+
+# Manually-entered standings for years the API won't return. Format matches
+# what extract_standings() would produce. abbrev is what the trophy room maps
+# via HISTORICAL_ABBREV_OVERRIDES in app.js — keep them consistent.
+MANUAL_HISTORY = {
+    # 2017: [
+    #     {"rank": 1, "abbrev": "Jeff", "name": "Jeff"},
+    #     {"rank": 2, "abbrev": "...", "name": "..."},
+    #     {"rank": 3, "abbrev": "...", "name": "..."},
+    # ],
+    # 2018: [...],
+}
 
 
 def load_env():
@@ -88,6 +101,9 @@ def main():
         print(f"Fetching {year}...")
         data = fetch_year(year, swid, s2)
         standings = extract_standings(data)
+        if not standings and year in MANUAL_HISTORY:
+            standings = MANUAL_HISTORY[year]
+            print(f"  {year}: using MANUAL_HISTORY entry")
         if not standings:
             print(f"  {year}: no standings — skipping")
             continue
