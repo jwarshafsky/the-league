@@ -676,7 +676,7 @@ function renderTradeCard(trade, index) {
     <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:14px;margin-bottom:10px">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
         <span style="color:var(--text-dim);font-size:0.75rem">${trade.date}</span>
-        <button onclick="deleteTrade(${index})" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:0.75rem">Delete</button>
+        ${isCommissioner() ? `<button onclick="deleteTrade(${index})" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:0.75rem">Delete</button>` : ''}
       </div>
       <div style="display:grid;grid-template-columns:1fr auto 1fr;gap:10px;align-items:start">
         <div>
