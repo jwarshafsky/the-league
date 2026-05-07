@@ -1484,11 +1484,13 @@ function renderEligibleTable(players, teamId, teamSelections) {
           const isTradeBlock = sel.tradeBlock || false;
           const isRule5 = sel.rule5 || false;
           const priceCell = p.price != null ? `$${p.price}` : '<span style="color:var(--text-dim)">—</span>';
-          const nextPriceCell = p.nextYearPrice != null
-            ? `<span class="player-price">$${p.nextYearPrice}</span>`
-            : (p.contractType === 'callup'
-                ? `<button onclick="promptCallupPrice('${p.name.replace(/'/g,"\\'")}',${teamId ? `'${teamId}'` : 'null'})" style="background:none;border:1px dashed var(--border);color:var(--yellow);font-size:0.72rem;padding:2px 8px;border-radius:4px;cursor:pointer">Set price</button>`
-                : '<span style="color:var(--text-dim)">—</span>');
+          const nextPriceCell = !p.canKeepNextYear
+            ? '<span style="color:var(--text-dim)">—</span>'
+            : p.nextYearPrice != null
+              ? `<span class="player-price">$${p.nextYearPrice}</span>`
+              : (p.contractType === 'callup'
+                  ? `<button onclick="promptCallupPrice('${p.name.replace(/'/g,"\\'")}',${teamId ? `'${teamId}'` : 'null'})" style="background:none;border:1px dashed var(--border);color:var(--yellow);font-size:0.72rem;padding:2px 8px;border-radius:4px;cursor:pointer">Set price</button>`
+                  : '<span style="color:var(--text-dim)">—</span>');
           const injuryTag = p.injuryStatus && p.injuryStatus !== 'ACTIVE' && p.injuryStatus !== 'NORMAL'
             ? ` <span style="font-size:0.62rem;color:var(--red);text-transform:uppercase">${p.injuryStatus}</span>`
             : '';
@@ -1633,52 +1635,18 @@ function toggleEligibleKeeper(teamId, playerName, field, checked) {
   if (!selections[teamId]) selections[teamId] = {};
   if (!selections[teamId][playerName]) selections[teamId][playerName] = {};
 
-  // Caps per league rules: 8 ML keepers, 10 MiL keepers
-  if (field === 'keeper' && checked) {
-    const teamSel = selections[teamId];
-    const currentKeepers = Object.values(teamSel).filter(s => s.keeper).length;
-    if (currentKeepers >= 8) {
-      alert("Maximum 8 major-league keepers allowed. Deselect a keeper first.");
-      event.target.checked = false;
-      return;
-    }
-  }
-  if (field === 'minorKeeper' && checked) {
-    const teamSel = selections[teamId];
-    const currentMinorKeepers = Object.values(teamSel).filter(s => s.minorKeeper).length;
-    if (currentMinorKeepers >= 10) {
-      alert("Maximum 10 minor-league keepers allowed. Deselect one first.");
-      event.target.checked = false;
-      return;
-    }
-    // Cascade auto-checks Rule 5 — enforce its 25 cap too.
-    const wasAlreadyProtected = !!teamSel[playerName]?.rule5;
-    const currentRule5 = Object.values(teamSel).filter(s => s.rule5).length;
-    if (!wasAlreadyProtected && currentRule5 >= 25) {
-      alert("Maximum 25 Rule 5 protections. Deselect one before keeping a new player.");
-      event.target.checked = false;
-      return;
-    }
-  }
-  if (field === 'rule5' && checked) {
-    const teamSel = selections[teamId];
-    const currentRule5 = Object.values(teamSel).filter(s => s.rule5).length;
-    if (currentRule5 >= 25) {
-      alert("Maximum 25 Rule 5 protections allowed. Deselect one first.");
-      event.target.checked = false;
-      return;
-    }
-  }
-
   selections[teamId][playerName][field] = checked;
 
-  // Keep ↔ Rule 5 cascade for MILB:
-  //   - Pressing Keep auto-protects via Rule 5
-  //   - Unchecking Rule 5 also unkeeps
-  if (field === 'minorKeeper' && checked) {
+  // Keep ↔ Rule 5 cascade for ML and MILB alike:
+  //   - Pressing any Keep box auto-protects via Rule 5
+  //   - Unchecking Rule 5 also unkeeps (both ML and MILB)
+  // Caps (8 ML / 10 MiL / 25 Rule 5) are enforced visually (red number in
+  // the summary bar) rather than by blocking selections.
+  if ((field === 'keeper' || field === 'minorKeeper') && checked) {
     selections[teamId][playerName].rule5 = true;
   }
   if (field === 'rule5' && !checked) {
+    selections[teamId][playerName].keeper = false;
     selections[teamId][playerName].minorKeeper = false;
   }
 
