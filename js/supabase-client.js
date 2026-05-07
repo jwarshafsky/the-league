@@ -4,9 +4,9 @@
 const SUPABASE_URL = "https://fbllfkrtjsihrkwnbmlw.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_aRh0MmQKrMCr8YnTwv9xIg_1F08WXf2";
 
-// Beta allowlist — only these emails can request a magic link until we open
-// it up league-wide.
-const BETA_ALLOWLIST = [
+// Allowlist now lives in the invited_emails table (checked via RPC).
+// FALLBACK_ALLOWLIST covers the case where the network call fails.
+const FALLBACK_ALLOWLIST = [
   "jwarshafsky@gmail.com",
   "davidwarsh@gmail.com",
 ];
@@ -55,6 +55,15 @@ async function refreshAuthState() {
   if (session && session.user) {
     currentUser = { id: session.user.id, email: session.user.email };
     currentOwner = await fetchOwnerRow(currentUser.id);
+    // Auto-claim a pre-assigned team on first login.
+    if (!currentOwner) {
+      try {
+        const { error } = await supabaseClient.rpc("claim_invited_team");
+        if (!error) currentOwner = await fetchOwnerRow(currentUser.id);
+      } catch (e) {
+        console.warn("Auto-claim failed:", e);
+      }
+    }
   } else {
     currentUser = null;
     currentOwner = null;
@@ -62,10 +71,20 @@ async function refreshAuthState() {
   fireAuthChange();
 }
 
+async function isEmailAllowed(email) {
+  // Look up via Supabase RPC; fall back to the small hardcoded list if that fails.
+  try {
+    const { data, error } = await supabaseClient.rpc("is_email_invited", { email_to_check: email });
+    if (!error && typeof data === "boolean") return data;
+  } catch {}
+  return FALLBACK_ALLOWLIST.map(e => e.toLowerCase()).includes(email.toLowerCase());
+}
+
 async function sendMagicLink(email) {
   const cleaned = (email || "").trim().toLowerCase();
-  if (!BETA_ALLOWLIST.map(e => e.toLowerCase()).includes(cleaned)) {
-    throw new Error("This is a private beta. Your email isn't on the allowlist yet.");
+  const ok = await isEmailAllowed(cleaned);
+  if (!ok) {
+    throw new Error("This email isn't on the league invite list yet. Ask a commissioner to add you.");
   }
   const { error } = await supabaseClient.auth.signInWithOtp({
     email: cleaned,

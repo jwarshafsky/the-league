@@ -172,6 +172,77 @@ create policy "ls_write_admin"
 
 
 -- ============================================================================
+-- 5b. invited_emails — pre-assigned team mapping for new owners. When a
+--     freshly-signed-up user has an entry here, claim_invited_team() pre-fills
+--     their owners row so they skip the "Pick Your Team" screen.
+-- ============================================================================
+create table if not exists public.invited_emails (
+  email             text primary key,
+  team_id           text not null,
+  is_commissioner   boolean not null default false,
+  created_at        timestamptz not null default now()
+);
+
+alter table public.invited_emails enable row level security;
+
+drop policy if exists "ie_select_admin" on public.invited_emails;
+drop policy if exists "ie_write_admin"  on public.invited_emails;
+
+-- Only commissioners can read/write the table directly. The is_email_invited()
+-- function below exposes a boolean check to anon for the login screen.
+create policy "ie_select_admin"
+  on public.invited_emails for select
+  using (public.is_commissioner());
+
+create policy "ie_write_admin"
+  on public.invited_emails for all
+  using (public.is_commissioner())
+  with check (public.is_commissioner());
+
+-- Anon-callable: returns true if the supplied email is invited.
+create or replace function public.is_email_invited(email_to_check text)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists(
+    select 1 from public.invited_emails
+    where lower(email) = lower(email_to_check)
+  );
+$$;
+grant execute on function public.is_email_invited(text) to anon, authenticated;
+
+-- Authenticated user calls this once after login. If they don't already have
+-- an owners row AND there's an invited_emails entry matching their email,
+-- creates the owners row with the pre-mapped team_id + is_commissioner.
+create or replace function public.claim_invited_team()
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  caller_email text;
+  inv record;
+begin
+  if exists (select 1 from public.owners where id = auth.uid()) then
+    return;
+  end if;
+  select email into caller_email from auth.users where id = auth.uid();
+  if caller_email is null then return; end if;
+  select * into inv from public.invited_emails where lower(email) = lower(caller_email);
+  if inv.email is null then return; end if;
+  insert into public.owners (id, team_id, is_commissioner)
+  values (auth.uid(), inv.team_id, coalesce(inv.is_commissioner, false))
+  on conflict (id) do nothing;
+end;
+$$;
+grant execute on function public.claim_invited_team() to authenticated;
+
+
+-- ============================================================================
 -- 5. callup_overrides — replaces flm_callup_prices (commissioner-only writes)
 -- ============================================================================
 create table if not exists public.callup_overrides (
