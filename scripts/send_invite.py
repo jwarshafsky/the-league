@@ -29,6 +29,8 @@ import urllib.request
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 ENV_FILE = os.path.join(ROOT, "scripts", ".env")
 SUPABASE_URL = "https://fbllfkrtjsihrkwnbmlw.supabase.co"
+SUPABASE_ANON_KEY = "sb_publishable_aRh0MmQKrMCr8YnTwv9xIg_1F08WXf2"
+APP_URL = "https://jwarshafsky.github.io/the-league/"
 
 
 def load_env():
@@ -95,9 +97,29 @@ def main():
     )
     print("  ✓ Recorded in invited_emails")
 
-    # 2. Send the magic-link invite via Auth admin API.
-    http_post("/auth/v1/invite", {"email": email}, key)
-    print(f"  ✓ Magic-link invite emailed to {email}")
+    # 2. Send a magic link. Try the admin invite endpoint first (preferred for
+    #    new users — uses the "Invite user" template). Fall back to the OTP
+    #    endpoint for users that already exist in auth.users.
+    sent_via = None
+    try:
+        http_post(
+            "/auth/v1/invite",
+            {"email": email, "data": {"redirect_to": APP_URL}},
+            key,
+        )
+        sent_via = "invite"
+    except RuntimeError as e:
+        if "email_exists" in str(e) or "already been registered" in str(e):
+            http_post(
+                "/auth/v1/otp",
+                {"email": email, "create_user": True,
+                 "options": {"emailRedirectTo": APP_URL}},
+                SUPABASE_ANON_KEY,
+            )
+            sent_via = "otp (existing user)"
+        else:
+            raise
+    print(f"  ✓ Magic-link emailed to {email} (via {sent_via})")
     print()
     print("They should check their inbox (including spam) and click the link.")
     print("On first login they'll land directly in their team — no Pick Your Team screen.")
