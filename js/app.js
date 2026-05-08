@@ -196,7 +196,7 @@ function renderMinorsKeepersTable(minors) {
           else if ((p.statType === "AB" && p.careerStat >= 200) || (p.statType === "IP" && p.careerStat >= 50)) statClass = "stat-caution";
           return `
             <tr>
-              <td><span class="player-name">${p.name}</span>${p.sentDown ? ' <span style="color:var(--red);font-size:0.65rem;font-weight:700">$10 fee</span>' : ''}</td>
+              <td><span class="player-name">${escapeHtml(p.name)}</span>${p.sentDown ? ' <span style="color:var(--red);font-size:0.65rem;font-weight:700">$10 fee</span>' : ''}</td>
               <td class="player-year">${p.yearAcquired}</td>
               <td class="${statClass}">${p.careerStat} ${p.statType}</td>
               <td><span style="color:var(--text-dim);font-size:0.8rem">${ms.contractNote}${ms.yearsRemaining !== null ? ` (${ms.yearsRemaining} yrs)` : ""}</span>${ms.eligibilityWarning ? ` <span style="color:var(--orange);font-size:0.75rem">${ms.eligibilityWarning}</span>` : ""}</td>
@@ -359,7 +359,7 @@ function renderMinorsCompactTable(team) {
           if ((p.statType === "AB" && p.careerStat >= 300) || (p.statType === "IP" && p.careerStat >= 75)) statClass = "stat-warning";
           else if ((p.statType === "AB" && p.careerStat >= 200) || (p.statType === "IP" && p.careerStat >= 50)) statClass = "stat-caution";
           return `<tr>
-            <td><span class="player-name">${p.name}</span>${p.sentDown ? ' <span style="color:var(--red);font-size:0.65rem">$10</span>' : ''}</td>
+            <td><span class="player-name">${escapeHtml(p.name)}</span>${p.sentDown ? ' <span style="color:var(--red);font-size:0.65rem">$10</span>' : ''}</td>
             <td class="player-year">${p.yearAcquired}</td>
             <td class="${statClass}">${p.careerStat} ${p.statType}</td>
           </tr>`;
@@ -386,12 +386,12 @@ function renderMajorsTable(players) {
           return `
             <tr>
               <td>
-                <span class="player-name">${p.name}</span>
+                <span class="player-name">${escapeHtml(p.name)}</span>
                 ${p.fromMinors ? '<span class="from-minors-tag">MiLB</span>' : ""}
               </td>
               <td class="player-price">$${p.price}</td>
               <td class="player-year">${p.yearAcquired}</td>
-              <td><span class="contract-tag contract-${cs.status}">${cs.label}</span></td>
+              <td><span class="contract-tag contract-${escapeHtml(cs.status)}">${escapeHtml(cs.label)}</span></td>
               <td>${cs.canKeepNextYear ? `<span class="player-price">$${cs.nextYearPrice}</span>` : '<span style="color:var(--text-dim)">—</span>'}</td>
             </tr>
           `;
@@ -416,7 +416,7 @@ function renderCallupsTable(players) {
           else if ((p.statType === "AB" && p.careerStat >= 200) || (p.statType === "IP" && p.careerStat >= 50)) statClass = "stat-caution";
           return `
             <tr>
-              <td><span class="player-name">${p.name}</span></td>
+              <td><span class="player-name">${escapeHtml(p.name)}</span></td>
               <td class="player-year">${p.yearAcquired}</td>
               <td class="${statClass}">${statDisplay}</td>
               <td><span style="color:var(--text-dim);font-size:0.8rem">${formatCallupStatus(p, ms)}</span></td>
@@ -465,7 +465,7 @@ function renderMinorsTable(players) {
           else if ((p.statType === "AB" && p.careerStat >= 200) || (p.statType === "IP" && p.careerStat >= 50)) statClass = "stat-caution";
           return `
             <tr>
-              <td><span class="player-name">${p.name}</span>${p.sentDown ? ' <span style="color:var(--red);font-size:0.65rem;font-weight:700">$10 fee</span>' : ''}</td>
+              <td><span class="player-name">${escapeHtml(p.name)}</span>${p.sentDown ? ' <span style="color:var(--red);font-size:0.65rem;font-weight:700">$10 fee</span>' : ''}</td>
               <td class="player-year">${p.yearAcquired}</td>
               <td class="${statClass}">${statDisplay}</td>
               <td><span style="color:var(--text-dim);font-size:0.8rem">${ms.yearsRemaining !== null ? ms.yearsRemaining : '—'}</span></td>
@@ -550,7 +550,7 @@ function updateKeeperCalc() {
           <tbody>
             ${keepableNextYear.map(p => `
               <tr>
-                <td><span class="player-name">${p.name}</span>${p.fromMinors ? '<span class="from-minors-tag">MiLB</span>' : ""}</td>
+                <td><span class="player-name">${escapeHtml(p.name)}</span>${p.fromMinors ? '<span class="from-minors-tag">MiLB</span>' : ""}</td>
                 <td class="player-price">$${p.price}</td>
                 <td style="color:var(--yellow);font-weight:700">$${p.contract.nextYearPrice}</td>
                 <td><span class="contract-tag contract-${p.contract.yearsRemaining === 1 ? 'expiring' : 'mid'}">${p.contract.yearsRemaining} yr${p.contract.yearsRemaining > 1 ? 's' : ''}</span></td>
@@ -574,7 +574,7 @@ function updateKeeperCalc() {
           <tbody>
             ${notKeepable.map(p => `
               <tr>
-                <td><span class="player-name">${p.name}</span></td>
+                <td><span class="player-name">${escapeHtml(p.name)}</span></td>
                 <td class="player-price">$${p.price}</td>
                 <td><span class="contract-tag contract-final">Contract Expired</span></td>
               </tr>
@@ -693,7 +693,7 @@ function renderTradeCard(trade, index) {
           ${renderTradeAssets(trade.team2Receives)}
         </div>
       </div>
-      ${trade.notes ? `<div style="margin-top:8px;color:var(--text-dim);font-size:0.8rem;font-style:italic">${trade.notes}</div>` : ''}
+      ${trade.notes ? `<div style="margin-top:8px;color:var(--text-dim);font-size:0.8rem;font-style:italic">${escapeHtml(trade.notes)}</div>` : ''}
     </div>
   `;
 }
@@ -712,7 +712,7 @@ function renderTradeAssets(assets) {
     }
     const typeLabel = { major: 'MLB', minor: 'MiLB', callup: 'MiLB', draft_dollars: 'Draft $', faab: 'FAAB $', milb_pick: 'Pick' }[a.type] || '';
     return `<div style="font-size:0.85rem;margin-bottom:3px">
-      <span style="color:${color};font-weight:600">${a.value}</span>
+      <span style="color:${color};font-weight:600">${escapeHtml(a.value)}</span>
       <span style="color:var(--text-dim);font-size:0.7rem;margin-left:4px">${typeLabel}</span>
     </div>`;
   }).join('');
@@ -795,11 +795,11 @@ function renderTeamAssetPicker(selectId, containerId, prefix) {
   const majorOptions = mlbRoster.map(p => {
     const price = priceByName[p.name];
     const label = price !== undefined ? `${p.name} ($${price})` : p.name;
-    return `<option value="major:${p.name}">${label}</option>`;
+    return `<option value="major:${escapeHtml(p.name)}">${escapeHtml(label)}</option>`;
   }).join("");
   const minorOptions = [...team.minors]
     .sort((a, b) => lastName(a.name).localeCompare(lastName(b.name)))
-    .map(p => `<option value="minor:${p.name}">${p.name}</option>`)
+    .map(p => `<option value="minor:${escapeHtml(p.name)}">${escapeHtml(p.name)}</option>`)
     .join("");
 
   // Compute the picks this team currently owns (after applying base order +
@@ -940,7 +940,7 @@ function renderAssetList(prefix) {
   container.innerHTML = tradeAssets[prefix].map((a, i) => {
     const typeLabel = { major: 'MLB', minor: 'MiLB', callup: 'MiLB', draft_dollars: '$', faab: 'FAAB', milb_pick: 'Pick' }[a.type];
     return `<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 8px;background:var(--bg);border-radius:4px;margin-bottom:3px;font-size:0.82rem">
-      <span><span style="color:var(--text-dim);font-size:0.7rem">${typeLabel}</span> ${a.value}</span>
+      <span><span style="color:var(--text-dim);font-size:0.7rem">${typeLabel}</span> ${escapeHtml(a.value)}</span>
       <button onclick="removeTradeAsset('${prefix}',${i})" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:0.8rem">x</button>
     </div>`;
   }).join("");
@@ -1511,10 +1511,10 @@ function openCommishEditor(playerName) {
   modal.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:1000;display:flex;align-items:center;justify-content:center;padding:16px";
   modal.onclick = e => { if (e.target === modal) modal.remove(); };
   const baseLine = (label, value) =>
-    `<div style="color:var(--text-dim);font-size:0.7rem;margin-top:2px">Default: ${value === undefined || value === null ? '—' : value}</div>`;
+    `<div style="color:var(--text-dim);font-size:0.7rem;margin-top:2px">Default: ${value === undefined || value === null ? '—' : escapeHtml(value)}</div>`;
   modal.innerHTML = `
     <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:18px;max-width:440px;width:100%;box-shadow:var(--shadow)">
-      <h3 style="margin:0 0 12px;color:var(--text-bright)">Edit ${playerName}</h3>
+      <h3 style="margin:0 0 12px;color:var(--text-bright)">Edit ${escapeHtml(playerName)}</h3>
       <p style="color:var(--text-dim);font-size:0.78rem;margin:0 0 14px">Override any field below. Leave blank to keep the default.</p>
       <label style="display:block;margin-bottom:10px">
         <div style="color:var(--text-dim);font-size:0.8rem">2027 price ($)</div>
@@ -1527,13 +1527,13 @@ function openCommishEditor(playerName) {
       </label>
       <label style="display:block;margin-bottom:10px">
         <div style="color:var(--text-dim);font-size:0.8rem">Contract label</div>
-        <input type="text" id="ce-label" value="${o.contractLabel ?? ""}" placeholder="${baseline?.contractLabel ?? ""}" style="width:100%;background:var(--bg);color:var(--text);border:1px solid var(--border);padding:8px;border-radius:6px">
+        <input type="text" id="ce-label" value="${escapeHtml(o.contractLabel ?? "")}" placeholder="${escapeHtml(baseline?.contractLabel ?? "")}" style="width:100%;background:var(--bg);color:var(--text);border:1px solid var(--border);padding:8px;border-radius:6px">
         ${baseline ? baseLine("contract label", baseline.contractLabel) : ""}
       </label>
       <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap">
-        <button class="trade-btn trade-btn-submit" onclick="saveCommishEditor('${playerName.replace(/'/g, "\\'")}')">Save</button>
+        <button class="trade-btn trade-btn-submit" onclick="saveCommishEditor('${escapeJsString(playerName)}')">Save</button>
         <button class="trade-btn trade-btn-cancel" onclick="document.getElementById('commish-editor-modal').remove()">Cancel</button>
-        ${overrides[playerName] ? `<button class="trade-btn" style="background:var(--red);margin-left:auto" onclick="clearCommishOverride('${playerName.replace(/'/g, "\\'")}')">Reset to Default</button>` : ""}
+        ${overrides[playerName] ? `<button class="trade-btn" style="background:var(--red);margin-left:auto" onclick="clearCommishOverride('${escapeJsString(playerName)}')">Reset to Default</button>` : ""}
       </div>
     </div>
   `;
@@ -1745,10 +1745,10 @@ function renderEligibleTable(players, teamId, teamSelections) {
             : p.nextYearPrice != null
               ? `<span class="player-price">$${p.nextYearPrice}</span>`
               : (p.contractType === 'callup'
-                  ? `<button onclick="promptCallupPrice('${p.name.replace(/'/g,"\\'")}',${teamId ? `'${teamId}'` : 'null'})" style="background:none;border:1px dashed var(--border);color:var(--yellow);font-size:0.72rem;padding:2px 8px;border-radius:4px;cursor:pointer">Set price</button>`
+                  ? `<button onclick="promptCallupPrice('${escapeJsString(p.name)}',${teamId ? `'${escapeJsString(teamId)}'` : 'null'})" style="background:none;border:1px dashed var(--border);color:var(--yellow);font-size:0.72rem;padding:2px 8px;border-radius:4px;cursor:pointer">Set price</button>`
                   : '<span style="color:var(--text-dim)">—</span>');
           const injuryTag = p.injuryStatus && p.injuryStatus !== 'ACTIVE' && p.injuryStatus !== 'NORMAL'
-            ? ` <span style="font-size:0.62rem;color:var(--red);text-transform:uppercase">${p.injuryStatus}</span>`
+            ? ` <span style="font-size:0.62rem;color:var(--red);text-transform:uppercase">${escapeHtml(p.injuryStatus)}</span>`
             : '';
           const rowBg = p.workaround && p.workaround.needsConfirmation
             ? 'background:rgba(249,115,22,0.12)'
@@ -1756,7 +1756,7 @@ function renderEligibleTable(players, teamId, teamSelections) {
                 : isRule5 ? 'background:rgba(59,130,246,0.08)'
                 : isTradeBlock ? 'background:rgba(249,115,22,0.08)'
                 : '');
-          const nameEsc = p.name.replace(/'/g, "\\'");
+          const nameEsc = escapeJsString(p.name);
           const blocked = !p.canKeepNextYear || viewOnly;
           const nameStyle = blocked ? 'color:var(--text-dim)' : '';
           const blockedAttr = blocked ? 'disabled' : '';
@@ -1770,13 +1770,13 @@ function renderEligibleTable(players, teamId, teamSelections) {
           return `
             <tr style="${rowBg}">
               <td>
-                <span class="player-name" style="${nameStyle}">${p.name}</span>${injuryTag}${overrideBadge}${editBtn}
+                <span class="player-name" style="${nameStyle}">${escapeHtml(p.name)}</span>${injuryTag}${overrideBadge}${editBtn}
                 ${workaroundBadgeHtml(p)}
               </td>
               <td>${sourceBadge(p)}</td>
               <td>${priceCell}</td>
               <td>${nextPriceCell}</td>
-              <td><span class="contract-tag contract-${p.contractStatus}">${p.contractLabel}</span></td>
+              <td><span class="contract-tag contract-${escapeHtml(p.contractStatus)}">${escapeHtml(p.contractLabel)}</span></td>
               <td style="text-align:center">
                 <input type="checkbox" ${isRule5 ? 'checked' : ''} ${blockedAttr} onchange="toggleEligibleKeeper('${teamId}','${nameEsc}','rule5',this.checked)" style="width:18px;height:18px;cursor:${blockedCursor};accent-color:var(--accent)">
               </td>
@@ -1842,7 +1842,7 @@ function renderMinorsEligibleTable(minors, teamId, teamSelections) {
             : isRule5 ? 'background:rgba(59,130,246,0.08)'
             : isTradeBlock ? 'background:rgba(249,115,22,0.08)'
             : '';
-          const nameEsc = p.name.replace(/'/g, "\\'");
+          const nameEsc = escapeJsString(p.name);
           // Contract reflects raw years left. "Must Call Up" is shown as a
           // separate badge next to the player's career stat.
           const ms = getMinorLeagueContractStatus(p, CURRENT_SEASON);
@@ -1864,11 +1864,11 @@ function renderMinorsEligibleTable(minors, teamId, teamSelections) {
           return `
             <tr style="${rowBg}">
               <td>
-                <span class="player-name" style="${nameStyle}">${p.name}</span>
+                <span class="player-name" style="${nameStyle}">${escapeHtml(p.name)}</span>
                 ${p.sentDown ? ' <span style="color:var(--red);font-size:0.65rem;font-weight:700">$10 fee</span>' : ''}
                 <div style="font-size:0.7rem;color:var(--text-dim);margin-top:2px">
                   <span class="${statClass}">${p.careerStat} ${p.statType}</span>
-                  ${ms.eligibilityWarning ? ` <span style="color:var(--orange);font-weight:700;margin-left:4px">${ms.eligibilityWarning}</span>` : ''}
+                  ${ms.eligibilityWarning ? ` <span style="color:var(--orange);font-weight:700;margin-left:4px">${escapeHtml(ms.eligibilityWarning)}</span>` : ''}
                 </div>
               </td>
               <td>${sourceTag}</td>
@@ -1983,13 +1983,13 @@ function renderAllTeamsEligibleSummary(container) {
           </div>
           <div style="display:flex;flex-wrap:wrap;gap:4px;align-items:center;margin-top:6px">
             <span style="font-size:0.7rem;color:var(--text-dim);font-weight:700;text-transform:uppercase;letter-spacing:0.05em">Keepers:</span>
-            ${keepers.map(p => `<span style="font-size:0.75rem;background:rgba(34,197,94,0.15);color:var(--green);padding:2px 8px;border-radius:10px">${p.name} ${p.nextYearPrice != null ? `$${p.nextYearPrice}` : '$TBD'}</span>`).join('')}
+            ${keepers.map(p => `<span style="font-size:0.75rem;background:rgba(34,197,94,0.15);color:var(--green);padding:2px 8px;border-radius:10px">${escapeHtml(p.name)} ${p.nextYearPrice != null ? `$${p.nextYearPrice}` : '$TBD'}</span>`).join('')}
           </div>
         ` : '<div style="font-size:0.82rem;color:var(--text-dim)">No keepers selected yet</div>'}
         ${tradeBlock.length ? `
           <div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:4px;align-items:center">
             <span style="font-size:0.7rem;color:var(--text-dim);font-weight:700;text-transform:uppercase;letter-spacing:0.05em">Trade Block:</span>
-            ${tradeBlock.map(p => `<span style="font-size:0.72rem;background:rgba(249,115,22,0.15);color:var(--orange);padding:2px 7px;border-radius:10px">${p.name}</span>`).join('')}
+            ${tradeBlock.map(p => `<span style="font-size:0.72rem;background:rgba(249,115,22,0.15);color:var(--orange);padding:2px 7px;border-radius:10px">${escapeHtml(p.name)}</span>`).join('')}
           </div>
         ` : ''}
       </div>
@@ -2166,7 +2166,7 @@ async function kickOffProspectRefresh() {
       if (active === "board") showDraftBoard();
     }
   } catch (e) {
-    if (el) el.innerHTML = `<span style="color:var(--red)">Failed to load prospects: ${String(e.message || e)}</span> <button onclick="kickOffProspectRefresh()" style="background:none;border:none;color:var(--accent);cursor:pointer;text-decoration:underline;font-size:0.75rem">Retry</button>`;
+    if (el) el.innerHTML = `<span style="color:var(--red)">Failed to load prospects: ${escapeHtml(String(e.message || e))}</span> <button onclick="kickOffProspectRefresh()" style="background:none;border:none;color:var(--accent);cursor:pointer;text-decoration:underline;font-size:0.75rem">Retry</button>`;
   }
 }
 
@@ -2315,6 +2315,10 @@ function renderPassedPicksSection(draft) {
 
 function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
+}
+
+function escapeJsString(s) {
+  return String(s).replace(/\\/g, "\\\\").replace(/'/g, "\\'").replace(/"/g, '\\"').replace(/</g, "\\x3c").replace(/>/g, "\\x3e").replace(/\n/g, "\\n").replace(/\r/g, "\\r");
 }
 
 function openPickEditor(round, pickInRound) {
@@ -2804,7 +2808,7 @@ function describeActivity(a) {
   const actor = `<strong style="color:var(--text-bright)">${_teamName(a.actor_team_id)}</strong>`;
   const target = `<strong style="color:var(--text-bright)">${_teamName(a.target_team_id)}</strong>`;
   const p = a.payload || {};
-  const player = p.player_name ? `<span style="color:var(--accent);font-weight:600">${p.player_name}</span>` : "";
+  const player = p.player_name ? `<span style="color:var(--accent);font-weight:600">${escapeHtml(p.player_name)}</span>` : "";
   switch (a.type) {
     case "keeper_added":
       return `${actor} tagged ${player} as a keeper${p.next_year_price != null ? ` <span style="color:var(--text-dim)">($${p.next_year_price})</span>` : ""}`;
@@ -2841,9 +2845,9 @@ function describeActivity(a) {
     case "rule5_draft_reset":
       return `${actor} reset the Rule 5 Draft`;
     case "callup_price_set":
-      return `${actor} set ${player}'s call-up price to <strong>$${p.price}</strong> (${p.year})`;
+      return `${actor} set ${player}'s call-up price to <strong>$${escapeHtml(p.price)}</strong> (${escapeHtml(p.year)})`;
     case "commish_override":
-      return `${actor} overrode ${player}'s contract <span style="color:var(--text-dim)">(${(p.fields || []).join(", ")})</span>`;
+      return `${actor} overrode ${player}'s contract <span style="color:var(--text-dim)">(${(p.fields || []).map(f => escapeHtml(f)).join(", ")})</span>`;
     default:
       return `${actor} did <code>${a.type}</code>`;
   }
@@ -2851,9 +2855,9 @@ function describeActivity(a) {
 
 function formatTradeAsset(asset) {
   if (!asset) return "?";
-  if (asset.type === "milb_pick") return `<span style="color:var(--accent)">${asset.value || "MiLB pick"}</span>`;
-  if (asset.type === "draft_dollars" || asset.type === "faab") return asset.value;
-  return `<span style="color:var(--accent)">${asset.value || asset.name || "?"}</span>`;
+  if (asset.type === "milb_pick") return `<span style="color:var(--accent)">${escapeHtml(asset.value || "MiLB pick")}</span>`;
+  if (asset.type === "draft_dollars" || asset.type === "faab") return escapeHtml(asset.value);
+  return `<span style="color:var(--accent)">${escapeHtml(asset.value || asset.name || "?")}</span>`;
 }
 
 // --- Rendering: Trophy Room ---
@@ -3191,7 +3195,7 @@ function renderRule5View() {
       <tbody>
         ${[...remaining].sort((a, b) => lastName(a.name).localeCompare(lastName(b.name))).map(p => `
           <tr>
-            <td><span class="player-name">${p.name}</span></td>
+            <td><span class="player-name">${escapeHtml(p.name)}</span></td>
             <td><span class="team-link" style="color:var(--accent)">${p.originTeamName}</span></td>
             <td>${p.yearsRemaining != null ? `<span class="contract-tag contract-${p.yearsRemaining === 0 ? 'final' : p.yearsRemaining === 1 ? 'expiring' : 'mid'}">${p.yearsRemaining} yr${p.yearsRemaining === 1 ? '' : 's'}</span>` : '<span style="color:var(--text-dim)">—</span>'}</td>
             <td>${
