@@ -1871,78 +1871,40 @@ function getEligiblePlayers(team) {
   return players.map(applyPlayerOverride);
 }
 
-function getKeeperDeadlineMs() {
-  const dl = (typeof dbGetKeeperDeadline === "function") ? dbGetKeeperDeadline() : null;
-  if (!dl || !dl.at) return 0;
-  const ms = new Date(dl.at).getTime();
-  return Number.isFinite(ms) ? ms : 0;
-}
 function isKeeperLockoutActive() {
-  const ms = getKeeperDeadlineMs();
-  return ms > 0 && Date.now() >= ms;
+  const lock = (typeof dbGetKeeperDeadline === "function") ? dbGetKeeperDeadline() : null;
+  return !!(lock && lock.locked);
 }
-function renderKeeperDeadlineBanner() {
-  const ms = getKeeperDeadlineMs();
-  if (!ms) return "";
-  const fmt = new Date(ms).toLocaleString("en-US", { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
-  if (isKeeperLockoutActive()) {
-    return `<div style="background:rgba(239,68,68,0.12);border:1px solid rgba(239,68,68,0.4);color:var(--red);padding:10px 12px;border-radius:6px;font-size:0.85rem;margin-bottom:10px">
-      <strong>Keepers locked.</strong> Deadline was ${escapeHtml(fmt)}. Only commissioners can change keeper selections now.
-    </div>`;
-  }
-  const remainingMs = ms - Date.now();
-  const days = Math.floor(remainingMs / 86400000);
-  const hours = Math.floor((remainingMs % 86400000) / 3600000);
-  const eta = days > 0 ? `${days}d ${hours}h` : `${hours}h`;
-  return `<div style="background:rgba(245,158,11,0.10);border:1px solid rgba(245,158,11,0.4);color:var(--yellow);padding:10px 12px;border-radius:6px;font-size:0.85rem;margin-bottom:10px">
-    <strong>Keeper deadline:</strong> ${escapeHtml(fmt)} <span style="color:var(--text-dim)">(in ${eta})</span>
+function renderKeeperLockBanner() {
+  if (!isKeeperLockoutActive()) return "";
+  return `<div style="background:rgba(239,68,68,0.12);border:1px solid rgba(239,68,68,0.4);color:var(--red);padding:10px 12px;border-radius:6px;font-size:0.85rem;margin-bottom:10px">
+    <strong>Keepers locked.</strong> Only commissioners can change keeper selections right now.
   </div>`;
 }
-function renderKeeperDeadlineCommishControls() {
+function renderKeeperLockCommishControls() {
   if (!isCommissioner()) return "";
-  const dl = (typeof dbGetKeeperDeadline === "function") ? dbGetKeeperDeadline() : null;
-  // datetime-local needs YYYY-MM-DDTHH:MM in local time, no offset.
-  let value = "";
-  if (dl?.at) {
-    const d = new Date(dl.at);
-    const pad = (n) => String(n).padStart(2, "0");
-    value = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-  }
+  const locked = isKeeperLockoutActive();
   return `
-    <div style="margin-bottom:10px;padding:10px;background:var(--bg-card);border:1px solid var(--border);border-radius:6px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:0.82rem">
-      <span style="color:var(--text-dim)">Deadline:</span>
-      <input type="datetime-local" id="keeper-deadline-input" value="${escapeHtml(value)}"
-        style="background:var(--bg);color:var(--text);border:1px solid var(--border);padding:5px 8px;border-radius:4px;font-size:0.82rem">
-      <button class="trade-btn" onclick="commitKeeperDeadline()" style="font-size:0.75rem;padding:4px 10px">Save</button>
-      ${dl?.at ? `<button class="trade-btn trade-btn-cancel" onclick="clearKeeperDeadline()" style="font-size:0.75rem;padding:4px 10px">Clear</button>` : ""}
+    <div style="margin-bottom:10px">
+      <button class="trade-btn ${locked ? '' : 'trade-btn-cancel'}" onclick="toggleKeeperLock()"
+        style="font-size:0.78rem;${locked ? 'background:var(--red)' : ''}">
+        ${locked ? '🔒 Keepers Locked — Click to Unlock' : 'Lock Keepers (commish only)'}
+      </button>
     </div>
   `;
 }
-async function commitKeeperDeadline() {
-  const el = document.getElementById("keeper-deadline-input");
-  if (!el || !el.value) { alert("Pick a date and time"); return; }
-  // datetime-local value is local-time. Convert to ISO via Date constructor.
-  const iso = new Date(el.value).toISOString();
+async function toggleKeeperLock() {
+  const wasLocked = isKeeperLockoutActive();
+  if (wasLocked && !confirm("Unlock keepers? Owners will be able to edit again.")) return;
+  if (!wasLocked && !confirm("Lock keeper selections for everyone except commissioners?")) return;
   try {
-    await saveKeeperDeadlineAsync({ at: iso });
+    await saveKeeperDeadlineAsync(wasLocked ? null : { locked: true });
     if (typeof logActivityAsync === "function") {
-      logActivityAsync("keeper_deadline_set", { at: iso });
+      logActivityAsync(wasLocked ? "keepers_unlocked" : "keepers_locked", {});
     }
     if (typeof switchTab === "function") switchTab("eligible");
   } catch (e) {
-    alert("Couldn't save deadline: " + (e.message || e));
-  }
-}
-async function clearKeeperDeadline() {
-  if (!confirm("Clear the keeper deadline? Owners will be able to edit keepers again.")) return;
-  try {
-    await saveKeeperDeadlineAsync(null);
-    if (typeof logActivityAsync === "function") {
-      logActivityAsync("keeper_deadline_cleared", {});
-    }
-    if (typeof switchTab === "function") switchTab("eligible");
-  } catch (e) {
-    alert("Couldn't clear deadline: " + (e.message || e));
+    alert("Couldn't toggle lock: " + (e.message || e));
   }
 }
 
@@ -1966,8 +1928,8 @@ function renderEligibleKeepersView() {
   ` : "";
   return `
     ${syncBanner}
-    ${renderKeeperDeadlineBanner()}
-    ${renderKeeperDeadlineCommishControls()}
+    ${renderKeeperLockBanner()}
+    ${renderKeeperLockCommishControls()}
     ${editToggle}
     <div class="calc-team-selector">
       <select id="eligible-team-select" onchange="updateEligibleKeepersView()">
@@ -3265,7 +3227,7 @@ function switchTab(tab) {
       break;
     case "eligible":
       currentView = "eligible";
-      title.textContent = "Eligible Keepers";
+      title.textContent = "Select Keepers";
       content.innerHTML = renderEligibleKeepersView();
       document.getElementById("eligible-team-select").value = "all";
       updateEligibleKeepersView();
@@ -3571,8 +3533,8 @@ function openTrophyDetail(seasonIdx) {
             const medal = t.rank === 1 ? "🥇" : t.rank === 2 ? "🥈" : t.rank === 3 ? "🥉" : "";
             const pts = t.points != null ? (Number.isInteger(t.points) ? t.points : t.points.toFixed(1)) : "—";
             return `<tr>
-              <td>${medal} <span style="color:var(--text-dim)">${t.rank}</span></td>
-              <td><span class="player-name">${escapeHtml(trophyTeamLabel(t))}</span></td>
+              <td style="text-align:left">${t.rank}</td>
+              <td><span class="player-name">${escapeHtml(trophyTeamLabel(t))}</span>${medal ? ` ${medal}` : ""}</td>
               <td style="text-align:right;color:var(--text-bright);font-weight:600">${pts}</td>
             </tr>`;
           }).join("")}
