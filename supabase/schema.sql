@@ -295,7 +295,10 @@ create policy "al_select_all"
 
 create policy "al_insert_self"
   on public.activity_log for insert
-  with check (auth.role() = 'authenticated');
+  with check (
+    auth.role() = 'authenticated'
+    and (actor_team_id = public.my_team_id() or public.is_commissioner())
+  );
 
 create policy "al_delete_admin"
   on public.activity_log for delete

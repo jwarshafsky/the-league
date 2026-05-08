@@ -26,10 +26,18 @@ scripts/.env (Gmail address + App Password) and the script will send it.
 import json
 import os
 import sys
+import re
 import smtplib
 import urllib.request
 import urllib.error
 from datetime import datetime, timedelta, timezone
+
+
+def _parse_ts(s):
+    # Python 3.9's fromisoformat is picky; strip sub-second precision and
+    # normalize Z to +00:00 so it always parses.
+    s = re.sub(r"\.\d+", "", s).replace("Z", "+00:00")
+    return datetime.fromisoformat(s)
 from email.message import EmailMessage
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -133,7 +141,7 @@ def build_digest(activity):
         rows = by_actor[actor]
         lines.append(f"{actor} ({len(rows)} action{'s' if len(rows) != 1 else ''})")
         for a in rows:
-            ts = datetime.fromisoformat(a["created_at"].replace("Z", "+00:00")).astimezone()
+            ts = _parse_ts(a["created_at"]).astimezone()
             lines.append(f"  {ts.strftime('%I:%M %p')}  {describe(a)}")
         lines.append("")
     lines.append(f"View full activity: {APP_URL}")

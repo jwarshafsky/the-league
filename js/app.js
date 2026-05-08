@@ -1696,7 +1696,13 @@ function workaroundBadgeHtml(p) {
   `;
 }
 
+function canEditTeam(teamId) {
+  if (typeof currentOwner === "undefined" || !currentOwner) return false;
+  return currentOwner.team_id === teamId || !!currentOwner.is_commissioner;
+}
+
 function renderEligibleTable(players, teamId, teamSelections) {
+  const viewOnly = !canEditTeam(teamId);
   return `
     <table class="player-table">
       <thead>
@@ -1735,7 +1741,7 @@ function renderEligibleTable(players, teamId, teamSelections) {
                 : isTradeBlock ? 'background:rgba(249,115,22,0.08)'
                 : '');
           const nameEsc = p.name.replace(/'/g, "\\'");
-          const blocked = !p.canKeepNextYear;
+          const blocked = !p.canKeepNextYear || viewOnly;
           const nameStyle = blocked ? 'color:var(--text-dim)' : '';
           const blockedAttr = blocked ? 'disabled' : '';
           const blockedCursor = blocked ? 'not-allowed' : 'pointer';
@@ -1792,6 +1798,7 @@ function promptCallupPrice(playerName, teamId) {
 
 function renderMinorsEligibleTable(minors, teamId, teamSelections) {
   if (!minors.length) return '<p style="color:var(--text-dim)">No minor league players</p>';
+  const viewOnly = !canEditTeam(teamId);
   return `
     <table class="player-table">
       <thead>
@@ -1834,7 +1841,7 @@ function renderMinorsEligibleTable(minors, teamId, teamSelections) {
             contractStatusClass = "new";
           }
           const sourceTag = `<span class="from-minors-tag" style="background:rgba(34,197,94,0.2);color:var(--green)">MiLB (${p.yearAcquired})</span>`;
-          const blocked = !isKeepable;
+          const blocked = !isKeepable || viewOnly;
           const nameStyle = blocked ? 'color:var(--text-dim)' : '';
           const blockedAttr = blocked ? 'disabled' : '';
           const blockedCursor = blocked ? 'not-allowed' : 'pointer';
@@ -1915,7 +1922,11 @@ function toggleEligibleKeeper(teamId, playerName, field, checked) {
 
   if (typeof setKeeperSelectionAsync === "function") {
     setKeeperSelectionAsync(teamId, playerName, allEmpty ? {} : flags)
-      .catch(err => alert("Save failed: " + err.message));
+      .catch(err => {
+        alert("Save failed: " + err.message);
+        // setKeeperSelectionAsync reverted the cache — re-render to match.
+        if (typeof updateEligibleKeepersView === "function") updateEligibleKeepersView();
+      });
   } else {
     saveEligibleKeeperSelections(selections);
   }
