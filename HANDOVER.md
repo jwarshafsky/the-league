@@ -19,7 +19,11 @@ things out).
   - Anon (publishable) key: `sb_publishable_aRh0MmQKrMCr8YnTwv9xIg_1F08WXf2`
 - Local source: `/Users/jwars/Desktop/Claude/fantasy-league/`
 - Local dev mirror (preview server reads from): `/tmp/fantasy-league/`
-  (auto-rsync'd before each push; just keep mirroring on edit)
+  **Not auto-synced.** After editing source, run:
+  `rsync -av --delete --exclude='.git' --exclude='scripts/.env*' --include='scripts/.env.example' /Users/jwars/Desktop/Claude/fantasy-league/ /tmp/fantasy-league/`
+  Otherwise the local preview server keeps serving stale code. The only
+  partial automation: `sync_espn.sh` copies *just* `js/espn-snapshot.js` to
+  the mirror after each ESPN fetch. Code edits never sync on their own.
 
 ## Key files
 
@@ -146,9 +150,11 @@ all CRITICAL and HIGH from that round are fixed. See git log for details.
 - **`scripts/.env` is gitignored** and contains: ESPN_SWID, ESPN_S2, the
   Supabase service-role JWT, SMTP_USER, SMTP_PASS. Never commit. Never echo
   the values back to the user gratuitously.
-- **`/tmp/fantasy-league/`** is the dev preview mirror. Always rsync source
-  to it after edits if you're testing in the local preview server. The deploy
-  pipeline doesn't depend on it.
+- **`/tmp/fantasy-league/`** is the dev preview mirror. **Manually rsync
+  source to it after edits** if you're testing in the local preview server
+  (see the rsync command in the Live URLs section). Editing source without
+  syncing → preview shows stale code → confusing phantom-bug debugging.
+  The deploy pipeline doesn't depend on it.
 - **GitHub Pages deploy is ~1 minute** after push. Use the Monitor tool
   (`until curl ... grep -q 'app.js?v=N'; do sleep 5; done; echo DEPLOYED`)
   to wait without polling.
