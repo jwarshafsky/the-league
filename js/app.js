@@ -2019,8 +2019,32 @@ function renderEligibleKeepersView() {
 
 // --- Commissioner edit overrides ---
 
-function isCommissioner() {
+// Real commissioner status from the auth payload — doesn't honor the
+// "view as manager" preview toggle. Used for places where we need to know
+// "should this person be ABLE to flip the toggle?" rather than "are they
+// currently acting as commish in the UI?".
+function isRealCommissioner() {
   return !!(typeof currentOwner !== "undefined" && currentOwner && currentOwner.is_commissioner);
+}
+function isCommishViewSuppressed() {
+  return localStorage.getItem("flm_commish_view_suppressed") === "true";
+}
+function isCommissioner() {
+  if (isCommishViewSuppressed()) return false;
+  return isRealCommissioner();
+}
+function toggleCommishView() {
+  if (!isRealCommissioner()) return; // only real commissioners can toggle
+  const suppressed = isCommishViewSuppressed();
+  if (!suppressed) {
+    if (!confirm("Switch to regular manager view? You'll lose commissioner controls until you toggle back. (Permissions on the server are unchanged.)")) return;
+    localStorage.setItem("flm_commish_view_suppressed", "true");
+  } else {
+    localStorage.removeItem("flm_commish_view_suppressed");
+  }
+  // Re-render header + current main view so commish-gated UI updates.
+  if (typeof renderHeaderUser === "function") renderHeaderUser();
+  if (typeof switchTab === "function" && typeof currentView !== "undefined") switchTab(currentView);
 }
 
 function isCommishEditMode() {
@@ -4288,7 +4312,21 @@ function renderHeaderUser() {
   const teamName = currentOwner
     ? (LEAGUE_DATA.teams.find(t => t.id === currentOwner.team_id)?.name || currentOwner.team_id)
     : "—";
-  const adminTag = currentOwner?.is_commissioner ? ' <span style="color:var(--yellow);font-weight:700">★</span>' : "";
+
+  // Commish status decoration. Real commissioners get the gold star ★ when
+  // viewing as commish, or an eye icon 👁 when viewing as a regular manager
+  // (preview mode). Clicking the name toggles between the two.
+  const realCommish = isRealCommissioner();
+  const previewMode = realCommish && isCommishViewSuppressed();
+  let nameHtml;
+  if (realCommish) {
+    const icon = previewMode
+      ? '<span title="Click to switch back to Commissioner view" style="color:var(--text-dim);margin-left:4px">👁</span>'
+      : '<span title="Click to switch to Regular Manager view" style="color:var(--yellow);font-weight:700;margin-left:4px">★</span>';
+    nameHtml = `<span onclick="toggleCommishView()" style="cursor:pointer;${previewMode ? 'color:#fbbf24' : ''}">${escapeHtml(teamName)}${icon}</span>`;
+  } else {
+    nameHtml = `<span>${escapeHtml(teamName)}</span>`;
+  }
 
   // Online indicator (excludes self).
   const online = (typeof dbGetOnlineTeams === "function") ? dbGetOnlineTeams() : [];
@@ -4297,9 +4335,15 @@ function renderHeaderUser() {
     ? `<span title="Online: ${others.map(t => t.teamName).join(", ")}" style="display:flex;align-items:center;gap:4px"><span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:#22c55e;box-shadow:0 0 6px rgba(34,197,94,0.7)"></span>${others.length} online</span>`
     : `<span style="color:rgba(255,255,255,0.45)" title="No other owners online">no one else online</span>`;
 
+  // Optional preview-mode banner so it's obvious commish controls are hidden.
+  const previewTag = previewMode
+    ? '<span title="Viewing as a regular manager — click your name to switch back" style="background:#fbbf24;color:#000;font-size:0.62rem;font-weight:800;padding:1px 6px;border-radius:8px;text-transform:uppercase;letter-spacing:0.04em">Manager view</span>'
+    : "";
+
   userBar.innerHTML = `
     ${onlineHtml}
-    <span>${teamName}${adminTag}</span>
+    ${previewTag}
+    ${nameHtml}
     <button onclick="signOut()" style="background:rgba(0,0,0,0.25);border:1px solid rgba(255,255,255,0.2);color:white;padding:3px 8px;border-radius:4px;font-size:0.7rem;cursor:pointer">Sign Out</button>
   `;
 
