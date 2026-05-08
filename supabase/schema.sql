@@ -375,6 +375,150 @@ end $$;
 
 
 -- ============================================================================
+-- 5e. trade_proposals — trade *proposals* (separate from recorded trades).
+--     A proposal lives in a thread (shared id across the whole back-and-forth
+--     including counters). Accept records a real row in trades. Counter
+--     creates a new proposal in the same thread; the parent is marked
+--     'countered' as a terminal state.
+-- ============================================================================
+create table if not exists public.trade_proposals (
+  id                  uuid primary key default gen_random_uuid(),
+  thread_id           uuid not null default gen_random_uuid(),
+  from_team_id        text not null,
+  to_team_id          text not null,
+  team1_receives      jsonb not null default '[]'::jsonb,
+  team2_receives      jsonb not null default '[]'::jsonb,
+  notes               text default '',
+  status              text not null default 'pending',
+  parent_proposal_id  uuid references public.trade_proposals(id),
+  created_by          uuid references auth.users(id),
+  created_at          timestamptz not null default now(),
+  updated_at          timestamptz not null default now(),
+  constraint trade_proposals_status_check
+    check (status in ('pending','accepted','rejected','withdrawn','countered'))
+);
+create index if not exists idx_trade_proposals_thread
+  on public.trade_proposals (thread_id, created_at);
+create index if not exists idx_trade_proposals_to_team
+  on public.trade_proposals (to_team_id, status);
+create index if not exists idx_trade_proposals_from_team
+  on public.trade_proposals (from_team_id, status);
+
+alter table public.trade_proposals enable row level security;
+
+drop policy if exists "tp_select_party"  on public.trade_proposals;
+drop policy if exists "tp_insert_self"   on public.trade_proposals;
+drop policy if exists "tp_update_party"  on public.trade_proposals;
+drop policy if exists "tp_delete_admin"  on public.trade_proposals;
+
+-- Parties (sender or recipient) and commissioners can see proposals.
+create policy "tp_select_party"
+  on public.trade_proposals for select
+  using (
+    public.is_commissioner()
+    or from_team_id = public.my_team_id()
+    or to_team_id   = public.my_team_id()
+  );
+
+-- Sender of a new proposal must be the current user's team. Recipient must
+-- be different from sender. (No constraint on team_id values here — the
+-- known_teams list is enforced via the FK shape and the data model; an
+-- invalid id would simply never have a counterparty.)
+create policy "tp_insert_self"
+  on public.trade_proposals for insert
+  with check (
+    auth.role() = 'authenticated'
+    and from_team_id = public.my_team_id()
+    and to_team_id   <> public.my_team_id()
+  );
+
+-- Status transitions: parties can update. The application enforces who-can-
+-- do-what (recipient: accept/reject/counter; sender: withdraw); RLS just
+-- bounds it to the parties.
+create policy "tp_update_party"
+  on public.trade_proposals for update
+  using (
+    public.is_commissioner()
+    or from_team_id = public.my_team_id()
+    or to_team_id   = public.my_team_id()
+  )
+  with check (
+    public.is_commissioner()
+    or from_team_id = public.my_team_id()
+    or to_team_id   = public.my_team_id()
+  );
+
+create policy "tp_delete_admin"
+  on public.trade_proposals for delete
+  using (public.is_commissioner());
+
+
+-- ============================================================================
+-- 5f. trade_proposal_messages — chat thread per proposal *thread*.
+--     Tied to thread_id (not proposal_id) so messages persist across
+--     counter rounds in the same negotiation.
+-- ============================================================================
+create table if not exists public.trade_proposal_messages (
+  id           uuid primary key default gen_random_uuid(),
+  thread_id    uuid not null,
+  from_team_id text not null,
+  body         text not null,
+  created_at   timestamptz not null default now()
+);
+create index if not exists idx_trade_proposal_messages_thread
+  on public.trade_proposal_messages (thread_id, created_at);
+
+alter table public.trade_proposal_messages enable row level security;
+
+drop policy if exists "tpm_select_party" on public.trade_proposal_messages;
+drop policy if exists "tpm_insert_self"  on public.trade_proposal_messages;
+drop policy if exists "tpm_delete_admin" on public.trade_proposal_messages;
+
+-- Read: parties to ANY proposal in this thread. (We allow this via existence
+-- check on trade_proposals so a user can see the message thread iff they're
+-- a party to at least one proposal in it.)
+create policy "tpm_select_party"
+  on public.trade_proposal_messages for select
+  using (
+    public.is_commissioner()
+    or exists (
+      select 1 from public.trade_proposals tp
+      where tp.thread_id = trade_proposal_messages.thread_id
+        and (tp.from_team_id = public.my_team_id() or tp.to_team_id = public.my_team_id())
+    )
+  );
+
+-- Write: sender's team is the current user's team AND user is a party to
+-- a proposal in this thread.
+create policy "tpm_insert_self"
+  on public.trade_proposal_messages for insert
+  with check (
+    auth.role() = 'authenticated'
+    and from_team_id = public.my_team_id()
+    and exists (
+      select 1 from public.trade_proposals tp
+      where tp.thread_id = trade_proposal_messages.thread_id
+        and (tp.from_team_id = public.my_team_id() or tp.to_team_id = public.my_team_id())
+    )
+  );
+
+create policy "tpm_delete_admin"
+  on public.trade_proposal_messages for delete
+  using (public.is_commissioner());
+
+-- Add the new tables to the realtime publication.
+do $$
+begin
+  if not exists (select 1 from pg_publication_tables where pubname='supabase_realtime' and schemaname='public' and tablename='trade_proposals') then
+    alter publication supabase_realtime add table public.trade_proposals;
+  end if;
+  if not exists (select 1 from pg_publication_tables where pubname='supabase_realtime' and schemaname='public' and tablename='trade_proposal_messages') then
+    alter publication supabase_realtime add table public.trade_proposal_messages;
+  end if;
+end $$;
+
+
+-- ============================================================================
 -- 6. GRANTs — Supabase by default doesn't grant write privileges to
 --    `authenticated`, so RLS alone isn't enough. Without these, INSERTs
 --    fail with "permission denied for table".
@@ -387,11 +531,15 @@ grant select, insert, update, delete on table
   public.trades,
   public.league_state,
   public.callup_overrides,
-  public.invited_emails
+  public.invited_emails,
+  public.trade_proposals
 to authenticated;
 
 grant select, insert on public.activity_log to authenticated;
 grant delete on public.activity_log to authenticated;  -- gated by RLS to commish
+
+grant select, insert on public.trade_proposal_messages to authenticated;
+grant delete on public.trade_proposal_messages to authenticated;  -- gated by RLS
 
 grant select, insert, update, delete on public.invited_emails to service_role;
 grant select, insert, delete on public.activity_log to service_role;
@@ -424,6 +572,10 @@ create trigger ls_touch before update on public.league_state
 
 drop trigger if exists co_touch on public.callup_overrides;
 create trigger co_touch before update on public.callup_overrides
+  for each row execute function public.touch_updated_at();
+
+drop trigger if exists tp_touch on public.trade_proposals;
+create trigger tp_touch before update on public.trade_proposals
   for each row execute function public.touch_updated_at();
 
 
