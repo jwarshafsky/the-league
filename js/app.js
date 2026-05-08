@@ -968,7 +968,17 @@ function submitTrade() {
 
   if (typeof addTradeAsync === "function") {
     addTradeAsync(trade)
-      .then(() => switchTab("trades"))
+      .then(() => {
+        if (typeof logActivityAsync === "function") {
+          logActivityAsync("trade_recorded", {
+            team1: trade.team1, team2: trade.team2,
+            team1_receives: trade.team1Receives,
+            team2_receives: trade.team2Receives,
+            notes: trade.notes,
+          }, { targetTeamId: trade.team2 });
+        }
+        switchTab("trades");
+      })
       .catch(err => alert("Trade save failed: " + err.message));
   } else {
     const trades = getTrades();
@@ -991,7 +1001,14 @@ function deleteTrade(index) {
   if (!target) return;
   if (target._id && typeof deleteTradeAsync === "function") {
     deleteTradeAsync(target._id)
-      .then(() => switchTab("trades"))
+      .then(() => {
+        if (typeof logActivityAsync === "function") {
+          logActivityAsync("trade_deleted", {
+            team1: target.team1, team2: target.team2,
+          }, { targetTeamId: target.team2 });
+        }
+        switchTab("trades");
+      })
       .catch(err => alert("Delete failed: " + err.message));
   } else {
     trades.splice(index, 1);
@@ -1858,6 +1875,7 @@ function toggleEligibleKeeper(teamId, playerName, field, checked) {
   if (!selections[teamId]) selections[teamId] = {};
   if (!selections[teamId][playerName]) selections[teamId][playerName] = {};
 
+  const wasRule5 = !!selections[teamId][playerName].rule5;
   selections[teamId][playerName][field] = checked;
 
   // Keep ↔ Rule 5 cascade for ML and MILB alike:
@@ -1871,6 +1889,24 @@ function toggleEligibleKeeper(teamId, playerName, field, checked) {
   if (field === 'rule5' && !checked) {
     selections[teamId][playerName].keeper = false;
     selections[teamId][playerName].minorKeeper = false;
+  }
+
+  // Activity logging — fire-and-forget.
+  if (typeof logActivityAsync === "function") {
+    const fieldToType = {
+      keeper:       checked ? "keeper_added" : "keeper_removed",
+      minorKeeper:  checked ? "minor_keeper_added" : "minor_keeper_removed",
+      rule5:        checked ? "rule5_added" : "rule5_removed",
+      tradeBlock:   checked ? "trade_block_added" : "trade_block_removed",
+    };
+    const evtType = fieldToType[field];
+    if (evtType) {
+      logActivityAsync(evtType, { player_name: playerName }, { targetTeamId: teamId });
+    }
+    // If Rule 5 auto-flipped on a keeper press, log that too (so the cascade is visible).
+    if ((field === "keeper" || field === "minorKeeper") && checked && !wasRule5) {
+      logActivityAsync("rule5_added", { player_name: playerName, via_cascade: true }, { targetTeamId: teamId });
+    }
   }
 
   const flags = { ...(selections[teamId][playerName] || {}) };
@@ -2104,7 +2140,10 @@ function resetDraftConfirm() {
   if (!confirm("Reset the entire 2027 draft? All picks and order customizations will be lost.")) return;
   if (typeof saveDraftAsync === "function") {
     saveDraftAsync(null)
-      .then(() => switchTab("draft"))
+      .then(() => {
+        if (typeof logActivityAsync === "function") logActivityAsync("minors_draft_reset", {});
+        switchTab("draft");
+      })
       .catch(err => alert("Reset failed: " + err.message));
   } else {
     localStorage.removeItem("flm_draft_2027");
@@ -2410,6 +2449,12 @@ function makeDraftPick() {
     timestamp: Date.now()
   });
   saveDraft(draft);
+  if (typeof logActivityAsync === "function") {
+    logActivityAsync("minors_pick_made", {
+      round: current.round, pick_in_round: current.pickInRound,
+      player_name: player, notes,
+    }, { targetTeamId: current.team });
+  }
   showDraftBoard();
 }
 
@@ -2420,6 +2465,11 @@ function passCurrentPick() {
   if (!draft.passed) draft.passed = [];
   draft.passed.push({ round: current.round, pickInRound: current.pickInRound, team: current.team });
   saveDraft(draft);
+  if (typeof logActivityAsync === "function") {
+    logActivityAsync("minors_pick_passed", {
+      round: current.round, pick_in_round: current.pickInRound,
+    }, { targetTeamId: current.team });
+  }
   showDraftBoard();
 }
 
@@ -2663,7 +2713,110 @@ function switchTab(tab) {
       title.textContent = "Trophy Room";
       content.innerHTML = renderTrophyRoomView();
       break;
+    case "activity":
+      currentView = "activity";
+      title.textContent = "Activity";
+      content.innerHTML = renderActivityView();
+      break;
   }
+}
+
+// --- Rendering: Activity Feed ---
+
+function renderActivityView() {
+  const items = (typeof dbGetActivity === "function") ? dbGetActivity() : [];
+  if (!items.length) return '<p style="color:var(--text-dim)">No activity recorded yet.</p>';
+  // Group by date label (Today / Yesterday / Mon May 6 etc.)
+  const today = new Date().toDateString();
+  const yesterday = new Date(Date.now() - 86400000).toDateString();
+  const groups = {};
+  for (const a of items) {
+    const d = new Date(a.created_at);
+    let label = d.toDateString();
+    if (label === today) label = "Today";
+    else if (label === yesterday) label = "Yesterday";
+    else label = d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+    if (!groups[label]) groups[label] = [];
+    groups[label].push(a);
+  }
+  return Object.entries(groups).map(([label, rows]) => `
+    <div class="section-header">${label} <span class="section-count">${rows.length}</span></div>
+    <div style="margin-bottom:14px">
+      ${rows.map(r => renderActivityItem(r)).join("")}
+    </div>
+  `).join("");
+}
+
+function renderActivityItem(a) {
+  const time = new Date(a.created_at).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+  return `
+    <div style="display:flex;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);font-size:0.85rem">
+      <div style="color:var(--text-dim);font-size:0.72rem;min-width:60px;padding-top:2px">${time}</div>
+      <div style="flex:1;color:var(--text)">${describeActivity(a)}</div>
+    </div>
+  `;
+}
+
+function _teamName(teamId) {
+  if (!teamId) return "?";
+  const t = LEAGUE_DATA.teams.find(x => x.id === teamId);
+  return t ? t.name : teamId;
+}
+
+function describeActivity(a) {
+  const actor = `<strong style="color:var(--text-bright)">${_teamName(a.actor_team_id)}</strong>`;
+  const target = `<strong style="color:var(--text-bright)">${_teamName(a.target_team_id)}</strong>`;
+  const p = a.payload || {};
+  const player = p.player_name ? `<span style="color:var(--accent);font-weight:600">${p.player_name}</span>` : "";
+  switch (a.type) {
+    case "keeper_added":
+      return `${actor} tagged ${player} as a keeper${p.next_year_price != null ? ` <span style="color:var(--text-dim)">($${p.next_year_price})</span>` : ""}`;
+    case "keeper_removed":
+      return `${actor} removed ${player} as a keeper`;
+    case "minor_keeper_added":
+      return `${actor} tagged ${player} as a MiLB keeper`;
+    case "minor_keeper_removed":
+      return `${actor} removed ${player} as a MiLB keeper`;
+    case "rule5_added":
+      return `${actor} Rule 5–protected ${player}`;
+    case "rule5_removed":
+      return `${actor} unprotected ${player} (Rule 5)`;
+    case "trade_block_added":
+      return `${actor} put ${player} on the trade block`;
+    case "trade_block_removed":
+      return `${actor} removed ${player} from the trade block`;
+    case "trade_recorded": {
+      const t1 = _teamName(p.team1), t2 = _teamName(p.team2);
+      const r1 = (p.team1_receives || []).map(formatTradeAsset).join(", ") || "—";
+      const r2 = (p.team2_receives || []).map(formatTradeAsset).join(", ") || "—";
+      return `${actor} recorded a trade — <strong>${t1}</strong> gets ${r1}; <strong>${t2}</strong> gets ${r2}`;
+    }
+    case "trade_deleted":
+      return `${actor} deleted a trade between ${_teamName(p.team1)} and ${_teamName(p.team2)}`;
+    case "minors_pick_made":
+      return `${target} picked ${player} <span style="color:var(--text-dim)">(R${p.round}.${p.pick_in_round})</span>`;
+    case "minors_pick_passed":
+      return `${target} passed at <span style="color:var(--text-dim)">R${p.round}.${p.pick_in_round}</span>`;
+    case "minors_pick_undone":
+      return `${actor} undid pick: ${player} (R${p.round}.${p.pick_in_round})`;
+    case "minors_draft_reset":
+      return `${actor} reset the Minors Draft`;
+    case "rule5_draft_reset":
+      return `${actor} reset the Rule 5 Draft`;
+    case "callup_price_set":
+      return `${actor} set ${player}'s call-up price to <strong>$${p.price}</strong> (${p.year})`;
+    case "commish_override":
+      return `${actor} overrode ${player}'s contract <span style="color:var(--text-dim)">(${(p.fields || []).join(", ")})</span>`;
+    default:
+      return `${actor} did <code>${a.type}</code>`;
+  }
+}
+
+function formatTradeAsset(asset) {
+  if (!asset) return "?";
+  if (asset.type === "milb_pick") return `<span style="color:var(--accent)">${asset.value || "MiLB pick"}</span>`;
+  if (asset.type === "draft_dollars" || asset.type === "faab") return asset.value;
+  return `<span style="color:var(--accent)">${asset.value || asset.name || "?"}</span>`;
 }
 
 // --- Rendering: Trophy Room ---
@@ -2734,7 +2887,10 @@ function resetRule5Draft() {
   if (!confirm("Reset entire Rule 5 draft?")) return;
   if (typeof saveRule5Async === "function") {
     saveRule5Async(null)
-      .then(() => switchTab("rule5"))
+      .then(() => {
+        if (typeof logActivityAsync === "function") logActivityAsync("rule5_draft_reset", {});
+        switchTab("rule5");
+      })
       .catch(err => alert("Reset failed: " + err.message));
   } else {
     localStorage.removeItem("flm_rule5");

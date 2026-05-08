@@ -268,6 +268,41 @@ create policy "co_write_admin"
 
 
 -- ============================================================================
+-- 5c. activity_log — append-only league activity feed.
+--     Each row records something happening: keeper toggled, trade saved,
+--     draft pick made, etc. Read-by-all, write-by-self, delete by commish.
+-- ============================================================================
+create table if not exists public.activity_log (
+  id              uuid primary key default gen_random_uuid(),
+  type            text not null,
+  actor_team_id   text,
+  target_team_id  text,
+  payload         jsonb not null default '{}'::jsonb,
+  created_at      timestamptz not null default now()
+);
+create index if not exists idx_activity_log_created_at
+  on public.activity_log (created_at desc);
+
+alter table public.activity_log enable row level security;
+
+drop policy if exists "al_select_all"   on public.activity_log;
+drop policy if exists "al_insert_self"  on public.activity_log;
+drop policy if exists "al_delete_admin" on public.activity_log;
+
+create policy "al_select_all"
+  on public.activity_log for select
+  using (auth.role() = 'authenticated');
+
+create policy "al_insert_self"
+  on public.activity_log for insert
+  with check (auth.role() = 'authenticated');
+
+create policy "al_delete_admin"
+  on public.activity_log for delete
+  using (public.is_commissioner());
+
+
+-- ============================================================================
 -- 6. GRANTs — Supabase by default doesn't grant write privileges to
 --    `authenticated`, so RLS alone isn't enough. Without these, INSERTs
 --    fail with "permission denied for table".
@@ -283,7 +318,12 @@ grant select, insert, update, delete on table
   public.invited_emails
 to authenticated;
 
-grant select, insert, update, delete on table public.invited_emails to service_role;
+grant select, insert on public.activity_log to authenticated;
+grant delete on public.activity_log to authenticated;  -- gated by RLS to commish
+
+grant select, insert, update, delete on public.invited_emails to service_role;
+grant select, insert, delete on public.activity_log to service_role;
+grant select, insert, update, delete on public.owners to service_role;
 
 grant execute on function public.is_commissioner() to authenticated;
 grant execute on function public.my_team_id() to authenticated;

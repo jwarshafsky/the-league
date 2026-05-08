@@ -14,6 +14,7 @@ const _cache = {
   callup: {},          // { playerName: { price, year } }
   commishOverrides: {},     // { playerName: { ... } }
   workaroundOverrides: {},  // { playerId: decision }
+  activity: [],        // array of { id, type, actor_team_id, target_team_id, payload, created_at }
 };
 let _dbReady = false;
 const _readyListeners = [];
@@ -24,12 +25,14 @@ function onDbReady(fn) {
 }
 
 async function _fetchAll() {
-  const [trades, ks, ls, co] = await Promise.all([
+  const [trades, ks, ls, co, act] = await Promise.all([
     supabaseClient.from("trades").select("*").order("created_at", { ascending: true }),
     supabaseClient.from("keeper_selections").select("*"),
     supabaseClient.from("league_state").select("*"),
     supabaseClient.from("callup_overrides").select("*"),
+    supabaseClient.from("activity_log").select("*").order("created_at", { ascending: false }).limit(200),
   ]);
+  _cache.activity = act.data || [];
 
   _cache.trades = (trades.data || []).map(_rowToTrade);
 
@@ -181,6 +184,12 @@ function _subscribeToChanges() {
       .on("postgres_changes", { event: "*", schema: "public", table: "keeper_selections" }, refresh)
       .on("postgres_changes", { event: "*", schema: "public", table: "league_state" }, refresh)
       .on("postgres_changes", { event: "*", schema: "public", table: "callup_overrides" }, refresh)
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "activity_log" }, async () => {
+        await _fetchAll();
+        if (typeof currentView !== "undefined" && currentView === "activity" && typeof switchTab === "function") {
+          switchTab("activity");
+        }
+      })
       .subscribe();
   } catch (e) {
     console.warn("Realtime subscribe failed:", e);
@@ -260,6 +269,26 @@ function dbGetRule5() { return _cache.rule5; }
 function dbGetCallupOverrides() { return _cache.callup; }
 function dbGetCommishOverrides() { return _cache.commishOverrides; }
 function dbGetWorkaroundOverrides() { return _cache.workaroundOverrides; }
+function dbGetActivity() { return _cache.activity; }
+
+// Append-only logger; never throws (activity logging shouldn't break UX).
+async function logActivityAsync(type, payload, opts) {
+  if (typeof currentOwner === "undefined" || !currentOwner) return;
+  const row = {
+    type,
+    actor_team_id: currentOwner.team_id,
+    target_team_id: (opts && opts.targetTeamId) || currentOwner.team_id,
+    payload: payload || {},
+  };
+  try {
+    const { data, error } = await supabaseClient.from("activity_log").insert(row).select().single();
+    if (error) throw error;
+    _cache.activity.unshift(data);
+    if (_cache.activity.length > 200) _cache.activity.length = 200;
+  } catch (e) {
+    console.warn("Activity log failed:", e?.message || e);
+  }
+}
 
 // --- Public async writers ---
 
