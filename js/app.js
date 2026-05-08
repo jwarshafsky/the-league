@@ -614,9 +614,50 @@ function renderTradesView() {
           ${trades.length ? trades.slice().reverse().map((t, i) => renderTradeCard(t, trades.length - 1 - i)).join("") : '<p style="color:var(--text-dim)">No trades recorded yet.</p>'}
         </div>
       </div>
-      <div style="flex:0 1 220px;min-width:200px">
+      <div style="flex:0 1 240px;min-width:200px">
+        ${renderTradeBlockPanel()}
+        <div style="height:14px"></div>
         ${renderDraftDollarsPanel()}
       </div>
+    </div>
+  `;
+}
+
+function renderTradeBlockPanel() {
+  const sel = (typeof dbGetKeeperSelections === "function") ? dbGetKeeperSelections() : {};
+  const byTeam = {};
+  for (const teamId of Object.keys(sel)) {
+    const blocked = Object.keys(sel[teamId] || {}).filter(name => sel[teamId][name]?.tradeBlock);
+    if (blocked.length) byTeam[teamId] = blocked.sort((a, b) => lastName(a).localeCompare(lastName(b)));
+  }
+  const orderedTeams = LEAGUE_DATA.teams.filter(t => byTeam[t.id]);
+  if (!orderedTeams.length) {
+    return `
+      <div class="section-header">Trade Block</div>
+      <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:10px;font-size:0.82rem;color:var(--text-dim);font-style:italic">
+        Nothing on the block right now.
+      </div>
+    `;
+  }
+  const total = Object.values(byTeam).reduce((s, list) => s + list.length, 0);
+  return `
+    <div class="section-header">Trade Block <span class="section-count">${total}</span></div>
+    <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:6px 10px;font-size:0.82rem">
+      ${orderedTeams.map(t => {
+        const priceMap = Object.fromEntries((t.majors || []).map(p => [p.name, p.price]));
+        return `
+          <div style="padding:7px 0;border-bottom:1px solid var(--border)">
+            <div style="color:var(--text);font-weight:700;font-size:0.78rem;margin-bottom:5px">${escapeHtml(t.name)}</div>
+            <div style="display:flex;flex-wrap:wrap;gap:4px">
+              ${byTeam[t.id].map(name => {
+                const price = priceMap[name];
+                const priceStr = price !== undefined ? ` $${price}` : "";
+                return `<span style="font-size:0.72rem;background:rgba(249,115,22,0.15);color:var(--orange);padding:2px 7px;border-radius:10px;white-space:nowrap">${escapeHtml(name)}${priceStr}</span>`;
+              }).join("")}
+            </div>
+          </div>
+        `;
+      }).join("")}
     </div>
   `;
 }
