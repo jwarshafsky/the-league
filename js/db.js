@@ -32,6 +32,21 @@ async function _fetchAll() {
     supabaseClient.from("callup_overrides").select("*"),
     supabaseClient.from("activity_log").select("*").order("created_at", { ascending: false }).limit(200),
   ]);
+  // Surface query errors so a transient network/RLS issue doesn't silently
+  // wipe the UI to empty caches. Each table is independent — we still load
+  // whatever did succeed.
+  const _surface = (label, res) => {
+    if (res.error) {
+      const msg = `${label} fetch failed: ${res.error.message || res.error}`;
+      console.warn(msg);
+      if (typeof showToast === "function") showToast(msg, "warn");
+    }
+  };
+  _surface("trades", trades);
+  _surface("keeper_selections", ks);
+  _surface("league_state", ls);
+  _surface("callup_overrides", co);
+  _surface("activity_log", act);
   _cache.activity = act.data || [];
 
   _cache.trades = (trades.data || []).map(_rowToTrade);

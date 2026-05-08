@@ -48,10 +48,10 @@ create policy "owners_select_all"
   on public.owners for select
   using (auth.role() = 'authenticated');
 
--- A user can claim an unclaimed team_id by inserting a row for themselves.
-create policy "owners_insert_self"
-  on public.owners for insert
-  with check (id = auth.uid() and not is_commissioner);
+-- No INSERT policy: legitimate inserts go through claim_invited_team()
+-- (security definer, bypasses RLS). Direct INSERT from a client is denied,
+-- which closes a race-window where a user could claim an unclaimed team_id
+-- before the auto-claim runs.
 
 -- Only commissioners can update or reassign teams.
 create policy "owners_update_admin"
@@ -128,18 +128,14 @@ create policy "trades_insert_party"
     or public.is_commissioner()
   );
 
+-- Update: commissioners only. A party to a trade can INSERT a new trade row
+-- but cannot rewrite an existing one's contents (would let either side
+-- retroactively re-author the deal). To fix a recorded trade, the commish
+-- deletes it and the parties re-record.
 create policy "trades_update_party"
   on public.trades for update
-  using (
-    team1 = public.my_team_id()
-    or team2 = public.my_team_id()
-    or public.is_commissioner()
-  )
-  with check (
-    team1 = public.my_team_id()
-    or team2 = public.my_team_id()
-    or public.is_commissioner()
-  );
+  using (public.is_commissioner())
+  with check (public.is_commissioner());
 
 -- Delete: commissioner only.
 create policy "trades_delete_admin"

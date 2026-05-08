@@ -32,6 +32,14 @@ SUPABASE_URL = "https://fbllfkrtjsihrkwnbmlw.supabase.co"
 SUPABASE_ANON_KEY = "sb_publishable_aRh0MmQKrMCr8YnTwv9xIg_1F08WXf2"
 APP_URL = "https://jwarshafsky.github.io/the-league/"
 
+# Canonical 12-team list (matches LEAGUE_DATA.teams in js/data.js and
+# claim_invited_team's known_teams in supabase/schema.sql). Validating here
+# catches typos at invite time instead of waiting for the user's first claim.
+KNOWN_TEAMS = {
+    "jeff", "matt", "jesse", "sam", "saxton", "aj",
+    "corey", "dave", "josh-doug", "larry", "zack", "glicksman",
+}
+
 
 def load_env():
     env = {}
@@ -79,6 +87,11 @@ def main():
     email = sys.argv[1].strip().lower()
     team_id = sys.argv[2].strip()
     is_commish = "--commish" in sys.argv
+
+    if team_id not in KNOWN_TEAMS:
+        print(f"Invalid team_id: {team_id!r}", file=sys.stderr)
+        print(f"Must be one of: {', '.join(sorted(KNOWN_TEAMS))}", file=sys.stderr)
+        sys.exit(1)
 
     env = load_env()
     key = env.get("SUPABASE_SERVICE_ROLE_KEY")

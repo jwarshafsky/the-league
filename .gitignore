@@ -1,8 +1,10 @@
 # OS
 .DS_Store
 
-# Local secrets
-scripts/.env
+# Local secrets — broad pattern catches stray files like .envqnwn (editor swap files,
+# accidental copies). The example template is the only intentionally-tracked .env*.
+scripts/.env*
+!scripts/.env.example
 
 # Editor / tooling
 .claude/

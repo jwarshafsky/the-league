@@ -1533,7 +1533,7 @@ function openCommishEditor(playerName) {
       <p style="color:var(--text-dim);font-size:0.78rem;margin:0 0 14px">Override any field below. Leave blank to keep the default.</p>
       <label style="display:block;margin-bottom:10px">
         <div style="color:var(--text-dim);font-size:0.8rem">2027 price ($)</div>
-        <input type="number" id="ce-nextprice" value="${o.nextYearPrice ?? ""}" placeholder="${baseline?.nextYearPrice ?? ""}" style="width:100%;background:var(--bg);color:var(--text);border:1px solid var(--border);padding:8px;border-radius:6px">
+        <input type="number" id="ce-nextprice" value="${escapeHtml(o.nextYearPrice ?? "")}" placeholder="${escapeHtml(baseline?.nextYearPrice ?? "")}" style="width:100%;background:var(--bg);color:var(--text);border:1px solid var(--border);padding:8px;border-radius:6px">
         ${baseline ? baseLine("2027 price", baseline.nextYearPrice) : ""}
       </label>
       <label style="display:flex;align-items:center;gap:8px;margin-bottom:10px;color:var(--text)">
