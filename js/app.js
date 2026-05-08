@@ -641,7 +641,11 @@ function renderTradeBlockView() {
   return `
     <div style="display:grid;grid-template-columns:repeat(auto-fill, minmax(300px, 1fr));gap:14px">
       ${orderedTeams.map(t => {
-        const priceMap = Object.fromEntries((t.majors || []).map(p => [p.name, p.price]));
+        // Build the price map from the team's full reconciled roster (ESPN
+        // snapshot + cost-basis resolution), not just the static majors list.
+        // That's what catches auction/FA pickups + callups Jo Adell-style.
+        const eligible = (typeof getEligiblePlayers === "function") ? getEligiblePlayers(t) : [];
+        const priceMap = Object.fromEntries(eligible.map(p => [p.name, p.price]));
         const isMyTeam = t.id === myTeamId;
         const action = isMyTeam
           ? '<div style="font-size:0.72rem;color:var(--text-dim);font-style:italic;margin-top:12px">(your team)</div>'
