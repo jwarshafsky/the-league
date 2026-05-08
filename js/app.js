@@ -3406,7 +3406,7 @@ function renderTrophyRoomView() {
   if (typeof HISTORY_SNAPSHOT === "undefined" || !HISTORY_SNAPSHOT.seasons?.length) {
     return '<p style="color:var(--text-dim)">No history loaded. Run <code>python3 scripts/sync_history.py</code> to populate.</p>';
   }
-  return HISTORY_SNAPSHOT.seasons.map(s => renderTrophyRow(s)).join("");
+  return HISTORY_SNAPSHOT.seasons.map((s, i) => renderTrophyRow(s, i)).join("");
 }
 
 // Historical abbrevs that don't match the current ESPN_ABBREV_TO_LOCAL map.
@@ -3429,7 +3429,7 @@ function trophyTeamLabel(team) {
   return team.name || team.abbrev || "?";
 }
 
-function renderTrophyRow(season) {
+function renderTrophyRow(season, idx) {
   const ranks = { 1: [], 2: [], 3: [] };
   for (const t of season.standings) {
     if (ranks[t.rank]) ranks[t.rank].push(t);
@@ -3451,7 +3451,10 @@ function renderTrophyRow(season) {
   };
   return `
     <div style="margin-bottom:22px">
-      <div style="font-size:1.5rem;font-weight:800;color:var(--text-bright);margin-bottom:10px;letter-spacing:0.02em">${season.year}</div>
+      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px">
+        <div style="font-size:1.5rem;font-weight:800;color:var(--text-bright);letter-spacing:0.02em">${season.year}</div>
+        <button onclick="openTrophyDetail(${idx})" style="background:none;border:1px solid var(--border);color:var(--accent);font-size:0.78rem;padding:5px 12px;border-radius:6px;cursor:pointer">Full standings</button>
+      </div>
       <div style="display:flex;gap:10px;flex-wrap:wrap">
         ${slot(1, '#FFD700', '#D4AF37', 'Champion', '🥇')}
         ${slot(2, '#C0C0C0', '#A0A0A0', 'Runner-up', '🥈')}
@@ -3459,6 +3462,42 @@ function renderTrophyRow(season) {
       </div>
     </div>
   `;
+}
+
+function openTrophyDetail(seasonIdx) {
+  if (typeof HISTORY_SNAPSHOT === "undefined") return;
+  const season = HISTORY_SNAPSHOT.seasons[seasonIdx];
+  if (!season) return;
+  const existing = document.getElementById("trophy-detail-modal");
+  if (existing) existing.remove();
+  const modal = document.createElement("div");
+  modal.id = "trophy-detail-modal";
+  modal.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:1000;display:flex;align-items:flex-start;justify-content:center;padding:24px 16px;overflow-y:auto";
+  modal.onclick = e => { if (e.target === modal) modal.remove(); };
+  const sorted = [...season.standings].sort((a, b) => a.rank - b.rank);
+  modal.innerHTML = `
+    <div style="max-width:520px;width:100%;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:18px;margin-top:20px">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px">
+        <h3 style="margin:0;color:var(--text-bright)">${escapeHtml(String(season.year))} Final Standings</h3>
+        <button onclick="document.getElementById('trophy-detail-modal').remove()" style="background:none;border:none;color:var(--text-dim);font-size:1.4rem;cursor:pointer;padding:0 4px;line-height:1">×</button>
+      </div>
+      <table class="player-table">
+        <thead><tr><th style="text-align:left;width:60px">Rank</th><th style="text-align:left">Team</th><th style="text-align:right">Points</th></tr></thead>
+        <tbody>
+          ${sorted.map(t => {
+            const medal = t.rank === 1 ? "🥇" : t.rank === 2 ? "🥈" : t.rank === 3 ? "🥉" : "";
+            const pts = t.points != null ? (Number.isInteger(t.points) ? t.points : t.points.toFixed(1)) : "—";
+            return `<tr>
+              <td>${medal} <span style="color:var(--text-dim)">${t.rank}</span></td>
+              <td><span class="player-name">${escapeHtml(trophyTeamLabel(t))}</span></td>
+              <td style="text-align:right;color:var(--text-bright);font-weight:600">${pts}</td>
+            </tr>`;
+          }).join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+  document.body.appendChild(modal);
 }
 
 // --- Rule 5 Draft ---
