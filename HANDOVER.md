@@ -72,26 +72,40 @@ Mac stays mostly-on; if it sleeps, syncs catch up on next wake.
   prefetchers in some clients — code field is the workaround). The
   `is_email_invited` RPC and `claim_invited_team` RPC handle allowlist + auto
   team-assignment. The hardcoded `FALLBACK_ALLOWLIST` exists only as a safety
-  net; the real allowlist lives in `invited_emails`.
+  net; the real allowlist lives in `invited_emails`. Public sign-up is
+  disabled in the Supabase dashboard, so `invited_emails` is the actual gate.
 - **Data layer**: All league state in Supabase tables (`trades`,
   `keeper_selections`, `league_state`, `callup_overrides`, `activity_log`,
   `owners`, `invited_emails`). `db.js` keeps an in-memory cache; getters return
   deep clones for mutation-prone caches (draft / rule5 / keeper sel / commish
   overrides / workaround overrides) so callers can't corrupt state by accident.
-  Writers are optimistic + revert on failure.
+  Writers are optimistic + revert on failure. `_fetchAll` surfaces per-table
+  query errors as toasts so a transient blip can't silently wipe the cache.
 - **Realtime**: One channel for `postgres_changes` on the data tables, one for
   presence. `_subscribeToChanges` refreshes the active tab on any change but
   skips if a form input is focused or a modal is open (so live syncs don't
-  wipe in-progress edits).
+  wipe in-progress edits). A separate filter on `owners` (id = current user)
+  re-fetches `currentOwner` on commish promote/demote so role changes take
+  effect without a reload.
 - **Realtime presence**: `_setupPresence` puts each owner on a shared channel
   with their team_id; the header shows "X online" with hover tooltip.
   Requires Supabase JS ≥ 2.50 — we're on 2.74.0. (We were on 2.45.4 and
   presence was silently broken — symptoms: presenceState always empty.)
 - **Activity feed**: every meaningful action calls `logActivityAsync` → row
-  in `activity_log`. The Activity tab groups by Today/Yesterday/date.
+  in `activity_log`. The Activity tab groups by Today/Yesterday/date. RLS
+  rejections surface as a toast (via the `showToast` helper in `app.js`).
 - **Daily digest**: `daily_report.py` queries last 24h of activity, groups
   by actor, emails commissioners via Gmail SMTP. Writes a fallback
-  `/tmp/league-daily-DATE.txt` regardless.
+  `/tmp/league-daily-DATE.txt` regardless. Uses tz-aware `datetime` so the
+  header date matches event times even if cron ever runs in UTC.
+- **Sync failure signal**: `frequent_espn_sync.sh` and `nightly_sync.sh`
+  write `/tmp/fantasy-league-sync-failed` and fire a macOS notification on
+  any failure (sync script error, git commit/push fail). Cleared on success.
+  If snapshots ever look stale, check that file first.
+- **XSS hardening**: All user-controlled strings interpolated into `innerHTML`
+  go through `escapeHtml()`. Inline `onclick`/`onchange` handlers that embed
+  player names use `escapeJsString()` (escapes `\`, `'`, `"`, `<`, `>`, `\n`).
+  Both helpers in `app.js` near line 2316.
 
 ## What's working as of session end
 
@@ -105,27 +119,23 @@ Mac stays mostly-on; if it sleeps, syncs catch up on next wake.
 - Eligible Keepers, Minors Rosters, Trade tool, Draft (with passes/activates)
   all working.
 
-## Outstanding bugs (low/medium priority — second audit)
+## Outstanding bugs
 
-Triaged but not yet fixed. Severity ordered.
+**None known.** Three rounds of audit are clear (see git log: rounds 1-2
+in February-April, rounds 3-5 on 2026-05-07).
 
-| # | Severity | Where | Bug |
-|---|---|---|---|
-| 1 | high | `js/app.js:~696` and many places | **HTML injection via unescaped strings** — trade `notes`, asset `value`, custom prospect names, commish-override `contractLabel`, and activity-feed payloads are interpolated into `innerHTML` raw. `escapeHtml()` exists but isn't used. Risk is real for trade notes (free text from any owner). Fix: pipe everything user-controlled through `escapeHtml`. |
-| 2 | high | `js/app.js` onclick handlers | **`replace(/'/g, "\\'")`** is the only escape on names embedded in `onclick="fn('${name}')"`. A name with `\`, `"`, or `</script` breaks it. Fix: use `addEventListener` + `data-*` attributes, or encode for both HTML and JS. |
-| 3 | medium | `js/db.js:_migrateFromLocalStorage` | If a non-commish user has legacy localStorage trades involving other teams, the migration loops issue RLS-rejected inserts and silently sets `flm_migrated_v1=true` anyway. Fix: only run migration for commissioners, OR surface the failures. |
-| 4 | medium | `supabase-client.js Google OAuth` | Pre-validation of email against `invited_emails` happens *post-OAuth* (we sign them out). They could theoretically retrigger sign-in. Fix: in Supabase Authentication → Sign Up, disable public sign-up; rely on the `invited_emails` table as the gate. |
-| 5 | medium | `js/db.js:logActivityAsync` | Errors are `console.warn` only. RLS rejections (e.g., a non-trade event with foreign target) are invisible to commissioners. Fix: surface as a UI toast. |
-| 6 | medium | `schema.sql al_insert_self` policy | After my last tightening, a non-party user can still log a `trade_recorded` event with a target_team_id of any team. Fix: cross-check against an actual `trades` row. |
-| 7 | medium | `app.js:isCommissioner` | Doesn't update if a commish gets demoted via SQL — `currentOwner` is cached client-side. Fix: subscribe to `owners` table changes. |
-| 8 | low | `js/app.js getMinorTeamStatus` | If two players share a name, `getPlayerIdByName` returns the first match. Edge case for spurious "dropped" tags. |
-| 9 | low | `scripts/daily_report.py` | `datetime.now()` (naive) used for the digest header alongside parsed UTC timestamps. Cron should run in local TZ but if it ever runs UTC, header and event times won't match. |
-| 10 | low | `nightly_sync.sh` / `frequent_espn_sync.sh` | If `git push` from cron ever fails (SSH agent missing, expired token), the error is silenced via `>> /tmp/...`. Symptom would be deployed snapshots silently going stale. |
-| 11 | low | `schema.sql claim_invited_team` | Doesn't validate `team_id` against the 12 known teams. Typo in `send_invite.py` would create a permanently broken claim. |
-| 12 | low | `app.js:submitTrade` | A one-sided trade (gift) is allowed: only the OR check rejects two empty sides. May be intentional. |
+Two issues are knowingly accepted rather than fixed:
 
-The first round of audit findings (24 items) had higher-severity issues —
-all CRITICAL and HIGH from that round are fixed. See git log for details.
+- **`is_email_invited` is anon-callable** — anyone (no login) can probe
+  whether an email is on the league allowlist. Needed for the pre-login
+  gate. Acceptable for a 12-person league; closeable via a Supabase Edge
+  Function if the league ever grows or this becomes sensitive.
+- **One-sided trades require a `confirm()` rather than a hard block** —
+  preserves the legitimate "gift" / salary-dump use case while catching
+  accidental empty-side submissions.
+
+If you spot something new, add a row above this paragraph rather than
+appending — keeps the most-recent state at the top.
 
 ## Common operations
 
