@@ -114,17 +114,27 @@ Mac stays mostly-on; if it sleeps, syncs catch up on next wake.
   successfully via the OTP code flow on the most recent attempt.
 - Trades, keepers, draft, rule5 all persist to Supabase. Realtime echoes work.
 - Activity tab populates. Daily email digest sends successfully.
-- Trophy Room shows 2017-2025 (with 2017 + 2018 manually entered). Presence
-  indicator works in the header.
-- Eligible Keepers, Minors Rosters, Trade tool, Draft (with passes/activates)
-  all working.
+- Trophy Room shows 2017-2025 (with 2017 + 2018 manually entered, top-3 only).
+  Click "Full standings" on any year to see all 12 teams ranked.
+- "Select Keepers" (formerly "Eligible Keepers"), Minors Rosters, Trade Log,
+  Trade Block, Trade Inbox, Draft (with passes/activates) all working.
+- Trade Inbox: full proposal lifecycle with counters and message threads.
+  Red `(N)` badge on the tab counts new pending proposals + new messages.
+- Keeper lockout: commissioners click "Lock Keepers" to freeze selections
+  for everyone else; click again to unlock.
+- Commissioners can edit trades in place (Edit link next to Delete on any
+  trade card). Activity logs `trade_edited`.
+- Mobile layouts: tables scroll horizontally rather than overflow; two-column
+  forms stack to one column at ≤600px.
+- Timestamps everywhere render relative ("2h ago") with the full date+time
+  in a hover tooltip via the `timestampHTML(ts)` helper.
 
 ## Outstanding bugs
 
-**None known.** Three rounds of audit are clear (see git log: rounds 1-2
-in February-April, rounds 3-5 on 2026-05-07).
+**None known.** Multiple rounds of audit are clear (see git log: rounds 1-2
+in February-April, rounds 3-5 on 2026-05-07, A/B/D backlog on 2026-05-08).
 
-Two issues are knowingly accepted rather than fixed:
+Knowingly accepted trade-offs (not fixed):
 
 - **`is_email_invited` is anon-callable** — anyone (no login) can probe
   whether an email is on the league allowlist. Needed for the pre-login
@@ -133,6 +143,22 @@ Two issues are knowingly accepted rather than fixed:
 - **One-sided trades require a `confirm()` rather than a hard block** —
   preserves the legitimate "gift" / salary-dump use case while catching
   accidental empty-side submissions.
+- **Auth `flowType: "implicit"`** — PKCE would be slightly safer (access
+  tokens stay out of URL fragments) but Supabase JS only supports one
+  flowType per client, and PKCE breaks cross-device magic-link clicks
+  (Josh signed in by clicking the link on a different device than where
+  he requested it). The OTP-code fallback in the login UI would cover
+  cross-device, but it's a downgrade from "click and you're in." Implicit
+  is the right call for this 12-person league. Two-client setups with
+  shared session storage are too fragile for the marginal gain.
+
+Pending small follow-ups (TODO, not bugs):
+
+- **2017 + 2018 Trophy Room standings** — top-3 are populated manually,
+  but full standings for those two years still need to be backfilled.
+  Path: edit the manual fallback in `scripts/sync_history.py`, then re-run
+  it. Or directly edit `js/history-snapshot.js`. Verify in the new "Full
+  standings" modal that all 12 teams appear.
 
 If you spot something new, add a row above this paragraph rather than
 appending — keeps the most-recent state at the top.
