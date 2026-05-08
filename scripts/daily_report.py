@@ -132,8 +132,8 @@ def describe(a):
 def build_digest(activity):
     if not activity:
         return ("No league activity in the last 24 hours.", "League quiet today")
-    now_pacific = datetime.now()
-    lines = [f"League activity for {now_pacific.strftime('%A, %B %d, %Y')}:", ""]
+    now_local = datetime.now(timezone.utc).astimezone()
+    lines = [f"League activity for {now_local.strftime('%A, %B %d, %Y')}:", ""]
     by_actor = {}
     for a in activity:
         by_actor.setdefault(team_name(a.get("actor_team_id")), []).append(a)
@@ -177,7 +177,7 @@ def main():
     print(body)
 
     # Write to a dated file as a fallback if SMTP isn't configured.
-    out_path = f"/tmp/league-daily-{datetime.now().strftime('%Y-%m-%d')}.txt"
+    out_path = f"/tmp/league-daily-{datetime.now(timezone.utc).astimezone().strftime('%Y-%m-%d')}.txt"
     with open(out_path, "w") as f:
         f.write(f"{subject}\n\n{body}")
     print(f"\nWrote {out_path}")

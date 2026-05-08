@@ -81,6 +81,13 @@ async function _migrateFromLocalStorage() {
   // when the corresponding Supabase table is empty AND localStorage has data.
   // After this we trust Supabase as the source of truth.
   if (localStorage.getItem("flm_migrated_v1") === "true") return;
+  // Only commissioners can write rows that touch other teams. Non-commish
+  // users' inserts silently RLS-reject; flag the migration done for them
+  // without attempting the writes.
+  if (!currentOwner || !currentOwner.is_commissioner) {
+    localStorage.setItem("flm_migrated_v1", "true");
+    return;
+  }
   try {
     // Trades
     if (!_cache.trades.length) {
@@ -200,7 +207,19 @@ function _subscribeToChanges() {
         if (typeof currentView !== "undefined" && currentView === "activity" && typeof switchTab === "function") {
           switchTab("activity");
         }
-      });
+      })
+      // Watch the current user's owners row so promotion/demotion to/from
+      // commissioner takes effect without a reload.
+      .on("postgres_changes",
+        { event: "*", schema: "public", table: "owners", filter: `id=eq.${currentUser.id}` },
+        async () => {
+          if (typeof fetchOwnerRow !== "function" || !currentUser) return;
+          const fresh = await fetchOwnerRow(currentUser.id);
+          if (fresh) currentOwner = fresh;
+          if (typeof fireAuthChange === "function") fireAuthChange();
+          if (typeof switchTab === "function" && typeof currentView !== "undefined") switchTab(currentView);
+        }
+      );
     _realtimeChannel.subscribe();
   } catch (e) {
     console.warn("Realtime subscribe failed:", e);
@@ -321,7 +340,9 @@ async function logActivityAsync(type, payload, opts) {
     _cache.activity.unshift(data);
     if (_cache.activity.length > 200) _cache.activity.length = 200;
   } catch (e) {
-    console.warn("Activity log failed:", e?.message || e);
+    const msg = `Activity log failed (${type}): ${e?.message || e}`;
+    console.warn(msg);
+    if (typeof showToast === "function") showToast(msg, "warn");
   }
 }
 

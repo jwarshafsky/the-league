@@ -226,6 +226,9 @@ as $$
 declare
   caller_email text;
   inv record;
+  -- Canonical 12-team list (matches LEAGUE_DATA.teams in js/data.js).
+  -- Guards against a typo in send_invite.py creating a permanently broken claim.
+  known_teams text[] := array['jeff','matt','jesse','sam','saxton','aj','corey','dave','josh-doug','larry','zack','glicksman'];
 begin
   if exists (select 1 from public.owners where id = auth.uid()) then
     return;
@@ -234,6 +237,9 @@ begin
   if caller_email is null then return; end if;
   select * into inv from public.invited_emails where lower(email) = lower(caller_email);
   if inv.email is null then return; end if;
+  if not (inv.team_id = any(known_teams)) then
+    raise exception 'invited_emails.team_id % is not a valid team', inv.team_id;
+  end if;
   insert into public.owners (id, team_id, is_commissioner)
   values (auth.uid(), inv.team_id, coalesce(inv.is_commissioner, false))
   on conflict (id) do nothing;
@@ -304,8 +310,16 @@ create policy "al_insert_self"
         and (
           target_team_id is null
           or target_team_id = public.my_team_id()
-          -- A trade record involves two teams; allow logging the counterparty.
-          or type = 'trade_recorded'
+          -- For trade_recorded events, the counterparty must be a real trade
+          -- partner — verified against the trades table.
+          or (
+            type = 'trade_recorded'
+            and exists (
+              select 1 from public.trades t
+              where (t.team1 = actor_team_id and t.team2 = target_team_id)
+                 or (t.team1 = target_team_id and t.team2 = actor_team_id)
+            )
+          )
         )
         -- trade_deleted is commish-only at the DB layer.
         and type <> 'trade_deleted'
@@ -316,6 +330,23 @@ create policy "al_insert_self"
 create policy "al_delete_admin"
   on public.activity_log for delete
   using (public.is_commissioner());
+
+
+-- ============================================================================
+-- 5d. Realtime publication — add the owners table so the client can react
+--     to commissioner promotion/demotion without a reload. Idempotent.
+-- ============================================================================
+do $$
+begin
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime'
+      and schemaname = 'public'
+      and tablename = 'owners'
+  ) then
+    alter publication supabase_realtime add table public.owners;
+  end if;
+end $$;
 
 
 -- ============================================================================

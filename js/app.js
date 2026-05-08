@@ -287,7 +287,7 @@ function getMinorTeamStatus(playerName, teamId) {
   const onAnyEspnRoster = snap.teams.some(t => t.roster.some(r => r.name === playerName));
   if (!onAnyEspnRoster) return null;       // pure prospect, ESPN doesn't track
 
-  const playerId = getPlayerIdByName(playerName);
+  const playerId = getPlayerIdByName(playerName, teamId);
   if (!playerId) return "dropped";
 
   // 1. If ESPN logged a TRADE event — that's the strongest signal.
@@ -954,6 +954,12 @@ function submitTrade() {
   if (!team1 || !team2) { alert("Select both teams"); return; }
   if (team1 === team2) { alert("Teams must be different"); return; }
   if (!tradeAssets.t1.length && !tradeAssets.t2.length) { alert("Add at least one asset"); return; }
+  // One-sided trade (gift / salary dump) — confirm to catch accidents.
+  if (!tradeAssets.t1.length || !tradeAssets.t2.length) {
+    const giver = !tradeAssets.t1.length ? team2 : team1;
+    const receiver = !tradeAssets.t1.length ? team1 : team2;
+    if (!confirm(`This trade is one-sided — ${giver} is giving to ${receiver} for nothing. Save anyway?`)) return;
+  }
 
   const trade = {
     date: new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }),
@@ -1149,13 +1155,22 @@ function classifyCommishAdd(playerName, playerId, currentTeamLocalId, lastAdd) {
   };
 }
 
-function getPlayerIdByName(playerName) {
+function getPlayerIdByName(playerName, preferredTeamId) {
   const snap = getEspnSnapshot();
   if (!snap) return null;
+  const matches = [];
   for (const t of snap.teams) {
     const p = t.roster.find(r => r.name === playerName);
-    if (p) return p.playerId;
+    if (p) matches.push({ playerId: p.playerId, teamLocalId: ESPN_ABBREV_TO_LOCAL[t.abbrev] });
   }
+  if (!matches.length) return null;
+  if (matches.length === 1) return matches[0].playerId;
+  if (preferredTeamId) {
+    const onPreferred = matches.find(m => m.teamLocalId === preferredTeamId);
+    if (onPreferred) return onPreferred.playerId;
+  }
+  // Ambiguous — multiple players share this name and we can't tell which.
+  // Returning null is safer than guessing wrong (would produce spurious tags).
   return null;
 }
 
@@ -1231,7 +1246,7 @@ function getOriginalCostBasis(playerName, currentTeamLocalId) {
 //   - FA add after trade deadline = not keepable at all
 function resolveCostBasis(playerName, currentTeamLocalId) {
   const original = getOriginalCostBasis(playerName, currentTeamLocalId);
-  const playerId = getPlayerIdByName(playerName);
+  const playerId = getPlayerIdByName(playerName, currentTeamLocalId);
   const lastAdd = getMostRecentAddEvent(playerId);
   const deadline = getTradeDeadline();
 
@@ -2319,6 +2334,27 @@ function escapeHtml(s) {
 
 function escapeJsString(s) {
   return String(s).replace(/\\/g, "\\\\").replace(/'/g, "\\'").replace(/"/g, '\\"').replace(/</g, "\\x3c").replace(/>/g, "\\x3e").replace(/\n/g, "\\n").replace(/\r/g, "\\r");
+}
+
+function showToast(message, type) {
+  let container = document.getElementById("toast-container");
+  if (!container) {
+    container = document.createElement("div");
+    container.id = "toast-container";
+    container.style.cssText = "position:fixed;top:14px;right:14px;z-index:2000;display:flex;flex-direction:column;gap:6px;pointer-events:none";
+    document.body.appendChild(container);
+  }
+  const toast = document.createElement("div");
+  const bg = type === "error" ? "var(--red)" : type === "warn" ? "var(--orange)" : "var(--accent)";
+  toast.style.cssText = `background:${bg};color:#fff;padding:10px 14px;border-radius:6px;box-shadow:var(--shadow);font-size:0.85rem;max-width:340px;pointer-events:auto;cursor:pointer;opacity:0;transition:opacity 180ms`;
+  toast.textContent = String(message);
+  toast.onclick = () => toast.remove();
+  container.appendChild(toast);
+  requestAnimationFrame(() => { toast.style.opacity = "1"; });
+  setTimeout(() => {
+    toast.style.opacity = "0";
+    setTimeout(() => toast.remove(), 200);
+  }, type === "error" ? 6000 : 3500);
 }
 
 function openPickEditor(round, pickInRound) {
