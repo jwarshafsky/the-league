@@ -293,14 +293,18 @@ function dbGetOnlineTeams() { return _onlineTeams; }
 
 // --- Public sync getters (read from cache) ---
 
-function dbGetTrades() { return _cache.trades; }
-function dbGetKeeperSelections() { return _cache.keeperSel; }
-function dbGetDraft() { return _cache.draft; }
-function dbGetRule5() { return _cache.rule5; }
-function dbGetCallupOverrides() { return _cache.callup; }
-function dbGetCommishOverrides() { return _cache.commishOverrides; }
-function dbGetWorkaroundOverrides() { return _cache.workaroundOverrides; }
-function dbGetActivity() { return _cache.activity; }
+// Cache snapshots — return a deep-clone for any structure callers might
+// mutate, so in-place edits don't corrupt the cache and a write-failure
+// rollback can actually restore the prior state.
+function _clone(v) { return v == null ? v : JSON.parse(JSON.stringify(v)); }
+function dbGetTrades() { return _cache.trades; }                // arrays of records, read-only
+function dbGetKeeperSelections() { return _clone(_cache.keeperSel); }
+function dbGetDraft() { return _clone(_cache.draft); }
+function dbGetRule5() { return _clone(_cache.rule5); }
+function dbGetCallupOverrides() { return _clone(_cache.callup); }
+function dbGetCommishOverrides() { return _clone(_cache.commishOverrides); }
+function dbGetWorkaroundOverrides() { return _clone(_cache.workaroundOverrides); }
+function dbGetActivity() { return _cache.activity; }            // read-only
 
 // Append-only logger; never throws (activity logging shouldn't break UX).
 async function logActivityAsync(type, payload, opts) {

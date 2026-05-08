@@ -304,9 +304,11 @@ create policy "al_insert_self"
         and (
           target_team_id is null
           or target_team_id = public.my_team_id()
-          -- Trades involve two teams; allow logging the counterparty as target.
-          or type in ('trade_recorded', 'trade_deleted')
+          -- A trade record involves two teams; allow logging the counterparty.
+          or type = 'trade_recorded'
         )
+        -- trade_deleted is commish-only at the DB layer.
+        and type <> 'trade_deleted'
       )
     )
   );

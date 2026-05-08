@@ -216,10 +216,15 @@ function getAllDraftedPlayerNames() {
     team.callups.forEach(p => names.add(p.name));
     team.minors.forEach(p => names.add(p.name));
   });
-  try {
-    const draft = JSON.parse(localStorage.getItem("flm_draft_2027") || "null");
-    if (draft && draft.picks) draft.picks.forEach(pk => names.add(pk.player));
-  } catch {}
+  // Read from the Supabase-backed cache when available (post-Phase-2 source
+  // of truth); fall back to the legacy localStorage key otherwise.
+  let draft = null;
+  if (typeof dbGetDraft === "function") {
+    draft = dbGetDraft();
+  } else {
+    try { draft = JSON.parse(localStorage.getItem("flm_draft_2027") || "null"); } catch {}
+  }
+  if (draft && draft.picks) draft.picks.forEach(pk => names.add(pk.player));
   return names;
 }
 

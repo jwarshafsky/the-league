@@ -964,13 +964,13 @@ function submitTrade() {
     notes
   };
 
-  // Reset form state immediately.
-  tradeAssets.t1 = [];
-  tradeAssets.t2 = [];
-
   if (typeof addTradeAsync === "function") {
     addTradeAsync(trade)
       .then(() => {
+        // Only clear the form on a successful save — preserves queued assets
+        // if the network/RLS rejects the write.
+        tradeAssets.t1 = [];
+        tradeAssets.t2 = [];
         if (typeof logActivityAsync === "function") {
           logActivityAsync("trade_recorded", {
             team1: trade.team1, team2: trade.team2,
@@ -986,6 +986,8 @@ function submitTrade() {
     const trades = getTrades();
     trades.push(trade);
     saveTrades(trades);
+    tradeAssets.t1 = [];
+    tradeAssets.t2 = [];
     switchTab("trades");
   }
 }
@@ -2925,9 +2927,15 @@ function getRule5State() {
 
 async function resetRule5Draft() {
   if (!confirm("Reset entire Rule 5 draft?")) return;
-  // Sweep the auto-recorded $1 Rule 5 trades alongside the state.
+  // Sweep the auto-recorded $1 Rule 5 trades alongside the state. Match by
+  // a structured marker we attach when the trade is inserted, falling back
+  // to the legacy notes prefix for older entries.
   if (typeof deleteTradeAsync === "function" && typeof getTrades === "function") {
-    const rule5Trades = (getTrades() || []).filter(t => t.notes && /^Rule 5 pick \(Round /.test(t.notes));
+    const rule5Trades = (getTrades() || []).filter(t =>
+      t.rule5 === true
+      || t.rule5PickClientId
+      || (t.notes && /^Rule 5 pick \(Round /.test(t.notes))
+    );
     for (const t of rule5Trades) {
       if (t._id) {
         try { await deleteTradeAsync(t._id); }
@@ -3254,7 +3262,11 @@ function makeRule5Pick(playerName) {
   const pickedAlready = state.picks.some(p => p.playerName === playerName);
   if (pickedAlready) { alert("Already picked"); return; }
 
+  // Use a stable client-side ID to correlate the pick with its trade row,
+  // independent of the server-issued UUID and array index.
+  const pickClientId = `${cur.round}.${cur.idx}.${Date.now()}`;
   state.picks.push({
+    pickClientId,
     round: cur.round,
     idx: cur.idx,
     teamId: cur.teamId,
@@ -3262,11 +3274,10 @@ function makeRule5Pick(playerName) {
     fromTeamId: poolEntry.originTeamId,
     pass: false,
     timestamp: Date.now(),
-    tradeId: null, // populated below once the trade row is inserted
+    tradeId: null,
   });
+  saveRule5State(state);
 
-  // Auto-record in trade log: $1 draft dollars from picker -> original team,
-  // player from original team -> picker. Persist via Supabase so other users see it.
   const trade = {
     date: new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }),
     team1: poolEntry.originTeamId,
@@ -3275,23 +3286,28 @@ function makeRule5Pick(playerName) {
     team2Receives: [{ type: poolEntry.type === "minor" ? "minor" : "major", value: playerName }],
     notes: `Rule 5 pick (Round ${cur.round}.${cur.idx + 1})`,
     rule5: true,
+    rule5PickClientId: pickClientId,
   };
 
   if (typeof addTradeAsync === "function") {
     addTradeAsync(trade)
       .then(id => {
-        state.picks[state.picks.length - 1].tradeId = id;
-        saveRule5State(state);
+        // Re-read the latest state and patch by stable client ID so concurrent
+        // picks / realtime overwrites don't clobber the wrong row.
+        const fresh = getRule5State();
+        if (!fresh) return;
+        const target = (fresh.picks || []).find(p => p.pickClientId === pickClientId);
+        if (target) {
+          target.tradeId = id;
+          saveRule5State(fresh);
+        }
       })
       .catch(err => alert("Trade log save failed: " + err.message));
   } else {
     const trades = getTrades();
     trades.push(trade);
     saveTrades(trades);
-    saveRule5State(state);
   }
-  // Save state immediately too so the UI shows the pick even before the trade ID lands.
-  saveRule5State(state);
   if (typeof logActivityAsync === "function") {
     logActivityAsync("rule5_pick_made", {
       round: cur.round, idx: cur.idx + 1, player_name: playerName,
@@ -3534,6 +3550,9 @@ async function submitClaimTeam() {
     return;
   }
   await refreshAuthState();
+  // Kick the data layer in case the auth-change listener already fired with
+  // owner=null and never came back around.
+  if (typeof initDb === "function" && currentOwner) initDb();
 }
 
 function renderHeaderUser() {

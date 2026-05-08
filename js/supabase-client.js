@@ -138,6 +138,7 @@ async function verifyEmailCode(email, code) {
 }
 
 async function signOut() {
+  window.__leagueAuthError = null;
   await supabaseClient.auth.signOut();
 }
 
