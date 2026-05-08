@@ -130,6 +130,7 @@ function _rowToTrade(r) {
   return {
     _id: r.id,
     date: r.date,
+    createdAt: r.created_at,
     team1: r.team1,
     team2: r.team2,
     team1Receives: r.team1_receives || [],

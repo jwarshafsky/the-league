@@ -689,6 +689,16 @@ function relativeTime(ts) {
   return `${Math.floor(ms / 86_400_000)}d ago`;
 }
 
+// Display a timestamp as relative-time text with the full local date+time as
+// a hover tooltip. Used everywhere a time appears in the UI so the format is
+// consistent: "2h ago" (with "Wed May 8, 2026, 9:43 PM" on hover).
+function timestampHTML(ts) {
+  if (!ts) return "";
+  const d = new Date(ts);
+  const abs = d.toLocaleString("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" });
+  return `<span title="${escapeHtml(abs)}">${escapeHtml(relativeTime(ts))}</span>`;
+}
+
 function renderTradeInboxView() {
   if (typeof currentOwner === "undefined" || !currentOwner) {
     return '<p style="color:var(--text-dim)">Sign in to see your trade inbox.</p>';
@@ -762,7 +772,7 @@ function renderThreadCard(thread) {
         <div style="display:flex;gap:10px;align-items:baseline">
           ${thread.messages.length ? `<span style="color:var(--text-dim);font-size:0.72rem">${thread.messages.length} msg${thread.messages.length === 1 ? "" : "s"}</span>` : ""}
           <span style="color:${statusBg};font-size:0.7rem;text-transform:uppercase;letter-spacing:0.04em;font-weight:700">${escapeHtml(latest.status)}</span>
-          <span style="color:var(--text-dim);font-size:0.72rem">${relativeTime(thread.lastActivityAt)}</span>
+          <span style="color:var(--text-dim);font-size:0.72rem">${timestampHTML(thread.lastActivityAt)}</span>
         </div>
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:0.82rem">
@@ -836,7 +846,7 @@ function renderThreadDetailHTML(thread) {
       ${thread.proposals.slice(0, -1).map(p => {
         const fromTeam = LEAGUE_DATA.teams.find(t => t.id === p.from_team_id);
         return `<div style="font-size:0.78rem;color:var(--text-dim);margin-bottom:4px">
-          ${escapeHtml(fromTeam ? fromTeam.name : p.from_team_id)} proposed (${escapeHtml(p.status)}) — ${escapeHtml(new Date(p.created_at).toLocaleString())}
+          ${escapeHtml(fromTeam ? fromTeam.name : p.from_team_id)} proposed (${escapeHtml(p.status)}) — ${timestampHTML(p.created_at)}
         </div>`;
       }).join("")}
     </div>
@@ -849,7 +859,7 @@ function renderThreadDetailHTML(thread) {
         <div style="max-width:80%;background:${isMe ? 'var(--accent)' : 'var(--bg)'};color:${isMe ? '#fff' : 'var(--text)'};padding:7px 11px;border-radius:12px;font-size:0.85rem">
           ${!isMe ? `<div style="font-size:0.7rem;color:var(--text-dim);margin-bottom:2px">${escapeHtml(fromTeam ? fromTeam.name : m.from_team_id)}</div>` : ""}
           <div>${escapeHtml(m.body)}</div>
-          <div style="font-size:0.65rem;color:${isMe ? 'rgba(255,255,255,0.6)' : 'var(--text-dim)'};margin-top:2px">${escapeHtml(relativeTime(m.created_at))}</div>
+          <div style="font-size:0.65rem;color:${isMe ? 'rgba(255,255,255,0.6)' : 'var(--text-dim)'};margin-top:2px">${timestampHTML(m.created_at)}</div>
         </div>
       </div>
     `;
@@ -1101,7 +1111,7 @@ function renderTradeCard(trade, index) {
   return `
     <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:14px;margin-bottom:10px">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-        <span style="color:var(--text-dim);font-size:0.75rem">${trade.date}</span>
+        <span style="color:var(--text-dim);font-size:0.75rem">${trade.createdAt ? timestampHTML(trade.createdAt) : escapeHtml(trade.date || "")}</span>
         ${isCommissioner() ? `<div style="display:flex;gap:10px">
           <button onclick="editTrade(${index})" style="background:none;border:none;color:var(--accent);cursor:pointer;font-size:0.75rem">Edit</button>
           <button onclick="deleteTrade(${index})" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:0.75rem">Delete</button>
@@ -3431,10 +3441,9 @@ function renderActivityView() {
 }
 
 function renderActivityItem(a) {
-  const time = new Date(a.created_at).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
   return `
     <div style="display:flex;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);font-size:0.85rem">
-      <div style="color:var(--text-dim);font-size:0.72rem;min-width:60px;padding-top:2px">${time}</div>
+      <div style="color:var(--text-dim);font-size:0.72rem;min-width:64px;padding-top:2px">${timestampHTML(a.created_at)}</div>
       <div style="flex:1;color:var(--text)">${describeActivity(a)}</div>
     </div>
   `;
