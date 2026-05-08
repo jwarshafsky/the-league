@@ -3305,11 +3305,24 @@ function renderLoginScreen(message = "") {
       </label>
       <button id="login-btn" class="trade-btn trade-btn-submit" style="width:100%;margin-top:8px" onclick="submitMagicLink()">Send Magic Link</button>
       ${messageHtml}
+      <div id="login-code-block" style="display:none;margin-top:14px;padding-top:14px;border-top:1px solid var(--border)">
+        <div style="color:var(--text-dim);font-size:0.78rem;margin-bottom:6px">
+          Email link not working? Enter the 6-digit code from the same email.
+        </div>
+        <div style="display:flex;gap:8px">
+          <input type="text" id="login-code" inputmode="numeric" maxlength="6" placeholder="123456" autocomplete="one-time-code"
+            style="flex:1;background:var(--bg);color:var(--text);border:1px solid var(--border);padding:10px;border-radius:6px;font-size:1.05rem;letter-spacing:0.2em;text-align:center">
+          <button id="login-code-btn" class="trade-btn trade-btn-submit" onclick="submitEmailCode()">Verify</button>
+        </div>
+      </div>
     </div>
   `;
   setTimeout(() => document.getElementById("login-email")?.focus(), 0);
   document.getElementById("login-email")?.addEventListener("keydown", e => {
     if (e.key === "Enter") { e.preventDefault(); submitMagicLink(); }
+  });
+  document.getElementById("login-code")?.addEventListener("keydown", e => {
+    if (e.key === "Enter") { e.preventDefault(); submitEmailCode(); }
   });
 }
 
@@ -3329,14 +3342,48 @@ async function submitMagicLink() {
     await sendMagicLink(email);
     msg.style.background = "rgba(34,197,94,0.12)";
     msg.style.color = "var(--green)";
-    msg.textContent = "Check your email for a sign-in link. You can close this tab.";
-    btn.textContent = "Link Sent";
+    msg.innerHTML =
+      "Check your email. Click the link <em>or</em> enter the 6-digit code below.";
+    btn.textContent = "Resend";
+    btn.disabled = false;
+    // Reveal the code-entry form.
+    const codeBlock = document.getElementById("login-code-block");
+    if (codeBlock) {
+      codeBlock.style.display = "block";
+      document.getElementById("login-code")?.focus();
+    }
   } catch (err) {
     msg.style.background = "rgba(239,68,68,0.12)";
     msg.style.color = "var(--red)";
     msg.textContent = err.message || "Couldn't send link. Try again.";
     btn.disabled = false;
     btn.textContent = "Send Magic Link";
+  }
+}
+
+async function submitEmailCode() {
+  const emailEl = document.getElementById("login-email");
+  const codeEl = document.getElementById("login-code");
+  const btn = document.getElementById("login-code-btn");
+  const msg = document.getElementById("login-msg");
+  const email = (emailEl?.value || "").trim();
+  const code = (codeEl?.value || "").trim();
+  if (!email || !code) { codeEl?.focus(); return; }
+  btn.disabled = true;
+  btn.textContent = "Verifying...";
+  try {
+    await verifyEmailCode(email, code);
+    msg.style.background = "rgba(34,197,94,0.12)";
+    msg.style.color = "var(--green)";
+    msg.textContent = "Signed in. Loading…";
+    // refreshAuthState fires onAuthStateChange which reroutes through authGate.
+  } catch (err) {
+    msg.style.display = "block";
+    msg.style.background = "rgba(239,68,68,0.12)";
+    msg.style.color = "var(--red)";
+    msg.textContent = err.message || "Invalid code.";
+    btn.disabled = false;
+    btn.textContent = "Verify Code";
   }
 }
 

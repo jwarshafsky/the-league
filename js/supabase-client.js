@@ -96,6 +96,18 @@ async function sendMagicLink(email) {
   if (error) throw error;
 }
 
+async function verifyEmailCode(email, code) {
+  const cleaned = (email || "").trim().toLowerCase();
+  const token = (code || "").trim();
+  const { data, error } = await supabaseClient.auth.verifyOtp({
+    email: cleaned,
+    token,
+    type: "email",
+  });
+  if (error) throw error;
+  return data;
+}
+
 async function signOut() {
   await supabaseClient.auth.signOut();
 }
