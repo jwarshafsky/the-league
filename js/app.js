@@ -670,12 +670,367 @@ function renderTradeBlockView() {
 }
 
 function proposeTradeWith(otherTeamId) {
-  switchTab("trades");
-  // Wait for the trade-log render to finish, then open the form pre-filled.
-  setTimeout(() => {
-    const myId = (typeof currentOwner !== "undefined" && currentOwner) ? currentOwner.team_id : null;
-    showTradeForm(myId, otherTeamId);
-  }, 0);
+  showProposalComposer({ targetTeamId: otherTeamId });
+}
+
+// --- Trade Inbox UI ---
+
+let _formMode = null; // null = normal trade; { kind: "proposal", counterOf? } in composer
+
+function relativeTime(ts) {
+  const ms = Date.now() - (typeof ts === "number" ? ts : new Date(ts).getTime());
+  if (ms < 60_000) return "just now";
+  if (ms < 3_600_000) return `${Math.floor(ms / 60_000)}m ago`;
+  if (ms < 86_400_000) return `${Math.floor(ms / 3_600_000)}h ago`;
+  return `${Math.floor(ms / 86_400_000)}d ago`;
+}
+
+function renderTradeInboxView() {
+  if (typeof currentOwner === "undefined" || !currentOwner) {
+    return '<p style="color:var(--text-dim)">Sign in to see your trade inbox.</p>';
+  }
+  const myTeam = currentOwner.team_id;
+  const threads = (typeof dbGetThreads === "function") ? dbGetThreads() : [];
+  const inbox = [], sent = [], past = [];
+  for (const t of threads) {
+    const latest = t.latestProposal;
+    const wasParty = t.proposals.some(p => p.from_team_id === myTeam || p.to_team_id === myTeam);
+    if (!wasParty && !isCommissioner()) continue;
+    if (latest.status === "pending") {
+      if (latest.to_team_id === myTeam) inbox.push(t);
+      else if (latest.from_team_id === myTeam) sent.push(t);
+      else past.push(t); // commissioner viewing
+    } else {
+      past.push(t);
+    }
+  }
+  const renderSection = (title, list, emptyMsg) => {
+    if (!list.length) return `
+      <div class="section-header">${title}</div>
+      <div style="color:var(--text-dim);font-size:0.85rem;margin:6px 0 18px;font-style:italic">${emptyMsg}</div>
+    `;
+    return `
+      <div class="section-header">${title} <span class="section-count">${list.length}</span></div>
+      <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:18px">
+        ${list.map(t => renderThreadCard(t)).join("")}
+      </div>
+    `;
+  };
+  return `
+    ${renderSection("Inbox", inbox, "No incoming proposals.")}
+    ${renderSection("Sent", sent, "No sent proposals awaiting response.")}
+    ${past.length ? renderSection("Past", past, "") : ""}
+  `;
+}
+
+function renderThreadCard(thread) {
+  const myTeam = currentOwner.team_id;
+  const latest = thread.latestProposal;
+  const counterId = (latest.from_team_id === myTeam) ? latest.to_team_id : latest.from_team_id;
+  const counterTeam = LEAGUE_DATA.teams.find(t => t.id === counterId);
+  const counterName = counterTeam ? counterTeam.name : counterId;
+  const isUnread = !dbIsThreadRead(thread.threadId) && latest.status === "pending" && latest.to_team_id === myTeam;
+  const iAmFrom = latest.from_team_id === myTeam;
+  const iGet  = iAmFrom ? (latest.team1_receives || []) : (latest.team2_receives || []);
+  const iGive = iAmFrom ? (latest.team2_receives || []) : (latest.team1_receives || []);
+  const statusColors = {
+    pending: "var(--accent)", accepted: "var(--green)", rejected: "var(--red)",
+    withdrawn: "var(--text-dim)", countered: "var(--yellow)",
+  };
+  const statusBg = statusColors[latest.status] || "var(--text-dim)";
+  const fmt = (assets) => (!assets || !assets.length)
+    ? '<span style="color:var(--text-dim)">Nothing</span>'
+    : assets.map(formatTradeAsset).join(", ");
+  return `
+    <div onclick="openThreadDetail('${escapeJsString(thread.threadId)}')"
+         style="background:var(--bg-card);border:1px solid ${isUnread ? 'var(--accent)' : 'var(--border)'};border-left:3px solid ${statusBg};border-radius:var(--radius);padding:12px 14px;cursor:pointer">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px">
+        <div style="font-size:0.92rem;color:var(--text-bright)">
+          <strong>${escapeHtml(counterName)}</strong>
+          ${isUnread ? '<span style="background:var(--accent);color:#fff;font-size:0.62rem;padding:1px 6px;border-radius:8px;margin-left:6px;text-transform:uppercase;letter-spacing:0.04em">new</span>' : ''}
+        </div>
+        <div style="display:flex;gap:10px;align-items:baseline">
+          ${thread.messages.length ? `<span style="color:var(--text-dim);font-size:0.72rem">${thread.messages.length} msg${thread.messages.length === 1 ? "" : "s"}</span>` : ""}
+          <span style="color:${statusBg};font-size:0.7rem;text-transform:uppercase;letter-spacing:0.04em;font-weight:700">${escapeHtml(latest.status)}</span>
+          <span style="color:var(--text-dim);font-size:0.72rem">${relativeTime(thread.lastActivityAt)}</span>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:0.82rem">
+        <div>
+          <div style="color:var(--text-dim);font-size:0.7rem;text-transform:uppercase;margin-bottom:2px">You get</div>
+          <div style="color:var(--text)">${fmt(iGet)}</div>
+        </div>
+        <div>
+          <div style="color:var(--text-dim);font-size:0.7rem;text-transform:uppercase;margin-bottom:2px">You give</div>
+          <div style="color:var(--text)">${fmt(iGive)}</div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function openThreadDetail(threadId) {
+  if (typeof dbMarkThreadRead === "function") dbMarkThreadRead(threadId);
+  if (typeof renderHeaderUser === "function") renderHeaderUser();
+  if (typeof currentView !== "undefined" && currentView === "trade-inbox") {
+    // Re-render in background so the unread badge clears immediately.
+    document.getElementById("main-content").innerHTML = renderTradeInboxView();
+  }
+  const thread = (typeof dbGetThreads === "function" ? dbGetThreads() : []).find(t => t.threadId === threadId);
+  if (!thread) return;
+  const existing = document.getElementById("thread-detail-modal");
+  if (existing) existing.remove();
+  const modal = document.createElement("div");
+  modal.id = "thread-detail-modal";
+  modal.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:1000;display:flex;align-items:flex-start;justify-content:center;padding:24px 16px;overflow-y:auto";
+  modal.onclick = e => { if (e.target === modal) closeThreadDetail(); };
+  modal.innerHTML = renderThreadDetailHTML(thread);
+  document.body.appendChild(modal);
+  setTimeout(() => document.getElementById("thread-msg-input")?.focus(), 0);
+}
+
+function closeThreadDetail() {
+  const m = document.getElementById("thread-detail-modal");
+  if (m) m.remove();
+}
+
+function renderThreadDetailHTML(thread) {
+  const myTeam = currentOwner.team_id;
+  const latest = thread.latestProposal;
+  const isPending = latest.status === "pending";
+  const iAmFrom = latest.from_team_id === myTeam;
+  const iAmTo   = latest.to_team_id   === myTeam;
+  const iGet  = iAmFrom ? (latest.team1_receives || []) : (latest.team2_receives || []);
+  const iGive = iAmFrom ? (latest.team2_receives || []) : (latest.team1_receives || []);
+  const counterId = iAmFrom ? latest.to_team_id : latest.from_team_id;
+  const counterTeam = LEAGUE_DATA.teams.find(t => t.id === counterId);
+  const counterName = counterTeam ? counterTeam.name : counterId;
+  const fmt = (assets) => (!assets || !assets.length)
+    ? '<span style="color:var(--text-dim)">Nothing</span>'
+    : assets.map(formatTradeAsset).join(", ");
+  let actions = "";
+  if (isPending) {
+    if (iAmTo) {
+      actions = `
+        <button class="trade-btn trade-btn-submit" onclick="acceptThreadProposal('${escapeJsString(latest.id)}')">Accept</button>
+        <button class="trade-btn" style="background:var(--yellow);color:#000" onclick="openCounterComposer('${escapeJsString(latest.id)}')">Counter</button>
+        <button class="trade-btn" style="background:var(--red)" onclick="rejectThreadProposal('${escapeJsString(latest.id)}')">Reject</button>
+      `;
+    } else if (iAmFrom) {
+      actions = `<button class="trade-btn" style="background:var(--text-dim);color:#000" onclick="withdrawThreadProposal('${escapeJsString(latest.id)}')">Withdraw</button>`;
+    }
+  }
+  const proposalHistory = thread.proposals.length > 1 ? `
+    <div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border)">
+      <div style="color:var(--text-dim);font-size:0.7rem;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:6px">History</div>
+      ${thread.proposals.slice(0, -1).map(p => {
+        const fromTeam = LEAGUE_DATA.teams.find(t => t.id === p.from_team_id);
+        return `<div style="font-size:0.78rem;color:var(--text-dim);margin-bottom:4px">
+          ${escapeHtml(fromTeam ? fromTeam.name : p.from_team_id)} proposed (${escapeHtml(p.status)}) — ${escapeHtml(new Date(p.created_at).toLocaleString())}
+        </div>`;
+      }).join("")}
+    </div>
+  ` : "";
+  const messages = thread.messages.map(m => {
+    const fromTeam = LEAGUE_DATA.teams.find(t => t.id === m.from_team_id);
+    const isMe = m.from_team_id === myTeam;
+    return `
+      <div style="display:flex;${isMe ? 'justify-content:flex-end' : 'justify-content:flex-start'};margin-bottom:6px">
+        <div style="max-width:80%;background:${isMe ? 'var(--accent)' : 'var(--bg)'};color:${isMe ? '#fff' : 'var(--text)'};padding:7px 11px;border-radius:12px;font-size:0.85rem">
+          ${!isMe ? `<div style="font-size:0.7rem;color:var(--text-dim);margin-bottom:2px">${escapeHtml(fromTeam ? fromTeam.name : m.from_team_id)}</div>` : ""}
+          <div>${escapeHtml(m.body)}</div>
+          <div style="font-size:0.65rem;color:${isMe ? 'rgba(255,255,255,0.6)' : 'var(--text-dim)'};margin-top:2px">${escapeHtml(relativeTime(m.created_at))}</div>
+        </div>
+      </div>
+    `;
+  }).join("");
+  return `
+    <div style="max-width:640px;width:100%;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow);padding:18px;margin-top:20px">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px">
+        <div>
+          <h3 style="margin:0;color:var(--text-bright)">Trade with ${escapeHtml(counterName)}</h3>
+          <div style="color:var(--text-dim);font-size:0.78rem;margin-top:2px">Status: <strong>${escapeHtml(latest.status)}</strong></div>
+        </div>
+        <button onclick="closeThreadDetail()" style="background:none;border:none;color:var(--text-dim);font-size:1.4rem;cursor:pointer;padding:0 4px;line-height:1">×</button>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;background:var(--bg);padding:12px;border-radius:6px;margin-bottom:14px">
+        <div>
+          <div style="color:var(--text-dim);font-size:0.72rem;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:4px">You get</div>
+          <div style="color:var(--text);font-size:0.9rem">${fmt(iGet)}</div>
+        </div>
+        <div>
+          <div style="color:var(--text-dim);font-size:0.72rem;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:4px">You give</div>
+          <div style="color:var(--text);font-size:0.9rem">${fmt(iGive)}</div>
+        </div>
+      </div>
+      ${latest.notes ? `<div style="background:var(--bg);padding:10px;border-radius:6px;font-size:0.85rem;color:var(--text);margin-bottom:14px"><span style="color:var(--text-dim);font-size:0.72rem;text-transform:uppercase">Notes</span><br>${escapeHtml(latest.notes)}</div>` : ""}
+      ${actions ? `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">${actions}</div>` : ""}
+      ${proposalHistory}
+      <div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border)">
+        <div style="color:var(--text-dim);font-size:0.7rem;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:8px">Messages</div>
+        <div id="thread-messages" style="max-height:240px;overflow-y:auto;margin-bottom:10px">
+          ${messages || '<div style="color:var(--text-dim);font-size:0.82rem;font-style:italic">No messages yet.</div>'}
+        </div>
+        <div style="display:flex;gap:6px">
+          <input type="text" id="thread-msg-input" placeholder="Send a message..."
+            style="flex:1;background:var(--bg);color:var(--text);border:1px solid var(--border);padding:8px 10px;border-radius:6px;font-size:0.85rem"
+            onkeydown="if(event.key==='Enter'){event.preventDefault();sendThreadMessage('${escapeJsString(thread.threadId)}');}">
+          <button class="trade-btn" onclick="sendThreadMessage('${escapeJsString(thread.threadId)}')">Send</button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+async function sendThreadMessage(threadId) {
+  const input = document.getElementById("thread-msg-input");
+  if (!input) return;
+  const body = input.value.trim();
+  if (!body) return;
+  input.disabled = true;
+  try {
+    await sendProposalMessageAsync(threadId, body);
+    input.value = "";
+    const thread = (dbGetThreads() || []).find(t => t.threadId === threadId);
+    if (thread) {
+      const modal = document.getElementById("thread-detail-modal");
+      if (modal) modal.innerHTML = renderThreadDetailHTML(thread);
+      setTimeout(() => document.getElementById("thread-msg-input")?.focus(), 0);
+    }
+  } catch (e) {
+    alert("Couldn't send message: " + (e.message || e));
+  } finally {
+    input.disabled = false;
+  }
+}
+
+async function acceptThreadProposal(proposalId) {
+  const proposal = (dbGetProposals() || []).find(p => p.id === proposalId);
+  if (!proposal) return;
+  if (!confirm("Accept this trade? It will be recorded in the Trade Log.")) return;
+  try {
+    await acceptProposalAsync(proposal);
+    if (typeof logActivityAsync === "function") {
+      logActivityAsync("trade_recorded", {
+        team1: proposal.from_team_id, team2: proposal.to_team_id,
+        team1_receives: proposal.team1_receives,
+        team2_receives: proposal.team2_receives,
+        notes: proposal.notes,
+      }, { targetTeamId: proposal.from_team_id });
+    }
+    closeThreadDetail();
+    if (typeof switchTab === "function") switchTab("trade-inbox");
+  } catch (e) {
+    alert("Couldn't accept: " + (e.message || e));
+  }
+}
+
+async function rejectThreadProposal(proposalId) {
+  if (!confirm("Reject this proposal?")) return;
+  try {
+    await setProposalStatusAsync(proposalId, "rejected");
+    closeThreadDetail();
+    if (typeof switchTab === "function") switchTab("trade-inbox");
+  } catch (e) { alert("Couldn't reject: " + (e.message || e)); }
+}
+
+async function withdrawThreadProposal(proposalId) {
+  if (!confirm("Withdraw this proposal?")) return;
+  try {
+    await setProposalStatusAsync(proposalId, "withdrawn");
+    closeThreadDetail();
+    if (typeof switchTab === "function") switchTab("trade-inbox");
+  } catch (e) { alert("Couldn't withdraw: " + (e.message || e)); }
+}
+
+function openCounterComposer(parentProposalId) {
+  const proposal = (dbGetProposals() || []).find(p => p.id === parentProposalId);
+  if (!proposal) return;
+  closeThreadDetail();
+  showProposalComposer({ counterOf: proposal });
+}
+
+function showProposalComposer(opts) {
+  opts = opts || {};
+  if (!currentOwner) { alert("Sign in to propose a trade."); return; }
+  const myTeamId = currentOwner.team_id;
+  const counterOf = opts.counterOf || null;
+  const targetTeamId = opts.targetTeamId || (counterOf
+    ? (counterOf.to_team_id === myTeamId ? counterOf.from_team_id : counterOf.to_team_id)
+    : null);
+  const existing = document.getElementById("proposal-composer-modal");
+  if (existing) existing.remove();
+  const modal = document.createElement("div");
+  modal.id = "proposal-composer-modal";
+  modal.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:1000;display:flex;align-items:flex-start;justify-content:center;padding:24px 16px;overflow-y:auto";
+  modal.onclick = e => { if (e.target === modal) closeProposalComposer(); };
+  modal.innerHTML = `
+    <div style="max-width:780px;width:100%;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:18px;margin-top:20px">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px">
+        <h3 style="margin:0;color:var(--text-bright)">${counterOf ? "Counter Proposal" : "Propose Trade"}</h3>
+        <button onclick="closeProposalComposer()" style="background:none;border:none;color:var(--text-dim);font-size:1.4rem;cursor:pointer;padding:0 4px;line-height:1">×</button>
+      </div>
+      <div id="trade-form-container"></div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+  _formMode = { kind: "proposal", counterOf };
+  showTradeForm(myTeamId, targetTeamId);
+  // Lock the proposer's team — you can only propose from your own team.
+  const sel1 = document.getElementById("trade-team1");
+  if (sel1) sel1.disabled = true;
+  // Counter: pre-fill the assets and notes from the parent.
+  if (counterOf) {
+    tradeAssets.t1 = JSON.parse(JSON.stringify(counterOf.team1_receives || []));
+    tradeAssets.t2 = JSON.parse(JSON.stringify(counterOf.team2_receives || []));
+    tradeAssets.teamIds.t1 = myTeamId;
+    tradeAssets.teamIds.t2 = targetTeamId;
+    if (typeof renderAssetList === "function") {
+      renderAssetList("t1");
+      renderAssetList("t2");
+    }
+    const notesEl = document.getElementById("trade-notes");
+    if (notesEl) notesEl.value = counterOf.notes || "";
+  }
+  // Relabel the submit button.
+  const submitBtn = modal.querySelector(".trade-btn-submit");
+  if (submitBtn) submitBtn.textContent = counterOf ? "Send Counter" : "Send Proposal";
+}
+
+function closeProposalComposer() {
+  _formMode = null;
+  const m = document.getElementById("proposal-composer-modal");
+  if (m) m.remove();
+}
+
+async function submitProposal() {
+  const myTeamId = currentOwner.team_id;
+  const team2 = document.getElementById("trade-team2").value;
+  if (!team2) { alert("Select a recipient team"); return; }
+  if (team2 === myTeamId) { alert("Choose a different team"); return; }
+  if (!tradeAssets.t1.length && !tradeAssets.t2.length) { alert("Add at least one asset"); return; }
+  if (!tradeAssets.t1.length || !tradeAssets.t2.length) {
+    if (!confirm("This proposal is one-sided — one team gets nothing. Send anyway?")) return;
+  }
+  const notes = document.getElementById("trade-notes")?.value || "";
+  const team1_receives = [...tradeAssets.t2]; // what I get (came from the recipient's picker)
+  const team2_receives = [...tradeAssets.t1]; // what they get (came from my picker)
+  const counterOf = _formMode?.counterOf || null;
+  try {
+    if (counterOf) {
+      await counterProposalAsync(counterOf, { team1_receives, team2_receives, notes });
+    } else {
+      await createProposalAsync({
+        from_team_id: myTeamId, to_team_id: team2,
+        team1_receives, team2_receives, notes,
+      });
+    }
+    tradeAssets.t1 = []; tradeAssets.t2 = [];
+    closeProposalComposer();
+    if (typeof switchTab === "function") switchTab("trade-inbox");
+  } catch (e) {
+    alert("Couldn't send proposal: " + (e.message || e));
+  }
 }
 
 // --- Draft Dollars (trade-adjusted) ---
@@ -1016,6 +1371,8 @@ function renderAssetList(prefix) {
 }
 
 function submitTrade() {
+  // The composer reuses this trade form for proposal entry; route through.
+  if (_formMode && _formMode.kind === "proposal") return submitProposal();
   const team1 = document.getElementById("trade-team1").value;
   const team2 = document.getElementById("trade-team2").value;
   const notes = document.getElementById("trade-notes").value;
@@ -2845,6 +3202,11 @@ function switchTab(tab) {
       title.textContent = "Trade Block";
       content.innerHTML = renderTradeBlockView();
       break;
+    case "trade-inbox":
+      currentView = "trade-inbox";
+      title.textContent = "Trade Inbox";
+      content.innerHTML = renderTradeInboxView();
+      break;
     case "draft":
       currentView = "draft";
       title.textContent = "2027 Minor League Draft";
@@ -3773,6 +4135,16 @@ function renderHeaderUser() {
     <span>${teamName}${adminTag}</span>
     <button onclick="signOut()" style="background:rgba(0,0,0,0.25);border:1px solid rgba(255,255,255,0.2);color:white;padding:3px 8px;border-radius:4px;font-size:0.7rem;cursor:pointer">Sign Out</button>
   `;
+
+  // Inbox unread badge — re-paint on every header update so it stays current
+  // as proposals/messages flow in via realtime.
+  const inboxNav = document.getElementById("nav-trade-inbox");
+  if (inboxNav) {
+    const unread = (typeof dbGetInboxUnreadCount === "function") ? dbGetInboxUnreadCount() : 0;
+    inboxNav.innerHTML = unread > 0
+      ? `Trade Inbox <span class="section-count" style="background:var(--accent);color:#fff;margin-left:4px">${unread}</span>`
+      : "Trade Inbox";
+  }
 }
 
 // Re-render the header bar whenever someone joins or leaves.

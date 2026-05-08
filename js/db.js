@@ -15,7 +15,25 @@ const _cache = {
   commishOverrides: {},     // { playerName: { ... } }
   workaroundOverrides: {},  // { playerId: decision }
   activity: [],        // array of { id, type, actor_team_id, target_team_id, payload, created_at }
+  proposals: [],       // array of trade_proposals rows (raw)
+  messages: [],        // array of trade_proposal_messages rows (raw)
 };
+// Cross-conversation read state for the trade inbox: thread_ids the user has
+// opened. Tracked client-side only (localStorage), so no schema cost.
+const TRADE_INBOX_READ_KEY = "flm_trade_inbox_read_v1";
+function _getReadThreads() {
+  try { return new Set(JSON.parse(localStorage.getItem(TRADE_INBOX_READ_KEY) || "[]")); }
+  catch { return new Set(); }
+}
+function _saveReadThreads(set) {
+  try { localStorage.setItem(TRADE_INBOX_READ_KEY, JSON.stringify([...set])); } catch {}
+}
+function dbMarkThreadRead(threadId) {
+  const s = _getReadThreads();
+  s.add(threadId);
+  _saveReadThreads(s);
+}
+function dbIsThreadRead(threadId) { return _getReadThreads().has(threadId); }
 let _dbReady = false;
 const _readyListeners = [];
 
@@ -25,12 +43,14 @@ function onDbReady(fn) {
 }
 
 async function _fetchAll() {
-  const [trades, ks, ls, co, act] = await Promise.all([
+  const [trades, ks, ls, co, act, props, msgs] = await Promise.all([
     supabaseClient.from("trades").select("*").order("created_at", { ascending: true }),
     supabaseClient.from("keeper_selections").select("*"),
     supabaseClient.from("league_state").select("*"),
     supabaseClient.from("callup_overrides").select("*"),
     supabaseClient.from("activity_log").select("*").order("created_at", { ascending: false }).limit(200),
+    supabaseClient.from("trade_proposals").select("*").order("created_at", { ascending: false }),
+    supabaseClient.from("trade_proposal_messages").select("*").order("created_at", { ascending: true }),
   ]);
   // Surface query errors so a transient network/RLS issue doesn't silently
   // wipe the UI to empty caches. Each table is independent — we still load
@@ -47,7 +67,11 @@ async function _fetchAll() {
   _surface("league_state", ls);
   _surface("callup_overrides", co);
   _surface("activity_log", act);
+  _surface("trade_proposals", props);
+  _surface("trade_proposal_messages", msgs);
   _cache.activity = act.data || [];
+  _cache.proposals = props.data || [];
+  _cache.messages = msgs.data || [];
 
   _cache.trades = (trades.data || []).map(_rowToTrade);
 
@@ -223,6 +247,28 @@ function _subscribeToChanges() {
           switchTab("activity");
         }
       })
+      // Trade-inbox traffic (proposals + messages). Re-fetch on any change
+      // and re-render whichever inbox view is active. Header badge updates
+      // via the standard auth-change broadcast.
+      .on("postgres_changes", { event: "*", schema: "public", table: "trade_proposals" }, async () => {
+        await _fetchAll();
+        const ae = document.activeElement;
+        const userIsTyping = ae && (ae.tagName === "INPUT" || ae.tagName === "TEXTAREA" || ae.tagName === "SELECT" || ae.isContentEditable);
+        if (typeof renderHeaderUser === "function") renderHeaderUser();
+        if (userIsTyping) return;
+        if (typeof switchTab === "function" && typeof currentView !== "undefined") {
+          if (currentView === "trade-inbox" || currentView === "trade-block") switchTab(currentView);
+        }
+      })
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "trade_proposal_messages" }, async () => {
+        await _fetchAll();
+        const ae = document.activeElement;
+        const userIsTyping = ae && (ae.tagName === "INPUT" || ae.tagName === "TEXTAREA" || ae.tagName === "SELECT" || ae.isContentEditable);
+        if (userIsTyping) return;
+        if (typeof currentView !== "undefined" && currentView === "trade-inbox" && typeof switchTab === "function") {
+          switchTab("trade-inbox");
+        }
+      })
       // Watch the current user's owners row so promotion/demotion to/from
       // commissioner takes effect without a reload.
       .on("postgres_changes",
@@ -260,6 +306,8 @@ function _resetDb() {
   _cache.commishOverrides = {};
   _cache.workaroundOverrides = {};
   _cache.activity = [];
+  _cache.proposals = [];
+  _cache.messages = [];
   _dbReady = false;
 }
 
@@ -339,6 +387,53 @@ function dbGetCallupOverrides() { return _clone(_cache.callup); }
 function dbGetCommishOverrides() { return _clone(_cache.commishOverrides); }
 function dbGetWorkaroundOverrides() { return _clone(_cache.workaroundOverrides); }
 function dbGetActivity() { return _cache.activity; }            // read-only
+function dbGetProposals() { return _cache.proposals; }          // read-only
+function dbGetMessages() { return _cache.messages; }            // read-only
+
+// Group proposals into threads. Returns array of { threadId, proposals[],
+// messages[], latestProposal, lastActivityAt }, sorted by lastActivityAt
+// descending (most recent first).
+function dbGetThreads() {
+  const props = _cache.proposals || [];
+  const msgs = _cache.messages || [];
+  const byThread = {};
+  for (const p of props) {
+    if (!byThread[p.thread_id]) byThread[p.thread_id] = { threadId: p.thread_id, proposals: [], messages: [] };
+    byThread[p.thread_id].proposals.push(p);
+  }
+  for (const m of msgs) {
+    if (!byThread[m.thread_id]) continue; // orphan message — skip
+    byThread[m.thread_id].messages.push(m);
+  }
+  const threads = Object.values(byThread).map(t => {
+    t.proposals.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+    t.messages.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+    t.latestProposal = t.proposals[t.proposals.length - 1];
+    const propAt = new Date(t.latestProposal.updated_at || t.latestProposal.created_at).getTime();
+    const msgAt = t.messages.length ? new Date(t.messages[t.messages.length - 1].created_at).getTime() : 0;
+    t.lastActivityAt = Math.max(propAt, msgAt);
+    return t;
+  });
+  threads.sort((a, b) => b.lastActivityAt - a.lastActivityAt);
+  return threads;
+}
+
+// Unread inbox count for the current owner: pending proposals where user is
+// the recipient (to_team_id) AND the thread hasn't been opened.
+function dbGetInboxUnreadCount() {
+  if (typeof currentOwner === "undefined" || !currentOwner) return 0;
+  const myTeam = currentOwner.team_id;
+  const threads = dbGetThreads();
+  let count = 0;
+  for (const t of threads) {
+    const latest = t.latestProposal;
+    if (latest.status !== "pending") continue;
+    if (latest.to_team_id !== myTeam) continue;
+    if (dbIsThreadRead(t.threadId)) continue;
+    count += 1;
+  }
+  return count;
+}
 
 // Append-only logger; never throws (activity logging shouldn't break UX).
 async function logActivityAsync(type, payload, opts) {
@@ -468,6 +563,90 @@ async function saveDraftAsync(draft)            { return _saveLeagueStateAsync("
 async function saveRule5Async(state)            { return _saveLeagueStateAsync("rule5", state, "rule5"); }
 async function saveCommishOverridesAsync(map)   { return _saveLeagueStateAsync("commish_overrides", map, "commishOverrides"); }
 async function saveWorkaroundOverridesAsync(m)  { return _saveLeagueStateAsync("workaround_overrides", m, "workaroundOverrides"); }
+
+// --- Trade Inbox writers ---
+
+async function createProposalAsync({ from_team_id, to_team_id, team1_receives, team2_receives, notes }) {
+  if (!currentUser) throw new Error("Not signed in");
+  const { data, error } = await supabaseClient.from("trade_proposals").insert({
+    from_team_id, to_team_id,
+    team1_receives: team1_receives || [],
+    team2_receives: team2_receives || [],
+    notes: notes || "",
+    created_by: currentUser.id,
+  }).select().single();
+  if (error) throw error;
+  // Optimistic-ish: prepend to cache; realtime will dedupe via id on next refresh.
+  _cache.proposals = [data, ...(_cache.proposals || [])];
+  return data;
+}
+
+async function counterProposalAsync(parentProposal, { team1_receives, team2_receives, notes }) {
+  if (!currentUser || !currentOwner) throw new Error("Not signed in");
+  // Counter is sent BY the recipient of the parent — the from/to flip.
+  const new_from = currentOwner.team_id;
+  const new_to   = (parentProposal.from_team_id === new_from)
+    ? parentProposal.to_team_id
+    : parentProposal.from_team_id;
+  // 1. Mark parent as countered.
+  const { error: upErr } = await supabaseClient.from("trade_proposals")
+    .update({ status: "countered" }).eq("id", parentProposal.id);
+  if (upErr) throw upErr;
+  // 2. Insert the counter in the same thread.
+  const { data, error } = await supabaseClient.from("trade_proposals").insert({
+    thread_id: parentProposal.thread_id,
+    from_team_id: new_from,
+    to_team_id: new_to,
+    team1_receives: team1_receives || [],
+    team2_receives: team2_receives || [],
+    notes: notes || "",
+    parent_proposal_id: parentProposal.id,
+    created_by: currentUser.id,
+  }).select().single();
+  if (error) throw error;
+  return data;
+}
+
+async function setProposalStatusAsync(proposalId, status) {
+  const valid = ["accepted", "rejected", "withdrawn"];
+  if (!valid.includes(status)) throw new Error("Invalid status: " + status);
+  const { error } = await supabaseClient.from("trade_proposals")
+    .update({ status }).eq("id", proposalId);
+  if (error) throw error;
+}
+
+// Accept a proposal: mark it accepted AND record a row in the trades table
+// using the same asset arrays. Activity log entry is fired by the caller
+// since logActivityAsync wants the trade context.
+async function acceptProposalAsync(proposal) {
+  // 1. Insert the trade. team1/team2 follow the proposal as-is.
+  const tradeRow = {
+    date: new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }),
+    team1: proposal.from_team_id,
+    team2: proposal.to_team_id,
+    team1Receives: proposal.team2_receives || [],
+    team2Receives: proposal.team1_receives || [],
+    notes: proposal.notes || "",
+  };
+  await addTradeAsync(tradeRow);
+  // 2. Mark the proposal accepted.
+  await setProposalStatusAsync(proposal.id, "accepted");
+  return tradeRow;
+}
+
+async function sendProposalMessageAsync(thread_id, body) {
+  if (!currentOwner) throw new Error("Not signed in");
+  const trimmed = (body || "").trim();
+  if (!trimmed) throw new Error("Empty message");
+  const { data, error } = await supabaseClient.from("trade_proposal_messages").insert({
+    thread_id,
+    from_team_id: currentOwner.team_id,
+    body: trimmed,
+  }).select().single();
+  if (error) throw error;
+  _cache.messages = [...(_cache.messages || []), data];
+  return data;
+}
 
 async function saveCallupOverrideAsync(playerName, price, year) {
   const prev = _cache.callup[playerName];
