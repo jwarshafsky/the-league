@@ -75,9 +75,15 @@ async function refreshAuthState() {
     if (!currentOwner) {
       try {
         const { error } = await supabaseClient.rpc("claim_invited_team");
-        if (!error) currentOwner = await fetchOwnerRow(currentUser.id);
+        if (error) {
+          console.error("claim_invited_team error:", error);
+          window.__leagueAuthError = "Couldn't auto-assign your team. Pick it manually below or ask a commissioner.";
+        } else {
+          currentOwner = await fetchOwnerRow(currentUser.id);
+        }
       } catch (e) {
-        console.warn("Auto-claim failed:", e);
+        console.error("Auto-claim threw:", e);
+        window.__leagueAuthError = "Couldn't auto-assign your team. Pick it manually below or ask a commissioner.";
       }
     }
   } else {

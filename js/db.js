@@ -80,6 +80,7 @@ async function _migrateFromLocalStorage() {
   // One-time push of pre-existing localStorage data into Supabase. Runs only
   // when the corresponding Supabase table is empty AND localStorage has data.
   // After this we trust Supabase as the source of truth.
+  if (localStorage.getItem("flm_migrated_v1") === "true") return;
   try {
     // Trades
     if (!_cache.trades.length) {
@@ -154,6 +155,7 @@ async function _migrateFromLocalStorage() {
     }
     // Re-load after migration so cache reflects whatever just got inserted.
     await _fetchAll();
+    localStorage.setItem("flm_migrated_v1", "true");
   } catch (e) {
     console.error("Migration error:", e);
   }
@@ -183,6 +185,8 @@ function _subscribeToChanges() {
     if (typeof switchTab !== "function" || typeof currentView === "undefined") return;
     // Skip refreshing the trades tab when the New Trade form is open — would wipe queued assets.
     if (currentView === "trades" && document.getElementById("trade-form-container")?.children.length) return;
+    // Skip the open Pick Editor / Commish Editor modals.
+    if (document.getElementById("pick-editor-modal") || document.getElementById("commish-editor-modal")) return;
     switchTab(currentView);
   };
   try {
@@ -362,7 +366,10 @@ async function setKeeperSelectionAsync(teamId, playerName, flags) {
   const prev = _cache.keeperSel[teamId]?.[playerName];
 
   if (allEmpty) {
-    if (_cache.keeperSel[teamId]) delete _cache.keeperSel[teamId][playerName];
+    if (_cache.keeperSel[teamId]) {
+      delete _cache.keeperSel[teamId][playerName];
+      if (!Object.keys(_cache.keeperSel[teamId]).length) delete _cache.keeperSel[teamId];
+    }
   } else {
     if (!_cache.keeperSel[teamId]) _cache.keeperSel[teamId] = {};
     _cache.keeperSel[teamId][playerName] = { ...flags };

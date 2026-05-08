@@ -625,7 +625,9 @@ function renderTradesView() {
 
 function parseDraftDollarsAmount(asset) {
   if (asset && asset.amount != null) return Number(asset.amount) || 0;
-  const m = (asset && asset.value || "").match(/\$(\d+)/);
+  // Legacy formats: "$10 draft dollars" or "10 draft dollars".
+  const v = String(asset?.value || "");
+  const m = v.match(/\$?\s*(\d+)/);
   return m ? parseInt(m[1], 10) : 0;
 }
 
@@ -2683,7 +2685,6 @@ function removeTradedPick(key) {
 // --- Navigation ---
 
 let currentView = "eligible";
-let currentTeamId = null;
 
 function switchTab(tab) {
   document.querySelectorAll(".nav-tab").forEach(t => t.classList.remove("active"));
@@ -2695,7 +2696,6 @@ function switchTab(tab) {
   const title = document.getElementById("header-title");
 
   backBtn.classList.remove("visible");
-  currentTeamId = null;
 
   switch (tab) {
     case "teams":
@@ -2869,11 +2869,16 @@ const HISTORICAL_ABBREV_OVERRIDES = {
   "BUST": "matt",  // 2019 third place
 };
 
+const _trophyAbbrevWarned = new Set();
 function trophyTeamLabel(team) {
   const localId = HISTORICAL_ABBREV_OVERRIDES[team.abbrev] || ESPN_ABBREV_TO_LOCAL[team.abbrev];
   if (localId) {
     const t = LEAGUE_DATA.teams.find(x => x.id === localId);
     if (t) return t.name;
+  }
+  if (team.abbrev && !_trophyAbbrevWarned.has(team.abbrev)) {
+    _trophyAbbrevWarned.add(team.abbrev);
+    console.warn(`[trophy] Unmapped historical abbrev "${team.abbrev}" — add it to HISTORICAL_ABBREV_OVERRIDES.`);
   }
   return team.name || team.abbrev || "?";
 }
@@ -2918,8 +2923,18 @@ function getRule5State() {
   catch { return null; }
 }
 
-function resetRule5Draft() {
+async function resetRule5Draft() {
   if (!confirm("Reset entire Rule 5 draft?")) return;
+  // Sweep the auto-recorded $1 Rule 5 trades alongside the state.
+  if (typeof deleteTradeAsync === "function" && typeof getTrades === "function") {
+    const rule5Trades = (getTrades() || []).filter(t => t.notes && /^Rule 5 pick \(Round /.test(t.notes));
+    for (const t of rule5Trades) {
+      if (t._id) {
+        try { await deleteTradeAsync(t._id); }
+        catch (e) { console.warn("rule5 trade cleanup failed:", e); }
+      }
+    }
+  }
   if (typeof saveRule5Async === "function") {
     saveRule5Async(null)
       .then(() => {

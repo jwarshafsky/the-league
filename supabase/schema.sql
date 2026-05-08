@@ -297,7 +297,18 @@ create policy "al_insert_self"
   on public.activity_log for insert
   with check (
     auth.role() = 'authenticated'
-    and (actor_team_id = public.my_team_id() or public.is_commissioner())
+    and (
+      public.is_commissioner()
+      or (
+        actor_team_id = public.my_team_id()
+        and (
+          target_team_id is null
+          or target_team_id = public.my_team_id()
+          -- Trades involve two teams; allow logging the counterparty as target.
+          or type in ('trade_recorded', 'trade_deleted')
+        )
+      )
+    )
   );
 
 create policy "al_delete_admin"
