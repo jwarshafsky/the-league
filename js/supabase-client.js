@@ -26,6 +26,12 @@ const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_
 // In-memory state, populated on auth.
 let currentUser = null;       // { id, email }
 let currentOwner = null;      // { team_id, is_commissioner }
+// False until the first refreshAuthState() finishes. Listeners (e.g. authGate)
+// check this so they can render a "Loading…" splash instead of the claim-team
+// screen during the window where currentUser is set but currentOwner hasn't
+// been fetched yet.
+let _authResolved = false;
+function isAuthResolved() { return _authResolved; }
 const authListeners = [];
 
 function onAuthChange(fn) {
@@ -90,6 +96,7 @@ async function refreshAuthState() {
     currentUser = null;
     currentOwner = null;
   }
+  _authResolved = true;
   fireAuthChange();
 }
 

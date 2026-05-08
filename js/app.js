@@ -3636,6 +3636,16 @@ function showAppForAuthedUser() {
 }
 
 function authGate(user, owner) {
+  // While the first refreshAuthState() is still in flight, currentUser may
+  // be set but currentOwner not yet fetched — rendering the claim screen
+  // here would briefly flash for an already-claimed user. Show a neutral
+  // splash until auth has resolved at least once.
+  if (typeof isAuthResolved === "function" && !isAuthResolved()) {
+    document.querySelector(".nav-tabs").style.display = "none";
+    document.getElementById("main-content").innerHTML =
+      '<div style="text-align:center;padding:60px;color:var(--text-dim)">Loading…</div>';
+    return;
+  }
   renderHeaderUser();
   if (!user) {
     renderLoginScreen();
