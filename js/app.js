@@ -2800,9 +2800,62 @@ function switchTab(tab) {
 
 // --- Rendering: Activity Feed ---
 
+// Pairs of toggle events that should fold together when the same actor
+// flips the same player's same flag rapidly. Each entry maps event type to
+// the abstract "category" so flips are grouped regardless of direction.
+const TOGGLE_CATEGORIES = {
+  keeper_added:         { category: "keeper",       label: "keeper status" },
+  keeper_removed:       { category: "keeper",       label: "keeper status" },
+  minor_keeper_added:   { category: "minor_keeper", label: "MiLB keeper status" },
+  minor_keeper_removed: { category: "minor_keeper", label: "MiLB keeper status" },
+  rule5_added:          { category: "rule5",        label: "Rule 5 protection" },
+  rule5_removed:        { category: "rule5",        label: "Rule 5 protection" },
+  trade_block_added:    { category: "trade_block",  label: "trade block status" },
+  trade_block_removed:  { category: "trade_block",  label: "trade block status" },
+};
+
+function collapseRepeatedToggles(items) {
+  const WINDOW_MS = 5 * 60 * 1000;
+  // Process in chronological order so we can fold forward; don't mutate the
+  // shared cache items — clone any object that gets _collapsed metadata.
+  const asc = [...items].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+  const out = [];
+  for (const a of asc) {
+    const meta = TOGGLE_CATEGORIES[a.type];
+    if (!meta) { out.push(a); continue; }
+    const last = out.length ? out[out.length - 1] : null;
+    const lastMeta = last && TOGGLE_CATEGORIES[last.type];
+    const sameActor = last && last.actor_team_id === a.actor_team_id;
+    const samePlayer = last && (last.payload?.player_name || "") === (a.payload?.player_name || "");
+    const inWindow = last && (new Date(a.created_at) - new Date(last.created_at)) <= WINDOW_MS;
+    if (last && last._collapsed && last._collapsed.category === meta.category && sameActor && samePlayer && inWindow) {
+      // Extend an in-progress collapsed group.
+      out[out.length - 1] = {
+        ...last,
+        created_at: a.created_at,
+        _collapsed: { ...last._collapsed, count: last._collapsed.count + 1, lastType: a.type },
+      };
+      continue;
+    }
+    if (last && lastMeta && lastMeta.category === meta.category && sameActor && samePlayer && inWindow) {
+      // Convert the previous single event into a 2-count collapsed group.
+      out[out.length - 1] = {
+        ...last,
+        created_at: a.created_at,
+        _collapsed: { category: meta.category, label: meta.label, count: 2, firstType: last.type, lastType: a.type },
+      };
+      continue;
+    }
+    out.push(a);
+  }
+  // Re-sort newest-first to match the input order.
+  return out.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+}
+
 function renderActivityView() {
-  const items = (typeof dbGetActivity === "function") ? dbGetActivity() : [];
-  if (!items.length) return '<p style="color:var(--text-dim)">No activity recorded yet.</p>';
+  const raw = (typeof dbGetActivity === "function") ? dbGetActivity() : [];
+  if (!raw.length) return '<p style="color:var(--text-dim)">No activity recorded yet.</p>';
+  const items = collapseRepeatedToggles(raw);
   // Group by date label (Today / Yesterday / Mon May 6 etc.)
   const today = new Date().toDateString();
   const yesterday = new Date(Date.now() - 86400000).toDateString();
@@ -2844,7 +2897,13 @@ function describeActivity(a) {
   const actor = `<strong style="color:var(--text-bright)">${_teamName(a.actor_team_id)}</strong>`;
   const target = `<strong style="color:var(--text-bright)">${_teamName(a.target_team_id)}</strong>`;
   const p = a.payload || {};
-  const player = p.player_name ? `<span style="color:var(--accent);font-weight:600">${escapeHtml(p.player_name)}</span>` : "";
+  const player = p.player_name ? `<span style="color:var(--accent);font-weight:600">${escapeHtml(p.player_name)}</span>` : "this player";
+  if (a._collapsed) {
+    const c = a._collapsed;
+    const currentlyOn = c.lastType.endsWith("_added");
+    const stateColor = currentlyOn ? "var(--green)" : "var(--text-dim)";
+    return `${actor} toggled ${player}'s ${c.label} <strong>${c.count}×</strong> <span style="color:${stateColor}">(currently ${currentlyOn ? "on" : "off"})</span>`;
+  }
   switch (a.type) {
     case "keeper_added":
       return `${actor} tagged ${player} as a keeper${p.next_year_price != null ? ` <span style="color:var(--text-dim)">($${p.next_year_price})</span>` : ""}`;
