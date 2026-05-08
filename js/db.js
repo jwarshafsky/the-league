@@ -168,18 +168,25 @@ async function initDb() {
   _subscribeToChanges();
 }
 
+let _realtimeChannel = null;
+
 function _subscribeToChanges() {
+  if (_realtimeChannel) return;
   // Listen for trades / keeper_selections / league_state changes from other
-  // users and refresh the cache + UI.
+  // users and refresh the cache + UI. Skip the re-render if the user is mid-
+  // typing in a form (we don't want to wipe their input on echo).
   const refresh = async () => {
     await _fetchAll();
-    if (typeof updateEligibleKeepersView === "function" && currentView === "eligible") updateEligibleKeepersView();
-    if (typeof switchTab === "function" && currentView === "trades") switchTab("trades");
-    if (typeof switchTab === "function" && currentView === "draft") switchTab("draft");
-    if (typeof switchTab === "function" && currentView === "rosters") switchTab("rosters");
+    const ae = document.activeElement;
+    const userIsTyping = ae && (ae.tagName === "INPUT" || ae.tagName === "TEXTAREA" || ae.tagName === "SELECT" || ae.isContentEditable);
+    if (userIsTyping) return;
+    if (typeof switchTab !== "function" || typeof currentView === "undefined") return;
+    // Skip refreshing the trades tab when the New Trade form is open — would wipe queued assets.
+    if (currentView === "trades" && document.getElementById("trade-form-container")?.children.length) return;
+    switchTab(currentView);
   };
   try {
-    supabaseClient.channel("league-data")
+    _realtimeChannel = supabaseClient.channel("league-data")
       .on("postgres_changes", { event: "*", schema: "public", table: "trades" }, refresh)
       .on("postgres_changes", { event: "*", schema: "public", table: "keeper_selections" }, refresh)
       .on("postgres_changes", { event: "*", schema: "public", table: "league_state" }, refresh)
@@ -189,13 +196,33 @@ function _subscribeToChanges() {
         if (typeof currentView !== "undefined" && currentView === "activity" && typeof switchTab === "function") {
           switchTab("activity");
         }
-      })
-      .subscribe();
+      });
+    _realtimeChannel.subscribe();
   } catch (e) {
     console.warn("Realtime subscribe failed:", e);
   }
 
   _setupPresence();
+}
+
+function _resetDb() {
+  // Tear down everything when the user signs out (or switches accounts).
+  try { _realtimeChannel?.unsubscribe(); } catch {}
+  try { _presenceChannel?.unsubscribe(); } catch {}
+  try { supabaseClient.removeAllChannels(); } catch {}
+  _realtimeChannel = null;
+  _presenceChannel = null;
+  _onlineTeams = [];
+  _firePresence();
+  _cache.trades = [];
+  _cache.keeperSel = {};
+  _cache.draft = null;
+  _cache.rule5 = null;
+  _cache.callup = {};
+  _cache.commishOverrides = {};
+  _cache.workaroundOverrides = {};
+  _cache.activity = [];
+  _dbReady = false;
 }
 
 // --- Realtime presence: who else is on the site right now ---
@@ -414,6 +441,6 @@ async function saveCallupOverrideAsync(playerName, price, year) {
 if (typeof onAuthChange === "function") {
   onAuthChange((user, owner) => {
     if (owner) initDb();
-    else { _dbReady = false; }
+    else _resetDb();
   });
 }

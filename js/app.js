@@ -1057,6 +1057,11 @@ function setCallupPriceOverride(playerName, price, year) {
     all[playerName] = { price: Number(price), year: Number(year) };
     localStorage.setItem("flm_callup_prices", JSON.stringify(all));
   }
+  if (typeof logActivityAsync === "function") {
+    logActivityAsync("callup_price_set", {
+      player_name: playerName, price: Number(price), year: Number(year),
+    });
+  }
 }
 
 // Find a player's prior cost basis by name across every team's keeper sheet.
@@ -1105,6 +1110,7 @@ function getWorkaroundOverrides() {
 }
 
 function setWorkaroundOverride(playerId, decision) {
+  if (typeof isCommissioner === "function" && !isCommissioner()) return;
   const all = { ...getWorkaroundOverrides() };
   if (!decision || decision === "auto") delete all[String(playerId)];
   else all[String(playerId)] = decision;
@@ -1541,6 +1547,9 @@ function saveCommishEditor(playerName) {
   if (lbl) o.contractLabel = lbl;
   overrides[playerName] = o;
   saveCommishOverrides(overrides);
+  if (typeof logActivityAsync === "function") {
+    logActivityAsync("commish_override", { player_name: playerName, fields: Object.keys(o) });
+  }
   document.getElementById("commish-editor-modal").remove();
   updateEligibleKeepersView();
 }
@@ -1549,6 +1558,9 @@ function clearCommishOverride(playerName) {
   const overrides = getCommishOverrides();
   delete overrides[playerName];
   saveCommishOverrides(overrides);
+  if (typeof logActivityAsync === "function") {
+    logActivityAsync("commish_override", { player_name: playerName, cleared: true });
+  }
   document.getElementById("commish-editor-modal").remove();
   updateEligibleKeepersView();
 }
@@ -1878,6 +1890,12 @@ function renderMinorsEligibleTable(minors, teamId, teamSelections) {
 }
 
 function toggleEligibleKeeper(teamId, playerName, field, checked) {
+  // Defense in depth: UI hides edit controls for non-owners but a stray click /
+  // dev tools tweak shouldn't be able to corrupt another team's selections.
+  if (typeof canEditTeam === "function" && !canEditTeam(teamId)) {
+    if (typeof updateEligibleKeepersView === "function") updateEligibleKeepersView();
+    return;
+  }
   const selections = getEligibleKeeperSelections();
   if (!selections[teamId]) selections[teamId] = {};
   if (!selections[teamId][playerName]) selections[teamId][playerName] = {};
@@ -2069,7 +2087,8 @@ function getTradeLogOwner(round, draftYear, baseOwner) {
         const pickYear  = asset.pickYear  ?? parseMilbPickValue(asset.value)?.year;
         const pickOriginalOwner = asset.pickOriginalOwner;
         if (!pickRound || pickRound !== round) continue;
-        if (pickYear && pickYear !== draftYear) continue;
+        // Require an explicit year match — apply only to the matching draft.
+        if (!pickYear || pickYear !== draftYear) continue;
         // Structured trades pinpoint exactly which slot — only apply to the matching baseOwner.
         if (pickOriginalOwner && pickOriginalOwner !== baseOwner) continue;
         if (side.fromTeam === owner) owner = side.toTeam;
@@ -2492,8 +2511,13 @@ function undoLastPick() {
   const draft = getDraft();
   if (!draft.picks.length) return;
   if (!confirm("Undo last pick?")) return;
-  draft.picks.pop();
+  const last = draft.picks.pop();
   saveDraft(draft);
+  if (last && typeof logActivityAsync === "function") {
+    logActivityAsync("minors_pick_undone", {
+      round: last.round, pick_in_round: last.pickInRound, player_name: last.player,
+    }, { targetTeamId: last.team });
+  }
   showDraftBoard();
 }
 
@@ -3215,7 +3239,6 @@ function makeRule5Pick(playerName) {
   const pickedAlready = state.picks.some(p => p.playerName === playerName);
   if (pickedAlready) { alert("Already picked"); return; }
 
-  const tradeId = `rule5-${cur.round}-${cur.idx}-${Date.now()}`;
   state.picks.push({
     round: cur.round,
     idx: cur.idx,
@@ -3224,23 +3247,42 @@ function makeRule5Pick(playerName) {
     fromTeamId: poolEntry.originTeamId,
     pass: false,
     timestamp: Date.now(),
-    tradeId, // back-reference into the trade log
+    tradeId: null, // populated below once the trade row is inserted
   });
-  saveRule5State(state);
 
-  // Auto-record in trade log: $1 draft dollars from picker -> original team, player from original team -> picker.
-  const trades = getTrades();
-  trades.push({
-    id: tradeId,
+  // Auto-record in trade log: $1 draft dollars from picker -> original team,
+  // player from original team -> picker. Persist via Supabase so other users see it.
+  const trade = {
     date: new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }),
-    team1: poolEntry.originTeamId,         // original team (gives up player, gets $1)
-    team2: cur.teamId,                      // picking team (gives up $1, gets player)
-    team1Receives: [{ type: "draft_dollars", value: "$1 draft dollars" }],
+    team1: poolEntry.originTeamId,
+    team2: cur.teamId,
+    team1Receives: [{ type: "draft_dollars", value: "$1 draft dollars", amount: 1 }],
     team2Receives: [{ type: poolEntry.type === "minor" ? "minor" : "major", value: playerName }],
     notes: `Rule 5 pick (Round ${cur.round}.${cur.idx + 1})`,
     rule5: true,
-  });
-  saveTrades(trades);
+  };
+
+  if (typeof addTradeAsync === "function") {
+    addTradeAsync(trade)
+      .then(id => {
+        state.picks[state.picks.length - 1].tradeId = id;
+        saveRule5State(state);
+      })
+      .catch(err => alert("Trade log save failed: " + err.message));
+  } else {
+    const trades = getTrades();
+    trades.push(trade);
+    saveTrades(trades);
+    saveRule5State(state);
+  }
+  // Save state immediately too so the UI shows the pick even before the trade ID lands.
+  saveRule5State(state);
+  if (typeof logActivityAsync === "function") {
+    logActivityAsync("rule5_pick_made", {
+      round: cur.round, idx: cur.idx + 1, player_name: playerName,
+      from_team: poolEntry.originTeamId,
+    }, { targetTeamId: cur.teamId });
+  }
 
   switchTab("rule5");
 }
@@ -3267,10 +3309,19 @@ function undoRule5Pick() {
   const last = state.picks.pop();
   saveRule5State(state);
 
-  // Remove the corresponding trade log entry, if any
+  // Remove the corresponding trade log entry, if any.
   if (last && last.tradeId) {
-    const trades = getTrades().filter(t => t.id !== last.tradeId);
-    saveTrades(trades);
+    if (typeof deleteTradeAsync === "function") {
+      deleteTradeAsync(last.tradeId).catch(err => console.warn("Trade undo failed:", err));
+    } else {
+      const trades = getTrades().filter(t => t._id !== last.tradeId && t.id !== last.tradeId);
+      saveTrades(trades);
+    }
+  }
+  if (typeof logActivityAsync === "function") {
+    logActivityAsync("rule5_pick_undone", {
+      round: last?.round, idx: (last?.idx ?? 0) + 1, player_name: last?.playerName,
+    }, { targetTeamId: last?.teamId });
   }
   switchTab("rule5");
 }
