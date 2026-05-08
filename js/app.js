@@ -2799,12 +2799,10 @@ function showDraftBoard() {
 
   if (current) {
     const team = LEAGUE_DATA.teams.find(t => t.id === current.team);
-    html += `
-      <div class="keeper-projection" style="background:rgba(59,130,246,0.1);border-color:var(--accent);margin-bottom:14px">
-        <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px">
-          <h3 style="margin:0">On the Clock: <span style="color:var(--accent)">${team ? team.name : current.team}</span></h3>
-          <span style="color:var(--text-dim);font-size:0.82rem">Round ${current.round} &middot; Pick ${current.pickInRound} (Overall #${current.overall})</span>
-        </div>
+    const myTeam = (typeof currentOwner !== "undefined" && currentOwner) ? currentOwner.team_id : null;
+    const canSubmit = current.team === myTeam || isCommissioner();
+    const commish = isCommissioner();
+    const inputBlock = canSubmit ? `
         <input type="text" id="draft-player-name" placeholder="Player name (type to search, or enter a new name)" autocomplete="off" list="prospect-suggestions"
           style="width:100%;background:var(--bg);color:var(--text);border:1px solid var(--border);padding:10px;border-radius:6px;font-size:0.95rem;margin-top:10px">
         <datalist id="prospect-suggestions">
@@ -2814,9 +2812,21 @@ function showDraftBoard() {
           style="width:100%;background:var(--bg);color:var(--text);border:1px solid var(--border);padding:8px;border-radius:6px;font-size:0.85rem;margin-top:6px">
         <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
           <button class="trade-btn trade-btn-submit" onclick="makeDraftPick()">Submit Pick</button>
-          <button class="trade-btn trade-btn-cancel" onclick="passCurrentPick()" style="font-size:0.85rem">Pass</button>
-          ${draft.picks.length ? `<button class="trade-btn trade-btn-cancel" onclick="undoLastPick()" style="font-size:0.85rem">Undo Last Pick</button>` : ""}
+          ${commish ? `<button class="trade-btn trade-btn-cancel" onclick="passCurrentPick()" style="font-size:0.85rem">Pass</button>` : ""}
+          ${commish && draft.picks.length ? `<button class="trade-btn trade-btn-cancel" onclick="undoLastPick()" style="font-size:0.85rem">Undo Last Pick</button>` : ""}
         </div>
+    ` : `
+        <div style="margin-top:10px;color:var(--text-dim);font-size:0.85rem;font-style:italic">
+          Waiting on ${team ? escapeHtml(team.name) : escapeHtml(current.team)} to make a pick.
+        </div>
+    `;
+    html += `
+      <div class="keeper-projection" style="background:rgba(59,130,246,0.1);border-color:var(--accent);margin-bottom:14px">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px">
+          <h3 style="margin:0">On the Clock: <span style="color:var(--accent)">${team ? escapeHtml(team.name) : escapeHtml(current.team)}</span></h3>
+          <span style="color:var(--text-dim);font-size:0.82rem">Round ${current.round} &middot; Pick ${current.pickInRound} (Overall #${current.overall})</span>
+        </div>
+        ${inputBlock}
       </div>
     `;
   } else {
@@ -2870,12 +2880,15 @@ function renderDraftBoard(draft) {
       const isCurrent = current && current.round === round && current.pickInRound === pickInRound;
       const isTraded = ownerId !== getBaseOwner(draft, round, pickInRound);
 
-      let cellStyle = "padding:5px 6px;vertical-align:top;cursor:pointer";
+      const commishCanEdit = isCommissioner();
+      let cellStyle = "padding:5px 6px;vertical-align:top";
+      if (commishCanEdit) cellStyle += ";cursor:pointer";
       if (isCurrent) cellStyle += ";background:rgba(59,130,246,0.2);outline:2px solid var(--accent)";
       else if (pick) cellStyle += ";background:rgba(34,197,94,0.06)";
       else if (isPassed) cellStyle += ";background:rgba(249,115,22,0.08)";
 
-      html += `<td style="${cellStyle}" onclick="openPickEditor(${round},${pickInRound})" title="Click to edit">
+      const cellClickAttr = commishCanEdit ? `onclick="openPickEditor(${round},${pickInRound})" title="Click to edit"` : "";
+      html += `<td style="${cellStyle}" ${cellClickAttr}>
         <div style="color:var(--accent);font-weight:600;font-size:0.72rem">${owner ? owner.name : ownerId}${isTraded ? ' <span style="color:var(--orange);font-size:0.6rem">(T)</span>' : ''}</div>
         ${pick
           ? `<div style="color:var(--text-bright);margin-top:2px;font-weight:600">${escapeHtml(pick.player)}</div>${pick.notes ? `<div style="color:var(--text-dim);font-size:0.65rem;margin-top:1px">${escapeHtml(pick.notes)}</div>` : ""}`
@@ -2895,12 +2908,13 @@ function renderDraftBoard(draft) {
 function renderPassedPicksSection(draft) {
   const passed = draft.passed || [];
   if (!passed.length) return "";
+  const commish = isCommissioner();
   const rows = passed.map(p => {
     const owner = LEAGUE_DATA.teams.find(t => t.id === p.team);
     return `<div style="display:flex;align-items:center;gap:10px;padding:8px 10px;background:var(--bg);border:1px solid var(--border);border-radius:6px;margin-bottom:6px">
       <span style="color:var(--orange);font-size:0.7rem;font-weight:700;min-width:50px">R${p.round}.${p.pickInRound}</span>
-      <span style="color:var(--text-bright);font-weight:600;flex:1">${owner ? owner.name : p.team}</span>
-      <button class="trade-btn" style="font-size:0.78rem;padding:5px 10px" onclick="activatePassedPick(${p.round},${p.pickInRound})">Activate</button>
+      <span style="color:var(--text-bright);font-weight:600;flex:1">${escapeHtml(owner ? owner.name : p.team)}</span>
+      ${commish ? `<button class="trade-btn" style="font-size:0.78rem;padding:5px 10px" onclick="activatePassedPick(${p.round},${p.pickInRound})">Activate</button>` : ""}
     </div>`;
   }).join("");
   return `<div class="section-header">Passed Picks <span class="section-count">${passed.length}</span></div>
@@ -2937,6 +2951,11 @@ function showToast(message, type) {
 }
 
 function openPickEditor(round, pickInRound) {
+  if (!isCommissioner()) {
+    // Silent no-op for non-commish; the cell click is no longer wired for them
+    // but a stray call (dev tools / direct invocation) shouldn't open the modal.
+    return;
+  }
   const draft = getDraft();
   const pickKey = `${round}p${pickInRound}`;
   const pickRecord = draft.picks.find(p => p.round === round && p.pickInRound === pickInRound);
@@ -3083,6 +3102,12 @@ function makeDraftPick() {
   const draft = getDraft();
   const current = getCurrentPickInfo(draft);
   if (!current) return;
+  // Only the team currently on the clock OR a commissioner can submit a pick.
+  const myTeam = (typeof currentOwner !== "undefined" && currentOwner) ? currentOwner.team_id : null;
+  if (current.team !== myTeam && !isCommissioner()) {
+    alert("Only the team on the clock (or a commissioner) can submit this pick.");
+    return;
+  }
   const nameEl = document.getElementById("draft-player-name");
   const notesEl = document.getElementById("draft-player-notes");
   const player = (nameEl.value || "").trim();
@@ -3112,6 +3137,10 @@ function makeDraftPick() {
 }
 
 function passCurrentPick() {
+  if (!isCommissioner()) {
+    alert("Only a commissioner can pass a pick. Ask a commish to do it for you.");
+    return;
+  }
   const draft = getDraft();
   const current = getCurrentPickInfo(draft);
   if (!current) return;
@@ -3127,10 +3156,18 @@ function passCurrentPick() {
 }
 
 function activatePassedPick(round, pickInRound) {
+  if (!isCommissioner()) {
+    alert("Only a commissioner can activate a passed pick.");
+    return;
+  }
   openPickEditor(round, pickInRound);
 }
 
 function undoLastPick() {
+  if (!isCommissioner()) {
+    alert("Only a commissioner can undo picks. Ask a commish to fix it for you.");
+    return;
+  }
   const draft = getDraft();
   if (!draft.picks.length) return;
   if (!confirm("Undo last pick?")) return;
