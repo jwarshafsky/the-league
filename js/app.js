@@ -931,11 +931,13 @@ async function acceptThreadProposal(proposalId) {
   try {
     await acceptProposalAsync(proposal);
     if (typeof logActivityAsync === "function") {
+      // Notes intentionally omitted — the proposal's negotiation context
+      // stays in the inbox; the Trade Log + activity feed record just the
+      // swap.
       logActivityAsync("trade_recorded", {
         team1: proposal.from_team_id, team2: proposal.to_team_id,
         team1_receives: proposal.team1_receives,
         team2_receives: proposal.team2_receives,
-        notes: proposal.notes,
       }, { targetTeamId: proposal.from_team_id });
     }
     closeThreadDetail();

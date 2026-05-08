@@ -680,8 +680,8 @@ async function setProposalStatusAsync(proposalId, status) {
 }
 
 // Accept a proposal: mark it accepted AND record a row in the trades table
-// using the same asset arrays. Activity log entry is fired by the caller
-// since logActivityAsync wants the trade context.
+// using the same asset arrays. The proposal's negotiation context (notes,
+// chat thread) stays in the inbox — the Trade Log records just the swap.
 async function acceptProposalAsync(proposal) {
   // 1. Insert the trade. team1/team2 follow the proposal as-is.
   const tradeRow = {
@@ -690,7 +690,7 @@ async function acceptProposalAsync(proposal) {
     team2: proposal.to_team_id,
     team1Receives: proposal.team2_receives || [],
     team2Receives: proposal.team1_receives || [],
-    notes: proposal.notes || "",
+    notes: "",
   };
   await addTradeAsync(tradeRow);
   // 2. Mark the proposal accepted.
