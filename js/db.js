@@ -18,22 +18,42 @@ const _cache = {
   proposals: [],       // array of trade_proposals rows (raw)
   messages: [],        // array of trade_proposal_messages rows (raw)
 };
-// Cross-conversation read state for the trade inbox: thread_ids the user has
-// opened. Tracked client-side only (localStorage), so no schema cost.
-const TRADE_INBOX_READ_KEY = "flm_trade_inbox_read_v1";
-function _getReadThreads() {
-  try { return new Set(JSON.parse(localStorage.getItem(TRADE_INBOX_READ_KEY) || "[]")); }
-  catch { return new Set(); }
+// Cross-conversation read state for the trade inbox: { threadId: lastReadAt }.
+// Anything in the thread newer than lastReadAt counts as unread (covers BOTH
+// new proposals/counters AND new messages from the other side).
+const TRADE_INBOX_READ_KEY = "flm_trade_inbox_read_v2";
+function _getThreadReadTimes() {
+  try { return JSON.parse(localStorage.getItem(TRADE_INBOX_READ_KEY) || "{}"); }
+  catch { return {}; }
 }
-function _saveReadThreads(set) {
-  try { localStorage.setItem(TRADE_INBOX_READ_KEY, JSON.stringify([...set])); } catch {}
+function _saveThreadReadTimes(map) {
+  try { localStorage.setItem(TRADE_INBOX_READ_KEY, JSON.stringify(map)); } catch {}
 }
 function dbMarkThreadRead(threadId) {
-  const s = _getReadThreads();
-  s.add(threadId);
-  _saveReadThreads(s);
+  const map = _getThreadReadTimes();
+  map[threadId] = new Date().toISOString();
+  _saveThreadReadTimes(map);
 }
-function dbIsThreadRead(threadId) { return _getReadThreads().has(threadId); }
+function dbGetThreadLastReadMs(threadId) {
+  const v = _getThreadReadTimes()[threadId];
+  return v ? new Date(v).getTime() : 0;
+}
+// True if there's at least one unread item (proposal or message from someone
+// else) in this thread for the current owner.
+function dbThreadHasUnread(thread) {
+  if (typeof currentOwner === "undefined" || !currentOwner) return false;
+  const myTeam = currentOwner.team_id;
+  const lastRead = dbGetThreadLastReadMs(thread.threadId);
+  for (const p of thread.proposals) {
+    if (p.status === "pending" && p.to_team_id === myTeam && new Date(p.created_at).getTime() > lastRead) return true;
+  }
+  for (const m of thread.messages) {
+    if (m.from_team_id !== myTeam && new Date(m.created_at).getTime() > lastRead) return true;
+  }
+  return false;
+}
+// Back-compat for old call sites that just want "has the user ever opened this thread".
+function dbIsThreadRead(threadId) { return dbGetThreadLastReadMs(threadId) > 0; }
 let _dbReady = false;
 const _readyListeners = [];
 
@@ -418,22 +438,30 @@ function dbGetThreads() {
   return threads;
 }
 
-// Unread inbox count for the current owner: pending proposals where user is
-// the recipient (to_team_id) AND the thread hasn't been opened.
-function dbGetInboxUnreadCount() {
-  if (typeof currentOwner === "undefined" || !currentOwner) return 0;
+// Unread inbox totals for the current owner — split into proposals (new
+// pending offers to you) and messages (new chats from someone else), plus a
+// `total` for the badge. Both are bounded by per-thread lastReadAt so opening
+// a thread clears its share of each bucket.
+function dbGetUnreadCounts() {
+  if (typeof currentOwner === "undefined" || !currentOwner) return { proposals: 0, messages: 0, total: 0 };
   const myTeam = currentOwner.team_id;
   const threads = dbGetThreads();
-  let count = 0;
+  let proposals = 0, messages = 0;
   for (const t of threads) {
-    const latest = t.latestProposal;
-    if (latest.status !== "pending") continue;
-    if (latest.to_team_id !== myTeam) continue;
-    if (dbIsThreadRead(t.threadId)) continue;
-    count += 1;
+    const lastRead = dbGetThreadLastReadMs(t.threadId);
+    const wasParty = t.proposals.some(p => p.from_team_id === myTeam || p.to_team_id === myTeam);
+    if (!wasParty) continue;
+    for (const p of t.proposals) {
+      if (p.status === "pending" && p.to_team_id === myTeam && new Date(p.created_at).getTime() > lastRead) proposals += 1;
+    }
+    for (const m of t.messages) {
+      if (m.from_team_id !== myTeam && new Date(m.created_at).getTime() > lastRead) messages += 1;
+    }
   }
-  return count;
+  return { proposals, messages, total: proposals + messages };
 }
+// Legacy alias still used in places — keep returning the total for compat.
+function dbGetInboxUnreadCount() { return dbGetUnreadCounts().total; }
 
 // Append-only logger; never throws (activity logging shouldn't break UX).
 async function logActivityAsync(type, payload, opts) {

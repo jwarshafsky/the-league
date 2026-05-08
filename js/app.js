@@ -739,7 +739,7 @@ function renderThreadCard(thread) {
   const counterId = (latest.from_team_id === myTeam) ? latest.to_team_id : latest.from_team_id;
   const counterTeam = LEAGUE_DATA.teams.find(t => t.id === counterId);
   const counterName = counterTeam ? counterTeam.name : counterId;
-  const isUnread = !dbIsThreadRead(thread.threadId) && latest.status === "pending" && latest.to_team_id === myTeam;
+  const isUnread = (typeof dbThreadHasUnread === "function") ? dbThreadHasUnread(thread) : (!dbIsThreadRead(thread.threadId) && latest.status === "pending" && latest.to_team_id === myTeam);
   const iAmFrom = latest.from_team_id === myTeam;
   const iGet  = iAmFrom ? (latest.team1_receives || []) : (latest.team2_receives || []);
   const iGive = iAmFrom ? (latest.team2_receives || []) : (latest.team1_receives || []);
@@ -4146,13 +4146,18 @@ function renderHeaderUser() {
   `;
 
   // Inbox unread badge — re-paint on every header update so it stays current
-  // as proposals/messages flow in via realtime.
+  // as proposals/messages flow in via realtime. The count covers BOTH new
+  // pending proposals to you AND new messages from someone else, with a
+  // hover tooltip breaking down the two.
   const inboxNav = document.getElementById("nav-trade-inbox");
   if (inboxNav) {
-    const unread = (typeof dbGetInboxUnreadCount === "function") ? dbGetInboxUnreadCount() : 0;
-    inboxNav.innerHTML = unread > 0
-      ? `Trade Inbox <span class="section-count" style="background:var(--accent);color:#fff;margin-left:4px">${unread}</span>`
-      : "Trade Inbox";
+    const u = (typeof dbGetUnreadCounts === "function") ? dbGetUnreadCounts() : { proposals: 0, messages: 0, total: 0 };
+    if (u.total > 0) {
+      const tip = `${u.proposals} new proposal${u.proposals === 1 ? "" : "s"}, ${u.messages} new message${u.messages === 1 ? "" : "s"}`;
+      inboxNav.innerHTML = `Trade Inbox <span title="${escapeHtml(tip)}" style="color:var(--red);font-weight:800;margin-left:2px">(${u.total})</span>`;
+    } else {
+      inboxNav.innerHTML = "Trade Inbox";
+    }
   }
 }
 
