@@ -1871,6 +1871,81 @@ function getEligiblePlayers(team) {
   return players.map(applyPlayerOverride);
 }
 
+function getKeeperDeadlineMs() {
+  const dl = (typeof dbGetKeeperDeadline === "function") ? dbGetKeeperDeadline() : null;
+  if (!dl || !dl.at) return 0;
+  const ms = new Date(dl.at).getTime();
+  return Number.isFinite(ms) ? ms : 0;
+}
+function isKeeperLockoutActive() {
+  const ms = getKeeperDeadlineMs();
+  return ms > 0 && Date.now() >= ms;
+}
+function renderKeeperDeadlineBanner() {
+  const ms = getKeeperDeadlineMs();
+  if (!ms) return "";
+  const fmt = new Date(ms).toLocaleString("en-US", { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+  if (isKeeperLockoutActive()) {
+    return `<div style="background:rgba(239,68,68,0.12);border:1px solid rgba(239,68,68,0.4);color:var(--red);padding:10px 12px;border-radius:6px;font-size:0.85rem;margin-bottom:10px">
+      <strong>Keepers locked.</strong> Deadline was ${escapeHtml(fmt)}. Only commissioners can change keeper selections now.
+    </div>`;
+  }
+  const remainingMs = ms - Date.now();
+  const days = Math.floor(remainingMs / 86400000);
+  const hours = Math.floor((remainingMs % 86400000) / 3600000);
+  const eta = days > 0 ? `${days}d ${hours}h` : `${hours}h`;
+  return `<div style="background:rgba(245,158,11,0.10);border:1px solid rgba(245,158,11,0.4);color:var(--yellow);padding:10px 12px;border-radius:6px;font-size:0.85rem;margin-bottom:10px">
+    <strong>Keeper deadline:</strong> ${escapeHtml(fmt)} <span style="color:var(--text-dim)">(in ${eta})</span>
+  </div>`;
+}
+function renderKeeperDeadlineCommishControls() {
+  if (!isCommissioner()) return "";
+  const dl = (typeof dbGetKeeperDeadline === "function") ? dbGetKeeperDeadline() : null;
+  // datetime-local needs YYYY-MM-DDTHH:MM in local time, no offset.
+  let value = "";
+  if (dl?.at) {
+    const d = new Date(dl.at);
+    const pad = (n) => String(n).padStart(2, "0");
+    value = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  }
+  return `
+    <div style="margin-bottom:10px;padding:10px;background:var(--bg-card);border:1px solid var(--border);border-radius:6px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:0.82rem">
+      <span style="color:var(--text-dim)">Deadline:</span>
+      <input type="datetime-local" id="keeper-deadline-input" value="${escapeHtml(value)}"
+        style="background:var(--bg);color:var(--text);border:1px solid var(--border);padding:5px 8px;border-radius:4px;font-size:0.82rem">
+      <button class="trade-btn" onclick="commitKeeperDeadline()" style="font-size:0.75rem;padding:4px 10px">Save</button>
+      ${dl?.at ? `<button class="trade-btn trade-btn-cancel" onclick="clearKeeperDeadline()" style="font-size:0.75rem;padding:4px 10px">Clear</button>` : ""}
+    </div>
+  `;
+}
+async function commitKeeperDeadline() {
+  const el = document.getElementById("keeper-deadline-input");
+  if (!el || !el.value) { alert("Pick a date and time"); return; }
+  // datetime-local value is local-time. Convert to ISO via Date constructor.
+  const iso = new Date(el.value).toISOString();
+  try {
+    await saveKeeperDeadlineAsync({ at: iso });
+    if (typeof logActivityAsync === "function") {
+      logActivityAsync("keeper_deadline_set", { at: iso });
+    }
+    if (typeof switchTab === "function") switchTab("eligible");
+  } catch (e) {
+    alert("Couldn't save deadline: " + (e.message || e));
+  }
+}
+async function clearKeeperDeadline() {
+  if (!confirm("Clear the keeper deadline? Owners will be able to edit keepers again.")) return;
+  try {
+    await saveKeeperDeadlineAsync(null);
+    if (typeof logActivityAsync === "function") {
+      logActivityAsync("keeper_deadline_cleared", {});
+    }
+    if (typeof switchTab === "function") switchTab("eligible");
+  } catch (e) {
+    alert("Couldn't clear deadline: " + (e.message || e));
+  }
+}
+
 function renderEligibleKeepersView() {
   const snap = getEspnSnapshot();
   let syncBanner = "";
@@ -1891,6 +1966,8 @@ function renderEligibleKeepersView() {
   ` : "";
   return `
     ${syncBanner}
+    ${renderKeeperDeadlineBanner()}
+    ${renderKeeperDeadlineCommishControls()}
     ${editToggle}
     <div class="calc-team-selector">
       <select id="eligible-team-select" onchange="updateEligibleKeepersView()">
@@ -2168,7 +2245,7 @@ function canEditTeam(teamId) {
 }
 
 function renderEligibleTable(players, teamId, teamSelections) {
-  const viewOnly = !canEditTeam(teamId);
+  const viewOnly = !canEditTeam(teamId) || (isKeeperLockoutActive() && !isCommissioner());
   return `
     <table class="player-table">
       <thead>
@@ -2264,7 +2341,7 @@ function promptCallupPrice(playerName, teamId) {
 
 function renderMinorsEligibleTable(minors, teamId, teamSelections) {
   if (!minors.length) return '<p style="color:var(--text-dim)">No minor league players</p>';
-  const viewOnly = !canEditTeam(teamId);
+  const viewOnly = !canEditTeam(teamId) || (isKeeperLockoutActive() && !isCommissioner());
   return `
     <table class="player-table">
       <thead>
@@ -2347,6 +2424,12 @@ function toggleEligibleKeeper(teamId, playerName, field, checked) {
   // Defense in depth: UI hides edit controls for non-owners but a stray click /
   // dev tools tweak shouldn't be able to corrupt another team's selections.
   if (typeof canEditTeam === "function" && !canEditTeam(teamId)) {
+    if (typeof updateEligibleKeepersView === "function") updateEligibleKeepersView();
+    return;
+  }
+  // Lockout enforcement: past the keeper deadline, only commish can edit.
+  if (typeof isKeeperLockoutActive === "function" && isKeeperLockoutActive() && !isCommissioner()) {
+    if (typeof showToast === "function") showToast("Keepers are locked. Contact a commissioner to make changes.", "warn");
     if (typeof updateEligibleKeepersView === "function") updateEligibleKeepersView();
     return;
   }

@@ -17,6 +17,7 @@ const _cache = {
   activity: [],        // array of { id, type, actor_team_id, target_team_id, payload, created_at }
   proposals: [],       // array of trade_proposals rows (raw)
   messages: [],        // array of trade_proposal_messages rows (raw)
+  keeperDeadline: null,// { at: ISO string } | null — past `at`, non-commish keeper toggles are blocked
 };
 // Cross-conversation read state for the trade inbox: { threadId: lastReadAt }.
 // Anything in the thread newer than lastReadAt counts as unread (covers BOTH
@@ -110,11 +111,13 @@ async function _fetchAll() {
   _cache.rule5 = null;
   _cache.commishOverrides = {};
   _cache.workaroundOverrides = {};
+  _cache.keeperDeadline = null;
   for (const r of (ls.data || [])) {
     if (r.key === "draft_2027") _cache.draft = r.state;
     else if (r.key === "rule5") _cache.rule5 = r.state;
     else if (r.key === "commish_overrides") _cache.commishOverrides = r.state || {};
     else if (r.key === "workaround_overrides") _cache.workaroundOverrides = r.state || {};
+    else if (r.key === "keeper_deadline") _cache.keeperDeadline = r.state;
   }
 
   _cache.callup = {};
@@ -328,6 +331,7 @@ function _resetDb() {
   _cache.activity = [];
   _cache.proposals = [];
   _cache.messages = [];
+  _cache.keeperDeadline = null;
   _dbReady = false;
 }
 
@@ -591,6 +595,8 @@ async function saveDraftAsync(draft)            { return _saveLeagueStateAsync("
 async function saveRule5Async(state)            { return _saveLeagueStateAsync("rule5", state, "rule5"); }
 async function saveCommishOverridesAsync(map)   { return _saveLeagueStateAsync("commish_overrides", map, "commishOverrides"); }
 async function saveWorkaroundOverridesAsync(m)  { return _saveLeagueStateAsync("workaround_overrides", m, "workaroundOverrides"); }
+async function saveKeeperDeadlineAsync(state)   { return _saveLeagueStateAsync("keeper_deadline", state, "keeperDeadline"); }
+function dbGetKeeperDeadline() { return _cache.keeperDeadline; }
 
 // --- Trade Inbox writers ---
 
