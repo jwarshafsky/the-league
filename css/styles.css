@@ -366,9 +366,42 @@ body {
   .main-content { padding: 10px; }
   .team-grid { grid-template-columns: 1fr; }
   .summary-bar { padding: 10px; }
-  .player-table { font-size: 0.82rem; }
-  .player-table td, .player-table th { padding: 8px 6px; }
-  .nav-tab { padding: 10px 14px; font-size: 0.8rem; }
+  .summary-value { font-size: 1.05rem; }
+  .player-table { font-size: 0.78rem; }
+  .player-table td, .player-table th { padding: 6px 4px; }
+  .nav-tab { padding: 10px 12px; font-size: 0.78rem; }
+
+  /* Tables: scroll horizontally rather than squish or overflow the page. */
+  .player-table {
+    display: block;
+    overflow-x: auto;
+    white-space: nowrap;
+    -webkit-overflow-scrolling: touch;
+    width: 100%;
+  }
+
+  /* Two-column inline grids (trade form, composer, thread detail's
+     "You get / You give") stack vertically. The attribute selector matches
+     the literal substring used in the rendered inline styles. */
+  [style*="grid-template-columns:1fr 1fr"] {
+    grid-template-columns: 1fr !important;
+  }
+  /* Trade card swap (Team1 receives | arrow | Team2 receives) — stack. */
+  [style*="grid-template-columns:1fr auto 1fr"] {
+    grid-template-columns: 1fr !important;
+  }
+  /* The Trade Inbox card's two-col "you get / you give" preview also stacks. */
+  [style*="grid-template-columns:1fr 1fr 1fr"] {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Modals: tighter padding so content has room. */
+  #thread-detail-modal,
+  #proposal-composer-modal,
+  #commish-editor-modal,
+  #pick-editor-modal {
+    padding: 12px 8px !important;
+  }
 }
 
 /* View transitions */
