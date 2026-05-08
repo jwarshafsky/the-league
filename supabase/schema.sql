@@ -243,6 +243,35 @@ end;
 $$;
 grant execute on function public.claim_invited_team() to authenticated;
 
+-- Manual claim path: a logged-in user (typically the bootstrap commissioner)
+-- selects their team explicitly. Validates team is one of the 12 known IDs
+-- AND not already claimed, so a user can't grab an unclaimed teammate's
+-- slot via direct table INSERT (the owners INSERT policy is intentionally
+-- absent — all legitimate inserts go through the security-definer RPCs).
+create or replace function public.claim_specific_team(team_id_to_claim text)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  known_teams text[] := array['jeff','matt','jesse','sam','saxton','aj','corey','dave','josh-doug','larry','zack','glicksman'];
+begin
+  if exists (select 1 from public.owners where id = auth.uid()) then
+    raise exception 'You already have a team claimed';
+  end if;
+  if not (team_id_to_claim = any(known_teams)) then
+    raise exception 'Invalid team_id: %', team_id_to_claim;
+  end if;
+  if exists (select 1 from public.owners where team_id = team_id_to_claim) then
+    raise exception 'Team % is already claimed by another owner', team_id_to_claim;
+  end if;
+  insert into public.owners (id, team_id, is_commissioner)
+  values (auth.uid(), team_id_to_claim, false);
+end;
+$$;
+grant execute on function public.claim_specific_team(text) to authenticated;
+
 
 -- ============================================================================
 -- 5. callup_overrides — replaces flm_callup_prices (commissioner-only writes)

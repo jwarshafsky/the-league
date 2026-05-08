@@ -614,16 +614,14 @@ function renderTradesView() {
           ${trades.length ? trades.slice().reverse().map((t, i) => renderTradeCard(t, trades.length - 1 - i)).join("") : '<p style="color:var(--text-dim)">No trades recorded yet.</p>'}
         </div>
       </div>
-      <div style="flex:0 1 240px;min-width:200px">
-        ${renderTradeBlockPanel()}
-        <div style="height:14px"></div>
+      <div style="flex:0 1 220px;min-width:200px">
         ${renderDraftDollarsPanel()}
       </div>
     </div>
   `;
 }
 
-function renderTradeBlockPanel() {
+function renderTradeBlockView() {
   const sel = (typeof dbGetKeeperSelections === "function") ? dbGetKeeperSelections() : {};
   const byTeam = {};
   for (const teamId of Object.keys(sel)) {
@@ -633,33 +631,51 @@ function renderTradeBlockPanel() {
   const orderedTeams = LEAGUE_DATA.teams.filter(t => byTeam[t.id]);
   if (!orderedTeams.length) {
     return `
-      <div class="section-header">Trade Block</div>
-      <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:10px;font-size:0.82rem;color:var(--text-dim);font-style:italic">
-        Nothing on the block right now.
+      <div style="max-width:540px;margin:40px auto;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:24px;text-align:center;color:var(--text-dim);font-size:0.9rem">
+        Nothing on the trade block right now.
+        <div style="font-size:0.78rem;margin-top:8px">Players appear here when an owner toggles "On the Block" in Eligible Keepers.</div>
       </div>
     `;
   }
-  const total = Object.values(byTeam).reduce((s, list) => s + list.length, 0);
+  const myTeamId = (typeof currentOwner !== "undefined" && currentOwner) ? currentOwner.team_id : null;
   return `
-    <div class="section-header">Trade Block <span class="section-count">${total}</span></div>
-    <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:6px 10px;font-size:0.82rem">
+    <div style="display:grid;grid-template-columns:repeat(auto-fill, minmax(300px, 1fr));gap:14px">
       ${orderedTeams.map(t => {
         const priceMap = Object.fromEntries((t.majors || []).map(p => [p.name, p.price]));
+        const isMyTeam = t.id === myTeamId;
+        const action = isMyTeam
+          ? '<div style="font-size:0.72rem;color:var(--text-dim);font-style:italic;margin-top:12px">(your team)</div>'
+          : (myTeamId
+              ? `<button class="trade-btn" onclick="proposeTradeWith('${escapeJsString(t.id)}')" style="font-size:0.78rem;padding:6px 14px;margin-top:12px">Propose Trade</button>`
+              : "");
         return `
-          <div style="padding:7px 0;border-bottom:1px solid var(--border)">
-            <div style="color:var(--text);font-weight:700;font-size:0.78rem;margin-bottom:5px">${escapeHtml(t.name)}</div>
-            <div style="display:flex;flex-wrap:wrap;gap:4px">
+          <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:14px">
+            <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px">
+              <span style="color:var(--text-bright);font-weight:700">${escapeHtml(t.name)}</span>
+              <span style="color:var(--text-dim);font-size:0.75rem">${byTeam[t.id].length} player${byTeam[t.id].length === 1 ? "" : "s"}</span>
+            </div>
+            <div style="display:flex;flex-wrap:wrap;gap:5px">
               ${byTeam[t.id].map(name => {
                 const price = priceMap[name];
                 const priceStr = price !== undefined ? ` $${price}` : "";
-                return `<span style="font-size:0.72rem;background:rgba(249,115,22,0.15);color:var(--orange);padding:2px 7px;border-radius:10px;white-space:nowrap">${escapeHtml(name)}${priceStr}</span>`;
+                return `<span style="font-size:0.78rem;background:rgba(249,115,22,0.15);color:var(--orange);padding:3px 9px;border-radius:10px;white-space:nowrap">${escapeHtml(name)}${priceStr}</span>`;
               }).join("")}
             </div>
+            ${action}
           </div>
         `;
       }).join("")}
     </div>
   `;
+}
+
+function proposeTradeWith(otherTeamId) {
+  switchTab("trades");
+  // Wait for the trade-log render to finish, then open the form pre-filled.
+  setTimeout(() => {
+    const myId = (typeof currentOwner !== "undefined" && currentOwner) ? currentOwner.team_id : null;
+    showTradeForm(myId, otherTeamId);
+  }, 0);
 }
 
 // --- Draft Dollars (trade-adjusted) ---
@@ -759,7 +775,7 @@ function renderTradeAssets(assets) {
   }).join('');
 }
 
-function showTradeForm() {
+function showTradeForm(team1Id, team2Id) {
   // Fresh form = fresh asset state
   tradeAssets.t1 = [];
   tradeAssets.t2 = [];
@@ -799,6 +815,18 @@ function showTradeForm() {
       </div>
     </div>
   `;
+
+  // Pre-fill team selectors when the form is opened from a "Propose Trade"
+  // entry point (e.g., the Trade Block view).
+  if (team1Id) {
+    const sel1 = document.getElementById("trade-team1");
+    if (sel1) sel1.value = team1Id;
+  }
+  if (team2Id) {
+    const sel2 = document.getElementById("trade-team2");
+    if (sel2) sel2.value = team2Id;
+  }
+  if (team1Id || team2Id) updateTradePlayerOptions();
 }
 
 function updateTradePlayerOptions() {
@@ -2809,8 +2837,13 @@ function switchTab(tab) {
       break;
     case "trades":
       currentView = "trades";
-      title.textContent = "Trades";
+      title.textContent = "Trade Log";
       content.innerHTML = renderTradesView();
+      break;
+    case "trade-block":
+      currentView = "trade-block";
+      title.textContent = "Trade Block";
+      content.innerHTML = renderTradeBlockView();
       break;
     case "draft":
       currentView = "draft";
@@ -3654,10 +3687,10 @@ function renderClaimTeamScreen() {
   document.querySelector(".nav-tabs").style.display = "none";
   document.getElementById("back-btn").style.display = "none";
   document.getElementById("header-title").textContent = "Pick Your Team";
-  const opts = LEAGUE_DATA.teams.map(t => `<option value="${t.id}">${t.name}</option>`).join("");
+  const opts = LEAGUE_DATA.teams.map(t => `<option value="${escapeHtml(t.id)}">${escapeHtml(t.name)}</option>`).join("");
   main.innerHTML = `
     <div style="max-width:420px;margin:40px auto;padding:24px;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius)">
-      <h2 style="margin:0 0 8px;color:var(--text-bright)">Welcome, ${currentUser.email}</h2>
+      <h2 style="margin:0 0 8px;color:var(--text-bright)">Welcome, ${escapeHtml(currentUser.email)}</h2>
       <p style="color:var(--text-dim);font-size:0.9rem;margin:0 0 18px">
         Pick the team you own. (A commissioner can override this later.)
       </p>
@@ -3667,6 +3700,25 @@ function renderClaimTeamScreen() {
       <button class="trade-btn trade-btn-cancel" style="width:100%;margin-top:14px" onclick="signOut()">Sign Out</button>
     </div>
   `;
+  // Async-fetch the claimed-team set and grey out unavailable options.
+  // The select renders immediately so there's no perceived delay.
+  supabaseClient.from("owners").select("team_id").then(({ data, error }) => {
+    if (error || !data) return;
+    const claimed = new Set(data.map(r => r.team_id));
+    const select = document.getElementById("claim-team");
+    if (!select) return;
+    for (const opt of select.options) {
+      if (claimed.has(opt.value)) {
+        opt.disabled = true;
+        opt.textContent = `${opt.textContent} (claimed)`;
+      }
+    }
+    // If the currently-selected option is now disabled, jump to the first available.
+    if (select.options[select.selectedIndex]?.disabled) {
+      const firstAvail = [...select.options].find(o => !o.disabled);
+      if (firstAvail) select.value = firstAvail.value;
+    }
+  });
 }
 
 async function submitClaimTeam() {
@@ -3674,16 +3726,15 @@ async function submitClaimTeam() {
   const btn = document.getElementById("claim-btn");
   const msg = document.getElementById("claim-msg");
   btn.disabled = true; btn.textContent = "Claiming...";
-  const { error } = await supabaseClient.from("owners").insert({
-    id: currentUser.id,
-    team_id: teamId,
-    is_commissioner: false,
-  });
+  // Use the security-definer RPC: validates team_id is one of the 12 known
+  // teams AND not already claimed before inserting. Direct INSERT into
+  // owners is denied by RLS to prevent race-window team theft.
+  const { error } = await supabaseClient.rpc("claim_specific_team", { team_id_to_claim: teamId });
   if (error) {
     msg.style.display = "block";
     msg.style.background = "rgba(239,68,68,0.12)";
     msg.style.color = "var(--red)";
-    msg.textContent = error.message.includes("duplicate") || error.message.includes("unique")
+    msg.textContent = /already claimed/i.test(error.message)
       ? `${LEAGUE_DATA.teams.find(t => t.id === teamId)?.name || teamId} is already claimed. Pick a different team or contact a commissioner.`
       : `Couldn't claim team: ${error.message}`;
     btn.disabled = false; btn.textContent = "Claim Team";
