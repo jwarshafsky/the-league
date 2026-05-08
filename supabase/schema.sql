@@ -544,6 +544,8 @@ grant delete on public.trade_proposal_messages to authenticated;  -- gated by RL
 grant select, insert, update, delete on public.invited_emails to service_role;
 grant select, insert, delete on public.activity_log to service_role;
 grant select, insert, update, delete on public.owners to service_role;
+grant select, insert, update, delete on public.trade_proposals to service_role;
+grant select, insert, delete on public.trade_proposal_messages to service_role;
 
 grant execute on function public.is_commissioner() to authenticated;
 grant execute on function public.my_team_id() to authenticated;
