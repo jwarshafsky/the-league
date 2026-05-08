@@ -16,7 +16,10 @@ const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_
     persistSession: true,
     autoRefreshToken: true,
     detectSessionInUrl: true,
-    flowType: "pkce",
+    // Implicit flow lets a magic link sent to email work even when clicked
+    // in a different browser/device than where it was requested. PKCE requires
+    // the same browser context to hold the verifier.
+    flowType: "implicit",
   },
 });
 
