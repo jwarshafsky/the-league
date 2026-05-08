@@ -515,6 +515,35 @@ async function addTradeAsync(trade) {
   }
 }
 
+async function editTradeAsync(id, fields) {
+  // Apply optimistic local update first; revert on RPC error.
+  const idx = _cache.trades.findIndex(t => t._id === id);
+  const prev = idx !== -1 ? { ..._cache.trades[idx] } : null;
+  if (prev) {
+    _cache.trades[idx] = {
+      ..._cache.trades[idx],
+      team1: fields.team1 ?? prev.team1,
+      team2: fields.team2 ?? prev.team2,
+      team1Receives: fields.team1Receives ?? prev.team1Receives,
+      team2Receives: fields.team2Receives ?? prev.team2Receives,
+      notes: fields.notes ?? prev.notes,
+    };
+  }
+  try {
+    const { error } = await supabaseClient.from("trades").update({
+      team1: fields.team1,
+      team2: fields.team2,
+      team1_receives: fields.team1Receives || [],
+      team2_receives: fields.team2Receives || [],
+      notes: fields.notes ?? "",
+    }).eq("id", id);
+    if (error) throw error;
+  } catch (e) {
+    if (prev) _cache.trades[idx] = prev;
+    throw e;
+  }
+}
+
 async function deleteTradeAsync(id) {
   const idx = _cache.trades.findIndex(t => t._id === id);
   const removed = idx !== -1 ? _cache.trades[idx] : null;

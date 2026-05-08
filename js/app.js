@@ -1102,7 +1102,10 @@ function renderTradeCard(trade, index) {
     <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:14px;margin-bottom:10px">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
         <span style="color:var(--text-dim);font-size:0.75rem">${trade.date}</span>
-        ${isCommissioner() ? `<button onclick="deleteTrade(${index})" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:0.75rem">Delete</button>` : ''}
+        ${isCommissioner() ? `<div style="display:flex;gap:10px">
+          <button onclick="editTrade(${index})" style="background:none;border:none;color:var(--accent);cursor:pointer;font-size:0.75rem">Edit</button>
+          <button onclick="deleteTrade(${index})" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:0.75rem">Delete</button>
+        </div>` : ''}
       </div>
       <div style="display:grid;grid-template-columns:1fr auto 1fr;gap:10px;align-items:start">
         <div>
@@ -1382,6 +1385,7 @@ function renderAssetList(prefix) {
 function submitTrade() {
   // The composer reuses this trade form for proposal entry; route through.
   if (_formMode && _formMode.kind === "proposal") return submitProposal();
+  if (_formMode && _formMode.kind === "edit") return submitTradeEdit();
   const team1 = document.getElementById("trade-team1").value;
   const team2 = document.getElementById("trade-team2").value;
   const notes = document.getElementById("trade-notes").value;
@@ -1436,7 +1440,66 @@ function submitTrade() {
 function cancelTrade() {
   tradeAssets.t1 = [];
   tradeAssets.t2 = [];
+  _formMode = null;
   document.getElementById("trade-form-container").innerHTML = "";
+}
+
+function editTrade(index) {
+  const trades = getTrades();
+  const target = trades[index];
+  if (!target || !target._id) return;
+  if (!isCommissioner()) return;
+  // Open the trade form in edit mode pre-filled with the existing trade.
+  _formMode = { kind: "edit", tradeId: target._id };
+  showTradeForm(target.team1, target.team2);
+  // Pre-fill assets and notes. tradeAssets t1 = what team1 GIVES (= team2_receives).
+  tradeAssets.t1 = JSON.parse(JSON.stringify(target.team2Receives || []));
+  tradeAssets.t2 = JSON.parse(JSON.stringify(target.team1Receives || []));
+  tradeAssets.teamIds.t1 = target.team1;
+  tradeAssets.teamIds.t2 = target.team2;
+  if (typeof renderAssetList === "function") {
+    renderAssetList("t1");
+    renderAssetList("t2");
+  }
+  const notesEl = document.getElementById("trade-notes");
+  if (notesEl) notesEl.value = target.notes || "";
+  // Relabel the submit button so it's clear this is an edit.
+  const submitBtn = document.querySelector("#trade-form-container .trade-btn-submit");
+  if (submitBtn) submitBtn.textContent = "Save Changes";
+  // Scroll the form into view so the user sees it on page.
+  document.getElementById("trade-form-container")?.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+async function submitTradeEdit() {
+  const tradeId = _formMode?.tradeId;
+  if (!tradeId) return;
+  const team1 = document.getElementById("trade-team1").value;
+  const team2 = document.getElementById("trade-team2").value;
+  const notes = document.getElementById("trade-notes").value;
+  if (!team1 || !team2) { alert("Select both teams"); return; }
+  if (team1 === team2) { alert("Teams must be different"); return; }
+  if (!tradeAssets.t1.length && !tradeAssets.t2.length) { alert("Add at least one asset"); return; }
+  try {
+    await editTradeAsync(tradeId, {
+      team1, team2,
+      team1Receives: [...tradeAssets.t2],
+      team2Receives: [...tradeAssets.t1],
+      notes,
+    });
+    if (typeof logActivityAsync === "function") {
+      logActivityAsync("trade_edited", {
+        team1, team2,
+        team1_receives: [...tradeAssets.t2],
+        team2_receives: [...tradeAssets.t1],
+        notes,
+      }, { targetTeamId: team2 });
+    }
+    tradeAssets.t1 = []; tradeAssets.t2 = [];
+    _formMode = null;
+    switchTab("trades");
+  } catch (e) {
+    alert("Couldn't save edits: " + (e.message || e));
+  }
 }
 
 function deleteTrade(index) {
