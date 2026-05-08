@@ -691,6 +691,11 @@ function renderTradeInboxView() {
   }
   const myTeam = currentOwner.team_id;
   const threads = (typeof dbGetThreads === "function") ? dbGetThreads() : [];
+  const newButton = `
+    <div style="margin-bottom:14px">
+      <button class="trade-btn" onclick="showProposalComposer({})">New Proposal</button>
+    </div>
+  `;
   const inbox = [], sent = [], past = [];
   for (const t of threads) {
     const latest = t.latestProposal;
@@ -717,6 +722,7 @@ function renderTradeInboxView() {
     `;
   };
   return `
+    ${newButton}
     ${renderSection("Inbox", inbox, "No incoming proposals.")}
     ${renderSection("Sent", sent, "No sent proposals awaiting response.")}
     ${past.length ? renderSection("Past", past, "") : ""}
@@ -1141,8 +1147,7 @@ function showTradeForm(team1Id, team2Id) {
   const teamOptions = LEAGUE_DATA.teams.map(t => `<option value="${t.id}">${t.name}</option>`).join("");
   container.innerHTML = `
     <div class="keeper-projection" style="margin-bottom:16px">
-      <h3>Record a Trade</h3>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:12px">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
         <div>
           <label style="font-size:0.8rem;color:var(--text-dim);display:block;margin-bottom:4px">Team 1</label>
           <select id="trade-team1" class="trade-select" onchange="updateTradePlayerOptions()">
