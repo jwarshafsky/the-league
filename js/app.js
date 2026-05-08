@@ -3289,21 +3289,32 @@ function renderLoginScreen(message = "") {
   document.querySelector(".nav-tabs").style.display = "none";
   document.getElementById("back-btn").style.display = "none";
   document.getElementById("header-title").textContent = "Sign In";
+  // Carry over an auth error from OAuth callback (e.g. "not on allowlist").
+  if (window.__leagueAuthError) { message = window.__leagueAuthError; window.__leagueAuthError = null; }
   const messageHtml = message
-    ? `<div id="login-msg" style="margin-top:12px;padding:10px;border-radius:6px;background:rgba(59,130,246,0.12);color:var(--accent);font-size:0.85rem">${message}</div>`
+    ? `<div id="login-msg" style="margin-top:12px;padding:10px;border-radius:6px;background:rgba(239,68,68,0.12);color:var(--red);font-size:0.85rem">${message}</div>`
     : `<div id="login-msg" style="display:none;margin-top:12px;padding:10px;border-radius:6px;font-size:0.85rem"></div>`;
   main.innerHTML = `
     <div style="max-width:420px;margin:40px auto;padding:24px;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius)">
       <h2 style="margin:0 0 8px;color:var(--text-bright)">Fantasy League Manager</h2>
       <p style="color:var(--text-dim);font-size:0.9rem;margin:0 0 18px">
-        Private beta. Enter your email and we'll send you a magic link.
+        Sign in with your Google account.
       </p>
+      <button id="login-google-btn" onclick="submitGoogleSignIn()" style="width:100%;display:flex;align-items:center;justify-content:center;gap:10px;background:#fff;color:#3c4043;border:1px solid #dadce0;padding:11px 14px;border-radius:6px;font-size:0.95rem;font-weight:500;cursor:pointer">
+        <svg width="18" height="18" viewBox="0 0 18 18" xmlns="http://www.w3.org/2000/svg"><path d="M17.64 9.205c0-.639-.057-1.252-.164-1.841H9v3.481h4.844a4.14 4.14 0 0 1-1.796 2.716v2.259h2.908c1.702-1.567 2.684-3.875 2.684-6.615z" fill="#4285F4"/><path d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 0 0 9 18z" fill="#34A853"/><path d="M3.964 10.71A5.41 5.41 0 0 1 3.682 9c0-.593.102-1.17.282-1.71V4.958H.957A8.996 8.996 0 0 0 0 9c0 1.452.348 2.827.957 4.042l3.007-2.332z" fill="#FBBC05"/><path d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 0 0 .957 4.958L3.964 7.29C4.672 5.163 6.656 3.58 9 3.58z" fill="#EA4335"/></svg>
+        Sign in with Google
+      </button>
+      <div style="display:flex;align-items:center;gap:10px;margin:20px 0;color:var(--text-dim);font-size:0.75rem">
+        <div style="flex:1;height:1px;background:var(--border)"></div>
+        <span>or use email</span>
+        <div style="flex:1;height:1px;background:var(--border)"></div>
+      </div>
       <label style="display:block;margin-bottom:10px">
         <div style="color:var(--text-dim);font-size:0.8rem;margin-bottom:4px">Email</div>
         <input type="email" id="login-email" autocomplete="email" placeholder="you@example.com"
           style="width:100%;background:var(--bg);color:var(--text);border:1px solid var(--border);padding:10px;border-radius:6px;font-size:0.95rem">
       </label>
-      <button id="login-btn" class="trade-btn trade-btn-submit" style="width:100%;margin-top:8px" onclick="submitMagicLink()">Send Magic Link</button>
+      <button id="login-btn" class="trade-btn trade-btn-cancel" style="width:100%;margin-top:8px" onclick="submitMagicLink()">Send Magic Link</button>
       ${messageHtml}
       <div id="login-code-block" style="display:none;margin-top:14px;padding-top:14px;border-top:1px solid var(--border)">
         <div style="color:var(--text-dim);font-size:0.78rem;margin-bottom:6px">
@@ -3358,6 +3369,24 @@ async function submitMagicLink() {
     msg.textContent = err.message || "Couldn't send link. Try again.";
     btn.disabled = false;
     btn.textContent = "Send Magic Link";
+  }
+}
+
+async function submitGoogleSignIn() {
+  const btn = document.getElementById("login-google-btn");
+  const msg = document.getElementById("login-msg");
+  btn.disabled = true;
+  btn.style.opacity = "0.6";
+  try {
+    await signInWithGoogle();
+    // Browser will redirect to Google; nothing more to do here.
+  } catch (err) {
+    msg.style.display = "block";
+    msg.style.background = "rgba(239,68,68,0.12)";
+    msg.style.color = "var(--red)";
+    msg.textContent = err.message || "Couldn't start Google sign-in.";
+    btn.disabled = false;
+    btn.style.opacity = "1";
   }
 }
 

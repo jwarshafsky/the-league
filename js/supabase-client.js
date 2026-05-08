@@ -57,6 +57,19 @@ async function refreshAuthState() {
   const { data: { session } } = await supabaseClient.auth.getSession();
   if (session && session.user) {
     currentUser = { id: session.user.id, email: session.user.email };
+
+    // For OAuth (Google), users can land here without being on the allowlist —
+    // gate them post-hoc. Magic-link flow is already gated client-side by isEmailAllowed.
+    const allowed = await isEmailAllowed(currentUser.email);
+    if (!allowed) {
+      await supabaseClient.auth.signOut();
+      currentUser = null;
+      currentOwner = null;
+      window.__leagueAuthError = "This email isn't on the league invite list yet. Ask a commissioner to add you.";
+      fireAuthChange();
+      return;
+    }
+
     currentOwner = await fetchOwnerRow(currentUser.id);
     // Auto-claim a pre-assigned team on first login.
     if (!currentOwner) {
@@ -72,6 +85,16 @@ async function refreshAuthState() {
     currentOwner = null;
   }
   fireAuthChange();
+}
+
+async function signInWithGoogle() {
+  const { error } = await supabaseClient.auth.signInWithOAuth({
+    provider: "google",
+    options: {
+      redirectTo: window.location.origin + window.location.pathname,
+    },
+  });
+  if (error) throw error;
 }
 
 async function isEmailAllowed(email) {
