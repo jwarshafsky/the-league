@@ -1,15 +1,23 @@
 // rules-bot — Supabase Edge Function. Routes a user question through Groq
 // (Llama 3.3 70B) with the league constitution + the asker's team context
-// as system prompt. Free-tier-friendly: 14,400 req/day on the free tier.
+// as system prompt.
 //
 // Required secrets (Supabase dashboard → Project Settings → Edge Functions):
-//   GROQ_API_KEY      — from https://console.groq.com/keys
-//   SUPABASE_URL      — auto-injected
-//   SUPABASE_ANON_KEY — auto-injected
-//   SUPABASE_SERVICE_ROLE_KEY — auto-injected
+//   GROQ_API_KEY                — from https://console.groq.com/keys
+//   COMMISHAI_DAILY_TOKEN_CAP   — optional, defaults to 2,000,000 tokens/day.
+//                                 At Dev Tier 8B pricing (~$0.05 input / $0.08
+//                                 output per M tokens) that's ~$0.13/day max,
+//                                 i.e. < $4/mo even if the cap is hit daily.
+//                                 Set to "0" to disable the cap entirely.
+//   SUPABASE_URL                — auto-injected
+//   SUPABASE_ANON_KEY           — auto-injected
+//   SUPABASE_SERVICE_ROLE_KEY   — auto-injected
 //
-// Deploy via dashboard: Edge Functions → New Function → name "rules-bot" →
-// paste this file's contents → Deploy.
+// Daily usage is tracked in league_state under key="commishai_usage" and
+// resets at UTC midnight. View at any time:
+//   SELECT state FROM league_state WHERE key='commishai_usage';
+//
+// Deploy via dashboard: Edge Functions → rules-bot → Code → paste → Deploy.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.74.0";
 
@@ -171,6 +179,27 @@ Deno.serve(async (req) => {
     ? payload.leagueIndex.filter(s => typeof s === "string")
     : [];
 
+  // Daily token cap — prevents runaway spend on Groq Dev Tier.
+  // Reads/writes a single league_state row with the day's running total.
+  const today = new Date().toISOString().slice(0, 10); // "YYYY-MM-DD" UTC
+  const capStr = Deno.env.get("COMMISHAI_DAILY_TOKEN_CAP") || "2000000";
+  const dailyCap = parseInt(capStr, 10) || 0;
+
+  let usageState: { day: string; total: number; input: number; output: number; requests: number } = {
+    day: today, total: 0, input: 0, output: 0, requests: 0,
+  };
+  if (dailyCap > 0) {
+    const { data: usageRow } = await admin
+      .from("league_state").select("state").eq("key", "commishai_usage").maybeSingle();
+    const stored = usageRow?.state as typeof usageState | undefined;
+    if (stored && stored.day === today) usageState = stored;
+    if (usageState.total >= dailyCap) {
+      return jsonResponse({
+        error: `CommishAI daily token cap reached (${usageState.total.toLocaleString()} / ${dailyCap.toLocaleString()}). Resets at midnight UTC.`,
+      }, 429, origin);
+    }
+  }
+
   // Pull only the asker's trades. Other context blocks (full constitution,
   // keeper selections, all trades, draft/rule5 states, callup overrides,
   // proposals, roster moves) were dropped to fit Groq's 6,000 TPM free-tier
@@ -243,13 +272,12 @@ Deno.serve(async (req) => {
   }
   messages.push({ role: "user", content: question });
 
-  // Try a sequence of Groq models; fall through on size/quota/availability
-  // errors. Order matters: 70B-versatile first for quality, then 8B-instant
-  // for higher TPM headroom on big requests, then alternates if those are
-  // both rate-limited at once.
+  // Primary: Llama 3.1 8B Instant (128k context, ~10x cheaper than 70B,
+  // higher TPM headroom on Dev Tier). Quality is fine for rules + keeper Q&A.
+  // Fallback to 70B only if 8B errors (it almost never will).
   const MODELS = [
-    "llama-3.3-70b-versatile",
     "llama-3.1-8b-instant",
+    "llama-3.3-70b-versatile",
   ];
   const errors: string[] = [];
   let answer = "";
@@ -299,7 +327,18 @@ Deno.serve(async (req) => {
 
     const data = await resp.json();
     answer = data?.choices?.[0]?.message?.content || "";
-    if (answer) { usedModel = model; break; }
+    if (answer) {
+      usedModel = model;
+      // Accumulate today's token usage for the daily cap.
+      const u = data?.usage || {};
+      const inTok = Number(u.prompt_tokens || 0);
+      const outTok = Number(u.completion_tokens || 0);
+      usageState.input += inTok;
+      usageState.output += outTok;
+      usageState.total += inTok + outTok;
+      usageState.requests += 1;
+      break;
+    }
     errors.push(`${model}: empty response`);
   }
 
@@ -307,5 +346,17 @@ Deno.serve(async (req) => {
     return jsonResponse({ error: "all groq models exhausted: " + errors.join(" | ") }, 502, origin);
   }
 
-  return jsonResponse({ answer, model: usedModel }, 200, origin);
+  // Persist updated usage. Don't block the response on this — fire and forget.
+  if (dailyCap > 0) {
+    admin.from("league_state")
+      .upsert({ key: "commishai_usage", state: usageState })
+      .then(() => {})
+      .catch(() => {});
+  }
+
+  return jsonResponse({
+    answer,
+    model: usedModel,
+    usage: dailyCap > 0 ? { todayTotal: usageState.total, dailyCap } : undefined,
+  }, 200, origin);
 });
