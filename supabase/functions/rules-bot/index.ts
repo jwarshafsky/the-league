@@ -236,31 +236,52 @@ Deno.serve(async (req) => {
     contents.push({ role: "user", parts: [{ text: question }] });
   }
 
-  const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`;
-  let geminiResp: Response;
-  try {
-    geminiResp = await fetch(geminiUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        contents,
-        generationConfig: { temperature: 0.2, maxOutputTokens: 1024 },
-      }),
-    });
-  } catch (e) {
-    return jsonResponse({ error: "gemini fetch failed: " + (e as Error).message }, 502, origin);
+  // Try a sequence of models; fall through to the next on 429 (quota
+  // exhausted) or 404 (model unavailable). Makes the bot resilient to
+  // Google rotating which flash variants get free-tier quota.
+  const MODELS = ["gemini-2.5-flash", "gemini-2.0-flash-lite", "gemini-2.0-flash", "gemini-1.5-flash"];
+  const errors: string[] = [];
+  let answer = "";
+  let usedModel = "";
+
+  for (const model of MODELS) {
+    let resp: Response;
+    try {
+      resp = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_API_KEY}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            contents,
+            generationConfig: { temperature: 0.2, maxOutputTokens: 1024 },
+          }),
+        },
+      );
+    } catch (e) {
+      errors.push(`${model}: fetch failed: ${(e as Error).message}`);
+      continue;
+    }
+
+    if (resp.status === 429 || resp.status === 404) {
+      const text = await resp.text();
+      errors.push(`${model}: ${resp.status}: ${text.slice(0, 200)}`);
+      continue;
+    }
+    if (!resp.ok) {
+      const text = await resp.text();
+      return jsonResponse({ error: `gemini ${resp.status}: ${text.slice(0, 400)}` }, 502, origin);
+    }
+
+    const data = await resp.json();
+    answer = data?.candidates?.[0]?.content?.parts?.map((p: { text?: string }) => p.text || "").join("") || "";
+    if (answer) { usedModel = model; break; }
+    errors.push(`${model}: empty response`);
   }
 
-  if (!geminiResp.ok) {
-    const text = await geminiResp.text();
-    return jsonResponse({ error: `gemini ${geminiResp.status}: ${text.slice(0, 400)}` }, 502, origin);
-  }
-
-  const geminiData = await geminiResp.json();
-  const answer: string = geminiData?.candidates?.[0]?.content?.parts?.map((p: { text?: string }) => p.text || "").join("") || "";
   if (!answer) {
-    return jsonResponse({ error: "empty response from model", debug: geminiData }, 502, origin);
+    return jsonResponse({ error: "all gemini models exhausted: " + errors.join(" | ") }, 502, origin);
   }
 
-  return jsonResponse({ answer }, 200, origin);
+  return jsonResponse({ answer, model: usedModel }, 200, origin);
 });
