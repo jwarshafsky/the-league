@@ -100,7 +100,7 @@
         <div id="rules-bot-log" style="flex:1;overflow-y:auto;padding:12px 14px;
              font-size:0.86rem;color:var(--text);scroll-behavior:smooth"></div>
         <form id="rules-bot-form"
-          style="display:flex;gap:8px;padding:10px;border-top:1px solid var(--border);
+          style="display:flex;gap:8px;padding:10px 10px 4px;border-top:1px solid var(--border);
                  background:var(--bg)">
           <input type="text" id="rules-bot-input" autocomplete="off"
             placeholder="Ask CommishAI…"
@@ -112,6 +112,10 @@
                    padding:8px 14px;border-radius:8px;font-weight:600;
                    font-size:0.85rem;cursor:pointer">Send</button>
         </form>
+        <div style="text-align:center;font-size:0.68rem;color:var(--text-dim);
+                    padding:0 10px 8px;background:var(--bg);font-style:italic">
+          CommishAI can make mistakes — verify important answers against the app or the constitution.
+        </div>
       </div>
     `;
     document.body.appendChild(root);
