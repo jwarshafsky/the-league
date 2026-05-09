@@ -3632,7 +3632,6 @@ const HISTORICAL_ABBREV_OVERRIDES = {
   "WAR":  "dave",   // 2021 third place
   "BUST": "matt",   // 2019 third place
   "ROTB": "matt",   // Matt Rotbart, 2017–2018 (Rotbart Means Red Beard / Yu Maeda Me Do It)
-  "LEVY": "zack",   // Zach Levy, 2017 (Team Levy)
   "#416": "dave",   // David Warshafsky, 2018 (The Yanger Bombs)
 };
 

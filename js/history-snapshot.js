@@ -565,7 +565,7 @@ const HISTORY_SNAPSHOT = {
         { "rank": 6,  "abbrev": "ROTB", "name": "Rotbart Means Red Beard", "points": 64 },
         { "rank": 7,  "abbrev": "KFP",  "name": "Team Kung Froe Panda",    "points": 60 },
         { "rank": 8,  "abbrev": "EISE", "name": "Team Eisenman",           "points": 56.5 },
-        { "rank": 9,  "abbrev": "LEVY", "name": "Team Levy",               "points": 50 },
+        { "rank": 9,  "abbrev": "Team Levy", "name": "Team Levy",          "points": 50 },
         { "rank": 10, "abbrev": "PIFE", "name": "Silver Bullet Band",      "points": 48 },
         { "rank": 11, "abbrev": "Team Weintraub", "name": "Team Weintraub", "points": 47 },
         { "rank": 12, "abbrev": "KESS", "name": "Team Kessler",            "points": 27 }
