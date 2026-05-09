@@ -61,8 +61,17 @@ const LEAGUE_DATA = {
         { name: "Garrett Crochet", price: 8, yearAcquired: 2024, fromMinors: false },
         { name: "Yoshinobu Yamamoto", price: 12, yearAcquired: 2023, fromMinors: true }
       ],
-      callups: [
-        
+      callups: [],
+      minors: [
+        { name: "Jhostnyxon Garcia", yearAcquired: 2025, careerStat: 0, statType: "AB" },
+        { name: "Gage Workman", yearAcquired: 2025, careerStat: 0, statType: "AB" },
+        { name: "Travis Sykora", yearAcquired: 2025, careerStat: 0, statType: "AB" },
+        { name: "Adrian Del Castillo", yearAcquired: 2025, careerStat: 0, statType: "AB" },
+        { name: "Jurrangelo Cijntje", yearAcquired: 2025, careerStat: 0, statType: "IP" },
+        { name: "Seth Hernandez", yearAcquired: 2026, careerStat: 0, statType: "AB" },
+        { name: "Rainiel Rodriguez", yearAcquired: 2026, careerStat: 0, statType: "IP" },
+        { name: "Jack Bauer", yearAcquired: 2026, careerStat: 0, statType: "AB" },
+        { name: "Stryker Pence", yearAcquired: 2026, careerStat: 0, statType: "AB" }
       ]
     },
     {
@@ -185,8 +194,18 @@ const LEAGUE_DATA = {
         { name: "Pete Alonso", price: 40, yearAcquired: 2025, fromMinors: false },
         { name: "Andres Munoz", price: 12, yearAcquired: 2025, fromMinors: false }
       ],
-      callups: [
-        
+      callups: [],
+      minors: [
+        { name: "Luisangel Acu\u00f1a", yearAcquired: 2023, careerStat: 0, statType: "AB" },
+        { name: "Bryce Eldridge", yearAcquired: 2025, careerStat: 0, statType: "AB" },
+        { name: "Termarr Johnson", yearAcquired: 2024, careerStat: 0, statType: "AB" },
+        { name: "Deyvison De Los Santos", yearAcquired: 2024, careerStat: 0, statType: "AB" },
+        { name: "Cam Collier", yearAcquired: 2025, careerStat: 0, statType: "AB" },
+        { name: "Jace Laviolette", yearAcquired: 2025, careerStat: 0, statType: "AB" },
+        { name: "Felnin Celesten", yearAcquired: 2025, careerStat: 0, statType: "AB" },
+        { name: "Ryan Waldschmidt", yearAcquired: 2026, careerStat: 0, statType: "AB" },
+        { name: "Khal Stephen", yearAcquired: 2026, careerStat: 0, statType: "AB" },
+        { name: "Gage Jump", yearAcquired: 2026, careerStat: 0, statType: "IP" }
       ]
     },
     {
@@ -249,8 +268,7 @@ const LEAGUE_DATA = {
         { name: "Doug Nikhazy", yearAcquired: 2025, careerStat: 0, statType: "IP" },
         { name: "Gavin Cross", yearAcquired: 2023, careerStat: 0, statType: "AB" },
         { name: "Evan Carter", yearAcquired: 2023, careerStat: 0, statType: "AB" },
-        { name: "Chase Dollander", yearAcquired: 2025, careerStat: 0, statType: "IP" },
-        { name: "Jordan Lawlar", yearAcquired: 2026, careerStat: 0, statType: "AB" }
+        { name: "Chase Dollander", yearAcquired: 2025, careerStat: 0, statType: "IP" }
       ],
       minors: [
         { name: "Zyhir Hope", yearAcquired: 2025, careerStat: 0, statType: "AB" },
@@ -320,8 +338,7 @@ const LEAGUE_DATA = {
       ],
       callups: [
         { name: "Mois\u00e9s Ballesteros", yearAcquired: 2025, careerStat: 0, statType: "AB" },
-        { name: "Brady House", yearAcquired: 2024, careerStat: 0, statType: "AB" },
-        { name: "Connelly Early", yearAcquired: 2026, careerStat: 0, statType: "AB" }
+        { name: "Brady House", yearAcquired: 2024, careerStat: 0, statType: "AB" }
       ],
       minors: [
         { name: "Connelly Early", yearAcquired: 2026, careerStat: 0, statType: "AB" },
@@ -357,8 +374,7 @@ const LEAGUE_DATA = {
         { name: "Kyle Manzardo", yearAcquired: 2023, careerStat: 0, statType: "AB" },
         { name: "Chase Burns", yearAcquired: 2025, careerStat: 0, statType: "IP" },
         { name: "Chase Delauter", yearAcquired: 2024, careerStat: 0, statType: "AB" },
-        { name: "JJ Wetherholt", yearAcquired: 2025, careerStat: 0, statType: "AB" },
-        { name: "Dylan Beavers", yearAcquired: 2026, careerStat: 0, statType: "AB" }
+        { name: "JJ Wetherholt", yearAcquired: 2025, careerStat: 0, statType: "AB" }
       ],
       minors: [
         { name: "Luis Pena", yearAcquired: 2026, careerStat: 0, statType: "IP" },

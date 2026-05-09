@@ -102,6 +102,11 @@ def parse_team_blocks(rows):
                 callups.append(entry)
             else:
                 minors.append(entry)
+        # Dedupe: if a player is in both sections (sheet has them duplicated
+        # because the called-up entry wasn't removed when they were sent down),
+        # prefer minors. Sent-down → minors is the more recent state.
+        minor_names = {p["name"] for p in minors}
+        callups = [p for p in callups if p["name"] not in minor_names]
         teams[local_id] = {"minors": minors, "callups": callups}
     return teams
 
@@ -148,18 +153,22 @@ def fmt_player(p, stat_types, existing):
 
 
 def replace_array(text, team_id, key, new_inner):
-    """Replace the contents of `<key>: [...]` inside the team block keyed by team_id."""
-    # Anchor on `id: "<team_id>"` and only touch the array within that team's block.
-    # Team blocks end at `}` followed by `,` or `]`. Use a non-greedy search bounded
-    # by the team's id so we don't bleed into another team's block.
+    """Replace the contents of `<key>: [...]` inside the team block keyed by team_id.
+
+    Uses `[^\\]]*` for the array body so the regex stops at the FIRST closing
+    bracket (handles both inline `[]` and multi-line array bodies). This is safe
+    because objects inside our arrays use `{}` not `[]` — no nested arrays.
+    """
     block_start_pat = r'\{\s*id:\s*"' + re.escape(team_id) + r'"'
     sub_pat = re.compile(
-        r'(' + block_start_pat + r'[\s\S]*?' + re.escape(key) + r':\s*\[)[\s\S]*?(\n\s*\])',
+        r'(' + block_start_pat + r'[\s\S]*?' + re.escape(key) + r':\s*\[)[^\]]*(\])',
         re.MULTILINE,
     )
 
+    body = ("\n        " + new_inner + "\n      ") if new_inner else ""
+
     def _repl(m):
-        return m.group(1) + "\n        " + new_inner + m.group(2)
+        return m.group(1) + body + m.group(2)
 
     new_text, n = sub_pat.subn(_repl, text, count=1)
     if n != 1:
