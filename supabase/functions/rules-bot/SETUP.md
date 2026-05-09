@@ -1,31 +1,44 @@
 # rules-bot setup (one-time, ~10 minutes)
 
-CommishAI: a free AI chatbot that answers league rules + how-to-use-the-site
-questions, plus questions about your own team's data. Uses Groq's free
-tier (Llama 3.3 70B; 14,400 requests/day, $0/month at expected usage).
+CommishAI: AI chatbot for league rules + site how-to + per-team data
+questions. Uses Google's Gemini 2.5 Flash-Lite (~$0.10/M input + $0.40/M
+output → typically <$1/month for a 12-team league).
 
-## 1. Create a Groq API key
+## 1. Create a Gemini API key (paid tier)
 
-1. Go to <https://console.groq.com/keys>
-2. Sign in with Google (free, no card required)
-3. Click **Create API Key** → name it anything (e.g. "the-league")
-4. Copy the key (looks like `gsk_...`)
+1. Go to <https://aistudio.google.com/app/apikey>
+2. Sign in with Google
+3. Click **Create API Key** → pick **Create API key in new project** (or
+   select an existing Cloud project that has billing enabled)
+4. Make sure billing is set up on the linked Google Cloud project so the
+   key isn't restricted to free-tier-only quota
+   - Cloud Console → Billing → link a payment method to the project
+5. Copy the key (starts with `AIzaSy`)
 
 ## 2. Add the key to Supabase Edge Function secrets
 
 1. Open <https://supabase.com/dashboard/project/fbllfkrtjsihrkwnbmlw/functions/secrets>
 2. Click **Add new secret**
-3. Name: `GROQ_API_KEY`
+3. Name: `GEMINI_API_KEY`
 4. Value: paste the key from step 1
 5. **Save**
 
-(If you already added a `GEMINI_API_KEY` from the old setup, you can leave
-or delete it — the function ignores it now.)
+(If `GROQ_API_KEY` exists from the old setup, you can leave or delete
+it — the function ignores it now.)
+
+### Optional: customize the daily token cap
+
+The function enforces a per-day token cap to prevent runaway spend.
+Default is **2,000,000 tokens/day** (well under $1/day at Flash-Lite
+pricing; <$30/mo even if hit every day).
+
+To override, add another secret:
+- Name: `COMMISHAI_DAILY_TOKEN_CAP`
+- Value: a number, e.g. `500000` for ~$0.20/day max, or `0` to disable
 
 ## 3. Deploy the edge function
 
-If the function is already deployed (the URL `/functions/v1/rules-bot`
-already exists), you only need to re-paste the updated code:
+If `rules-bot` already exists:
 
 1. Open <https://supabase.com/dashboard/project/fbllfkrtjsihrkwnbmlw/functions/rules-bot>
 2. Click **Code** / **Edit**
@@ -34,45 +47,42 @@ already exists), you only need to re-paste the updated code:
 5. Paste (Cmd-V) into the editor
 6. Click **Deploy**
 
-If deploying for the first time:
-
-1. Open <https://supabase.com/dashboard/project/fbllfkrtjsihrkwnbmlw/functions>
-2. Click **Deploy a new function** → **Via Editor**
-3. Function name: `rules-bot` (lowercase, hyphenated)
-4. Paste the contents of `index.ts`
-5. Click **Deploy**
-
 ## 4. Test it
 
-1. Open <https://jwarshafsky.github.io/the-league/?v=77> (or the current `?v=N`)
+1. Open <https://jwarshafsky.github.io/the-league/?v=89> (or current `?v=N`)
 2. Sign in
-3. A 💬 button appears bottom-right. Click it.
-4. Try: "What's the maximum minor league roster size?"
-5. You should get an answer citing the constitution within ~1 second.
+3. Click 💬 button bottom-right
+4. Ask: "How many MiL keepers can I have?"
+5. Should answer within ~1 second.
+
+## Monitoring usage
+
+Run in the Supabase SQL editor any time:
+```sql
+SELECT state FROM league_state WHERE key='commishai_usage';
+```
+Returns `{day, total, input, output, requests}` for today (UTC).
+
+You can also see live billing in:
+<https://console.cloud.google.com/billing>
 
 ## Troubleshooting
 
-- **No 💬 button appears**: not signed in, or the FAB is hidden by browser chrome
-- **`Error: HTTP 401`**: not signed in — refresh and sign in
-- **`Error: GROQ_API_KEY not configured`**: secret didn't save — check step 2
-- **`Error: groq 401 invalid_api_key`**: the key is wrong — make a new one (step 1)
-- **`Error: all groq models exhausted: ... 429`**: hit the daily limit (14,400 req/day) — wait until midnight UTC
+- **`Error: GEMINI_API_KEY not configured`** — secret didn't save
+- **`Error: gemini 401`** — bad/expired key; create a new one
+- **`Error: gemini 429: ... quota`** — hit a per-minute or daily quota.
+  Possible causes:
+  - Free-tier quota only (the project doesn't have billing enabled)
+  - Hit Google's project-level limits
+- **`CommishAI daily token cap reached`** — your function-level cap was
+  hit. Resets at UTC midnight. Adjust the cap secret if needed.
 
-## Cost / quotas
+## Cost expectations
 
-- **Groq free tier**: 14,400 requests/day, 30 req/min. For 12 owners
-  asking ~10 questions each per day, you're at 1% of the limit
-- **Supabase Edge Functions**: 500K invocations/month free
-- **Total**: $0/month at expected usage
+At Gemini 2.5 Flash-Lite pricing:
+- 30 questions/day → ~$0.60/month
+- 60 questions/day → ~$1.25/month
+- 150 questions/day → ~$3/month
 
-## Privacy
-
-- The bot has read-only access to:
-  - The constitution (public)
-  - All teams' keeper selections, trades, roster moves, callup prices
-    (already public to all owners in the app)
-  - **Only the asker's** trade proposals + messages — other teams'
-    inboxes are never sent to the model
-- Each request is sent to Groq, which routes through their inference
-  servers. Per their terms, prompts aren't used to train models. Don't
-  paste anything into the chat that shouldn't leave the league.
+To compare quality / cost with Flash (smarter, ~3× the price), edit
+`MODELS` in `index.ts` and put `gemini-2.5-flash` first.

@@ -1,13 +1,15 @@
-// rules-bot — Supabase Edge Function. Routes a user question through Groq
-// (Llama 3.3 70B) with the league constitution + the asker's team context
-// as system prompt.
+// rules-bot — Supabase Edge Function. Routes a user question through Google's
+// Gemini API (2.5 Flash-Lite primary, 2.5 Flash fallback) using the OpenAI-
+// compatibility endpoint.
 //
 // Required secrets (Supabase dashboard → Project Settings → Edge Functions):
-//   GROQ_API_KEY                — from https://console.groq.com/keys
+//   GEMINI_API_KEY              — paid AI Studio key (https://aistudio.google.com/app/apikey)
+//                                 with billing enabled on the linked Cloud project.
 //   COMMISHAI_DAILY_TOKEN_CAP   — optional, defaults to 2,000,000 tokens/day.
-//                                 At Dev Tier 8B pricing (~$0.05 input / $0.08
-//                                 output per M tokens) that's ~$0.13/day max,
-//                                 i.e. < $4/mo even if the cap is hit daily.
+//                                 At 2.5 Flash-Lite ($0.10 in / $0.40 out per M)
+//                                 that's <$1/day max → <$30/mo even if hit daily.
+//                                 In practice expect well under $1/month at
+//                                 typical 12-team league usage.
 //                                 Set to "0" to disable the cap entirely.
 //   SUPABASE_URL                — auto-injected
 //   SUPABASE_ANON_KEY           — auto-injected
@@ -37,9 +39,9 @@ const corsHeaders = (origin: string | null) => {
   };
 };
 
-// Compact rules digest — Groq's free-tier TPM (6,000 on 8B, 12,000 on 70B)
-// can't fit the full 18KB constitution per request. We send a digest the bot
-// can cite by section, and tell users the full text is in the Rules tab.
+// Compact rules digest — sent on every request so the bot can cite by §.
+// The full constitution is on the Rules tab in the app; we only send the
+// digest here to keep prompts cheap.
 // Sections numbered to match the constitution.
 const RULES_DIGEST = `
 §1 Format: 12 teams, 5×5 roto. Auction draft 26 rounds, $260 budget. Roster: C, 1B, 2B, SS, 3B, MI, CI, 5 OF, Util, 9 P, 4 Bench, 7 IL (post-draft only). Daily moves. Limits: 200 GS pitchers, 2106 GS hitters, 1000 IP min for ERA/WHIP. Bat cats: R, HR, RBI, SB, OBP. Pitch cats: QS, K, SV+HLD, ERA, WHIP.
@@ -67,7 +69,7 @@ const RULES_DIGEST = `
 §10 Luxury tax: every $ over $350 at trade deadline. Pool 60/40 to 4th/5th, 4th capped at $300, excess to 3rd.
 `.trim();
 
-// Ultra-compact site guide — Groq's 6k TPM ceiling means every token counts.
+// Ultra-compact site guide — keeps prompt cheap.
 const SITE_GUIDE = `
 Tabs: Select Keepers, 2026 Keepers, Rule 5 Draft, Minors Draft, Minors Rosters, Trade Block, Trade Inbox, Trade Log, Activity, League History, League Rules. Auth via Google or email OTP. Header link → ESPN league. Commissioners have Edit/Delete on trades, Undo on Activity, Lock Keepers button, "Manager view" toggle, Reset on drafts.
 `.trim();
@@ -126,9 +128,9 @@ Deno.serve(async (req) => {
   const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
   const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
   const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-  const GROQ_API_KEY = Deno.env.get("GROQ_API_KEY");
+  const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
 
-  if (!GROQ_API_KEY) return jsonResponse({ error: "GROQ_API_KEY not configured" }, 500, origin);
+  if (!GEMINI_API_KEY) return jsonResponse({ error: "GEMINI_API_KEY not configured" }, 500, origin);
 
   // Verify the JWT and find the asker.
   const userClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
@@ -179,7 +181,7 @@ Deno.serve(async (req) => {
     ? payload.leagueIndex.filter(s => typeof s === "string")
     : [];
 
-  // Daily token cap — prevents runaway spend on Groq Dev Tier.
+  // Daily token cap — prevents runaway spend on Gemini's paid tier.
   // Reads/writes a single league_state row with the day's running total.
   const today = new Date().toISOString().slice(0, 10); // "YYYY-MM-DD" UTC
   const capStr = Deno.env.get("COMMISHAI_DAILY_TOKEN_CAP") || "2000000";
@@ -200,14 +202,11 @@ Deno.serve(async (req) => {
     }
   }
 
-  // Pull only the asker's trades. Other context blocks (full constitution,
-  // keeper selections, all trades, draft/rule5 states, callup overrides,
-  // proposals, roster moves) were dropped to fit Groq's 6,000 TPM free-tier
-  // limit. The asker's roster (with pre-computed keeperLastYear) is sent
-  // from the frontend and covers most "team data" questions.
-  // Trades section removed too — was costing ~500 tokens and rarely the
-  // subject of CommishAI questions. Users who want trade history go to the
-  // Trade Log tab.
+  // Most context (full constitution, keeper selections, draft/rule5 states,
+  // callup overrides, proposals, roster moves, trades) is intentionally NOT
+  // sent — keeps prompts cheap. The asker's roster (with pre-computed
+  // keeperLastYear) is sent from the frontend and covers most team-data
+  // questions. Cross-team queries go through the leagueIndex section.
 
   const systemPrompt = [
     "You are The League Assistant for The League — a 12-team keeper baseball league.",
@@ -263,7 +262,7 @@ Deno.serve(async (req) => {
     leagueIndex.length ? leagueIndex.join("\n") : "(no league index sent)",
   ].join("\n");
 
-  // Build OpenAI-compatible chat history (Groq uses the OpenAI schema).
+  // Build OpenAI-compatible chat history (Gemini's compat endpoint accepts it).
   const messages: { role: "system" | "user" | "assistant"; content: string }[] = [
     { role: "system", content: systemPrompt },
   ];
@@ -272,12 +271,13 @@ Deno.serve(async (req) => {
   }
   messages.push({ role: "user", content: question });
 
-  // Primary: Llama 3.1 8B Instant (128k context, ~10x cheaper than 70B,
-  // higher TPM headroom on Dev Tier). Quality is fine for rules + keeper Q&A.
-  // Fallback to 70B only if 8B errors (it almost never will).
+  // Primary: Gemini 2.5 Flash-Lite ($0.10 in / $0.40 out per M tokens, plenty
+  // smart for rules + keeper Q&A). Fallback to 2.5 Flash if Lite errors.
+  // Uses Google's OpenAI-compatibility endpoint so the request format matches
+  // what we used for Groq.
   const MODELS = [
-    "llama-3.1-8b-instant",
-    "llama-3.3-70b-versatile",
+    "gemini-2.5-flash-lite",
+    "gemini-2.5-flash",
   ];
   const errors: string[] = [];
   let answer = "";
@@ -286,11 +286,11 @@ Deno.serve(async (req) => {
   for (const model of MODELS) {
     let resp: Response;
     try {
-      resp = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      resp = await fetch("https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${GROQ_API_KEY}`,
+          "Authorization": `Bearer ${GEMINI_API_KEY}`,
         },
         body: JSON.stringify({
           model,
@@ -306,7 +306,7 @@ Deno.serve(async (req) => {
 
     // Fall through on retryable conditions: 429 (TPM/RPD quota), 413 (request
     // too large for this model's TPM), 404 (model unavailable), 400 with
-    // model_decommissioned (Groq retired it).
+    // model_not_found (Google retired or renamed it).
     if (resp.status === 429 || resp.status === 404 || resp.status === 413) {
       const text = await resp.text();
       errors.push(`${model}: ${resp.status}: ${text.slice(0, 200)}`);
@@ -318,11 +318,11 @@ Deno.serve(async (req) => {
         errors.push(`${model}: ${resp.status}: ${text.slice(0, 200)}`);
         continue;
       }
-      return jsonResponse({ error: `groq 400: ${text.slice(0, 400)}` }, 502, origin);
+      return jsonResponse({ error: `gemini 400: ${text.slice(0, 400)}` }, 502, origin);
     }
     if (!resp.ok) {
       const text = await resp.text();
-      return jsonResponse({ error: `groq ${resp.status}: ${text.slice(0, 400)}` }, 502, origin);
+      return jsonResponse({ error: `gemini ${resp.status}: ${text.slice(0, 400)}` }, 502, origin);
     }
 
     const data = await resp.json();
@@ -343,7 +343,7 @@ Deno.serve(async (req) => {
   }
 
   if (!answer) {
-    return jsonResponse({ error: "all groq models exhausted: " + errors.join(" | ") }, 502, origin);
+    return jsonResponse({ error: "all gemini models exhausted: " + errors.join(" | ") }, 502, origin);
   }
 
   // Persist updated usage. Don't block the response on this — fire and forget.
