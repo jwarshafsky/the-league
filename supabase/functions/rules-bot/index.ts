@@ -29,76 +29,27 @@ const corsHeaders = (origin: string | null) => {
   };
 };
 
-// Site guide — describes the app's tabs and features so the bot can answer
-// "where do I find X" / "how do I do Y" questions.
+// Compact site guide — describes the app's tabs/features so the bot can
+// answer "where do I find X" questions. Trimmed aggressively to fit Groq's
+// 12k TPM budget on Llama 3.3 70B.
 const SITE_GUIDE = `
-The League app (https://jwarshafsky.github.io/the-league/) is a static web app
-backed by Supabase for auth and data. Sign in with Google or with an email
-magic link / 6-digit OTP code (the OTP code field is the workaround if your
-email client eats the magic link).
+App: https://jwarshafsky.github.io/the-league/ — static site + Supabase. Sign in with Google or email magic link / OTP code.
+Header: "The League" link goes to the ESPN league. Commissioners (★) can click their name to toggle "Manager view" (👁) for an owner-perspective preview.
 
-# Header
-- "The League" link in the top-left opens the ESPN league page (id 1200).
-- The pill on the right shows your name + your role (★ for commissioner).
-- Commissioners can click their name to flip into "Manager view" (👁) — a UI
-  preview of what regular owners see. Server permissions are unchanged.
-- "X online" + the hover tooltip lists owners currently active.
+Tabs:
+- Select Keepers: tick keepers, MiLB keepers, Rule 5, trade-block flags. Caps 8 ML / 10 MiL / 25 Rule 5. Press Keep auto-protects via Rule 5. Commish can lock.
+- Keepers: read-only summary of each team's locked keepers + contract status. "$10 send-down fee" badges accumulate ($10/$20/$30).
+- Rule 5 Draft: snake, reverse standings. Pick creates a $1 trade. Pass skips. Commish has Undo Last.
+- Minors Draft: 7 rounds, reverse standings. Click a pick to edit. "Reset to Original Owner" reverts trade-log or manual overrides.
+- Minors Rosters: per-team. Owner/commish sees Call Up on minors and Send Down on callups (when eligible).
+- Trade Block: per-team cards of flagged players. Propose Trade pre-fills the composer.
+- Trade Inbox: full proposal lifecycle (create, counter, accept, reject, messages). Red (N) badge counts unread.
+- Trade Log: all accepted trades. Commish can Edit/Delete in place.
+- Activity: chronological feed. Commish has "undo" on every entry — reverses the underlying action (toggles, trades, picks, callups, lock, overrides).
+- League History: past-season standings (snapshot, ESPN-independent).
+- League Rules: this constitution. Commish has Edit.
 
-# Tabs (left to right)
-- **Select Keepers**: pick keepers, MiLB keepers, Rule 5 protections, and
-  trade-block flags via checkboxes. Caps (8 ML / 10 MiL / 25 Rule 5) shown
-  in summary bar — red number means over the cap. Pressing a Keep box
-  auto-protects via Rule 5; un-checking Rule 5 also unkeeps. After the
-  keeper deadline (commish-set lock), only commish can edit.
-- **Keepers**: read-only summary of each team's locked-in 2026 keepers and
-  contract status, including \"$10 send down fee\" badges (accumulated by
-  count of demotions — $10, $20, $30 …).
-- **Rule 5 Draft**: snake draft from non-protected pool. "Pick" submits a
-  selection (creates a $1 trade in the trade log). "Pass" skips. Commish
-  can "Undo Last" to reverse the most recent pick.
-- **Minors Draft**: 7-round reverse-standings draft. Click a pick to open
-  the editor — set/edit player, edit notes, delete a pick, "Reset to
-  Original Owner" appears whenever the current owner ≠ the original
-  (works for both manual overrides and trade-log-derived ownership).
-- **Minors Rosters**: pick a team or "All Teams". For your own team
-  (or as commish on any team), each minor leaguer has a "Call Up" button;
-  callups have a "Send Down" button when eligible. Salaries are not
-  prompted — call-up prices are set in the offseason via Set Price on
-  Select Keepers.
-- **Trade Block**: a card per team showing players each owner has flagged.
-  "Propose Trade" pre-fills the composer.
-- **Trade Inbox**: full proposal lifecycle — create, counter, accept,
-  reject, message thread per proposal. Red (N) badge counts new pending
-  proposals + new messages directed at you.
-- **Trade Log**: every accepted trade. Commissioners can Edit or Delete
-  any trade in place.
-- **Activity**: chronological feed of every meaningful action (keeper
-  toggles, trades, callups, picks, etc.). Commissioners get an "undo"
-  link on every entry — clicking deletes the log row and reverses the
-  underlying action where possible (toggles, trades, picks, callups,
-  callup prices, lock state, commish overrides).
-- **League History**: trophy room — past seasons' standings (auto-pulled
-  from ESPN, but stored as a static snapshot so it's independent of live
-  ESPN). Click "Full standings" on a year to see the full rank table.
-- **League Rules**: this constitution. Commissioners see an Edit button
-  that opens a textarea — saves persist to Supabase.
-
-# Common tasks
-- Lock keepers (commish): Select Keepers tab → "Lock Keepers" button.
-  Click again to unlock.
-- Set a call-up price (commish): Select Keepers → MiLB section →
-  "Set Price" link next to a player → enter price (1, 3, 5, 10, 15, or
-  custom) and year. Used for keeper-value math.
-- Override a player's contract (commish): Select Keepers → click the
-  ⚙ icon next to a contract to open the Commish Editor.
-- Send an invite to a new owner: handled outside the app, via
-  scripts/send_invite.py. The allowlist is the invited_emails Supabase
-  table; public sign-up is disabled.
-
-# Caching note
-- Every code change bumps the ?v=N query string in index.html. If the
-  user reports stale UI, suggest hard-reload or share the current
-  https://jwarshafsky.github.io/the-league/?v=N URL.
+Common commish tasks: lock/unlock keepers via the Lock button on Select Keepers; set call-up prices via "Set Price" on the MiLB row; override contracts via ⚙ on the player row.
 `.trim();
 
 function jsonResponse(body: unknown, status: number, origin: string | null) {
@@ -288,7 +239,9 @@ Deno.serve(async (req) => {
       continue;
     }
 
-    if (resp.status === 429 || resp.status === 404) {
+    // Fall through on 429 (TPM/RPD quota), 413 (request too large for this
+    // model's TPM), or 404 (model unavailable / deprecated).
+    if (resp.status === 429 || resp.status === 404 || resp.status === 413) {
       const text = await resp.text();
       errors.push(`${model}: ${resp.status}: ${text.slice(0, 200)}`);
       continue;
