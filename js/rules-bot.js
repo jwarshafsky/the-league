@@ -114,7 +114,7 @@
         </form>
         <div style="text-align:center;font-size:0.68rem;color:var(--text-dim);
                     padding:0 10px 8px;background:var(--bg);font-style:italic">
-          CommishAI can make mistakes — verify important answers against the app or the constitution.
+          CommishAI can make mistakes — when in doubt, verify with the human commissioners.
         </div>
       </div>
     `;
