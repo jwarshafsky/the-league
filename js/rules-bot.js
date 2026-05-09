@@ -202,6 +202,31 @@
         : null;
       if (!session) throw new Error("Not signed in");
 
+      // Include the asker's currently-computed roster (post-trades, post-callups).
+      // Static data.js can't be pulled server-side easily; the frontend already
+      // has the live, adjusted roster in memory.
+      const teamId = currentOwner?.team_id;
+      const myTeam = (typeof LEAGUE_DATA !== "undefined" && teamId)
+        ? LEAGUE_DATA.teams.find(t => t.id === teamId)
+        : null;
+      const rosterPayload = myTeam ? {
+        team_id: myTeam.id,
+        name: myTeam.name,
+        majors: myTeam.majors || [],
+        minors: myTeam.minors || [],
+        callups: myTeam.callups || [],
+      } : null;
+      // All-team roster summary (sizes only) so the bot can answer
+      // "how many minors does Corey have" type questions without leaking data.
+      const allTeamsSummary = (typeof LEAGUE_DATA !== "undefined")
+        ? LEAGUE_DATA.teams.map(t => ({
+            team_id: t.id, name: t.name,
+            majors: (t.majors || []).length,
+            minors: (t.minors || []).length,
+            callups: (t.callups || []).length,
+          }))
+        : [];
+
       const resp = await fetch(FN_URL, {
         method: "POST",
         headers: {
@@ -211,7 +236,9 @@
         },
         body: JSON.stringify({
           question,
-          history: turns.slice(0, -1).slice(-10), // last 10 prior turns
+          history: turns.slice(0, -1).slice(-10),
+          myRoster: rosterPayload,
+          allTeamsSummary,
         }),
       });
       const data = await resp.json();

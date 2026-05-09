@@ -150,12 +150,25 @@ Deno.serve(async (req) => {
   };
   const ownerName = TEAM_NAMES[owner.team_id] || owner.team_id;
 
-  let payload: { question?: string; history?: { role: string; content: string }[] };
+  type RosterPayload = { team_id: string; name?: string; majors?: unknown[]; minors?: unknown[]; callups?: unknown[] };
+  type SummaryRow = { team_id: string; name?: string; majors?: number; minors?: number; callups?: number };
+  let payload: {
+    question?: string;
+    history?: { role: string; content: string }[];
+    myRoster?: RosterPayload;
+    allTeamsSummary?: SummaryRow[];
+  };
   try { payload = await req.json(); } catch { return jsonResponse({ error: "bad json" }, 400, origin); }
   const question = (payload.question || "").trim();
   if (!question) return jsonResponse({ error: "empty question" }, 400, origin);
   if (question.length > 2000) return jsonResponse({ error: "question too long (max 2000 chars)" }, 400, origin);
   const history = (payload.history || []).slice(-10).filter(m => m && typeof m.content === "string");
+  // Only trust the client-supplied roster if its team_id matches the asker's
+  // verified team (or the asker is a commish — they can ask about anyone).
+  const myRoster = payload.myRoster &&
+    (payload.myRoster.team_id === owner.team_id || owner.is_commissioner)
+    ? payload.myRoster : null;
+  const allTeamsSummary = Array.isArray(payload.allTeamsSummary) ? payload.allTeamsSummary : [];
 
   // Pull league context. Almost everything in this league is public to all
   // owners; we filter trade_proposal_messages to only the asker's threads.
@@ -197,7 +210,13 @@ Deno.serve(async (req) => {
     "=== CONSTITUTION ===",
     constitution,
     "",
-    "=== ASKER'S KEEPER SELECTIONS ===",
+    "=== ASKER'S CURRENT ROSTER (post-trades, post-callups) ===",
+    "Each player carries: name, price (auction $), yearAcquired, source",
+    "(auction|fa|keeper|callup|callup-via-trade), and contract metadata.",
+    "Use this to compute keeper eligibility and next-year prices per the constitution.",
+    JSON.stringify(myRoster || "(no roster sent — frontend may be stale)"),
+    "",
+    "=== ASKER'S KEEPER SELECTIONS (the flags they've checked) ===",
     JSON.stringify(myKeepers),
     "",
     "=== ASKER'S TRADES ===",
@@ -208,6 +227,9 @@ Deno.serve(async (req) => {
     "",
     "=== ASKER'S TRADE PROPOSALS (own threads only) ===",
     JSON.stringify(propThreads.data || []),
+    "",
+    "=== LEAGUE-PUBLIC: ALL TEAMS' ROSTER SIZES ===",
+    JSON.stringify(allTeamsSummary),
     "",
     "=== LEAGUE-PUBLIC: CALL-UP PRICE OVERRIDES ===",
     JSON.stringify(callupRows.data || []),
