@@ -540,47 +540,35 @@ const HISTORY_SNAPSHOT = {
     {
       "year": 2018,
       "standings": [
-        {
-          "rank": 1,
-          "abbrev": "Jeff",
-          "name": "Jeff",
-          "points": 118.5
-        },
-        {
-          "rank": 2,
-          "abbrev": "SHAR",
-          "name": "Saxton",
-          "points": 83
-        },
-        {
-          "rank": 2,
-          "abbrev": "Heller",
-          "name": "Heller",
-          "points": 83
-        }
+        { "rank": 1,  "abbrev": "Jeff", "name": "Acuña Matata",                "points": 118.5 },
+        { "rank": 2,  "abbrev": "SHAR", "name": "Drapes Match The Carpenter",  "points": 83 },
+        { "rank": 2,  "abbrev": "Shanghai Leavings", "name": "Shanghai Leavings", "points": 83 },
+        { "rank": 4,  "abbrev": "HD",   "name": "Hitting Display",             "points": 79.5 },
+        { "rank": 5,  "abbrev": "ROTB", "name": "Yu Maeda Me Do It",           "points": 78.5 },
+        { "rank": 6,  "abbrev": "PIFE", "name": "Spring the Bell Jesus Saves", "points": 61.5 },
+        { "rank": 7,  "abbrev": "LLC",  "name": "Shohei The Money",            "points": 57 },
+        { "rank": 8,  "abbrev": "KESS", "name": "Team Kessler",                "points": 50.5 },
+        { "rank": 9,  "abbrev": "#416", "name": "The Yanger Bombs",            "points": 48.5 },
+        { "rank": 10, "abbrev": "ES",   "name": "Team Eaton Sanoas",           "points": 47.5 },
+        { "rank": 11, "abbrev": "$$$$", "name": "Team Big Mike",               "points": 37 },
+        { "rank": 12, "abbrev": "GOLD", "name": "Goldschmidt Happens",         "points": 35.5 }
       ]
     },
     {
       "year": 2017,
       "standings": [
-        {
-          "rank": 1,
-          "abbrev": "Jeff",
-          "name": "Jeff",
-          "points": 96
-        },
-        {
-          "rank": 2,
-          "abbrev": "SHAR",
-          "name": "Saxton",
-          "points": 89
-        },
-        {
-          "rank": 3,
-          "abbrev": "Harris",
-          "name": "Harris",
-          "points": 87.5
-        }
+        { "rank": 1,  "abbrev": "Jeff", "name": "Acuña Matata",            "points": 96 },
+        { "rank": 2,  "abbrev": "SHAR", "name": "Now Yu Cano",             "points": 89 },
+        { "rank": 3,  "abbrev": "GOLD", "name": "Goldschmidt Happens",     "points": 87.5 },
+        { "rank": 4,  "abbrev": "$$$$", "name": "Team Big Mike",           "points": 86 },
+        { "rank": 5,  "abbrev": "LLC",  "name": "Quintanamo Bay LLC",      "points": 69 },
+        { "rank": 6,  "abbrev": "ROTB", "name": "Rotbart Means Red Beard", "points": 64 },
+        { "rank": 7,  "abbrev": "KFP",  "name": "Team Kung Froe Panda",    "points": 60 },
+        { "rank": 8,  "abbrev": "EISE", "name": "Team Eisenman",           "points": 56.5 },
+        { "rank": 9,  "abbrev": "LEVY", "name": "Team Levy",               "points": 50 },
+        { "rank": 10, "abbrev": "PIFE", "name": "Silver Bullet Band",      "points": 48 },
+        { "rank": 11, "abbrev": "Team Weintraub", "name": "Team Weintraub", "points": 47 },
+        { "rank": 12, "abbrev": "KESS", "name": "Team Kessler",            "points": 27 }
       ]
     }
   ]

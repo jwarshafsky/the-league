@@ -771,7 +771,7 @@ function renderThreadCard(thread) {
         </div>
         <div style="display:flex;gap:10px;align-items:baseline">
           ${thread.messages.length ? `<span style="color:var(--text-dim);font-size:0.72rem">${thread.messages.length} msg${thread.messages.length === 1 ? "" : "s"}</span>` : ""}
-          <span style="color:${statusBg};font-size:0.7rem;text-transform:uppercase;letter-spacing:0.04em;font-weight:700">${escapeHtml(latest.status)}</span>
+          <span style="color:${statusBg};font-size:0.7rem;text-transform:uppercase;letter-spacing:0.04em;font-weight:700">${escapeHtml(formatProposalStatus(latest.status))}</span>
           <span style="color:var(--text-dim);font-size:0.72rem">${timestampHTML(thread.lastActivityAt)}</span>
         </div>
       </div>
@@ -846,7 +846,7 @@ function renderThreadDetailHTML(thread) {
       ${thread.proposals.slice(0, -1).map(p => {
         const fromTeam = LEAGUE_DATA.teams.find(t => t.id === p.from_team_id);
         return `<div style="font-size:0.78rem;color:var(--text-dim);margin-bottom:4px">
-          ${escapeHtml(fromTeam ? fromTeam.name : p.from_team_id)} proposed (${escapeHtml(p.status)}) — ${timestampHTML(p.created_at)}
+          ${escapeHtml(fromTeam ? fromTeam.name : p.from_team_id)} proposed${p.status === "pending" ? "" : ` (${escapeHtml(formatProposalStatus(p.status))})`} — ${timestampHTML(p.created_at)}
         </div>`;
       }).join("")}
     </div>
@@ -869,7 +869,7 @@ function renderThreadDetailHTML(thread) {
       <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px">
         <div>
           <h3 style="margin:0;color:var(--text-bright)">Trade with ${escapeHtml(counterName)}</h3>
-          <div style="color:var(--text-dim);font-size:0.78rem;margin-top:2px">Status: <strong>${escapeHtml(latest.status)}</strong></div>
+          <div style="color:var(--text-dim);font-size:0.78rem;margin-top:2px">Status: <strong>${escapeHtml(formatProposalStatus(latest.status))}</strong></div>
         </div>
         <button onclick="closeThreadDetail()" style="background:none;border:none;color:var(--text-dim);font-size:1.4rem;cursor:pointer;padding:0 4px;line-height:1">×</button>
       </div>
@@ -3345,6 +3345,9 @@ function removeTradedPick(key) {
 let currentView = "eligible";
 
 function switchTab(tab) {
+  // Reset the asset-price memo so any view that renders trade assets
+  // picks up fresh prices (after a callup, FA pickup, override, etc.).
+  if (typeof _invalidatePriceMap === "function") _invalidatePriceMap();
   document.querySelectorAll(".nav-tab").forEach(t => t.classList.remove("active"));
   const tabEl = document.querySelector(`[data-tab="${tab}"]`);
   if (tabEl) tabEl.classList.add("active");
@@ -3573,11 +3576,46 @@ function describeActivity(a) {
   }
 }
 
+// Player-name → contract-price lookup, built from every team's reconciled
+// roster (auction, callup, FA pickup) via getEligiblePlayers. Memoized at
+// module level; switchTab() invalidates so prices stay current.
+let _playerPriceMapMemo = null;
+function _invalidatePriceMap() { _playerPriceMapMemo = null; }
+function _getPlayerPriceMap() {
+  if (_playerPriceMapMemo) return _playerPriceMapMemo;
+  const map = {};
+  for (const team of LEAGUE_DATA.teams) {
+    const eligible = (typeof getEligiblePlayers === "function") ? getEligiblePlayers(team) : [];
+    for (const p of eligible) {
+      // First team wins for ambiguous names (rare). Skip 0/null prices since
+      // those carry no useful info.
+      if (!(p.name in map) && typeof p.price === "number" && p.price > 0) {
+        map[p.name] = p.price;
+      }
+    }
+  }
+  _playerPriceMapMemo = map;
+  return map;
+}
+
 function formatTradeAsset(asset) {
   if (!asset) return "?";
   if (asset.type === "milb_pick") return `<span style="color:var(--accent)">${escapeHtml(asset.value || "MiLB pick")}</span>`;
   if (asset.type === "draft_dollars" || asset.type === "faab") return escapeHtml(asset.value);
-  return `<span style="color:var(--accent)">${escapeHtml(asset.value || asset.name || "?")}</span>`;
+  const name = asset.value || asset.name || "?";
+  const priceMap = _getPlayerPriceMap();
+  let suffix = "";
+  if (asset.type === "minor") suffix = " (MiLB)";
+  else if (priceMap[name] !== undefined) suffix = ` ($${priceMap[name]})`;
+  return `<span style="color:var(--accent)">${escapeHtml(name)}${suffix}</span>`;
+}
+
+// Display label for a proposal status. The DB stores raw enum values
+// ('pending' / 'accepted' / etc.) but the inbox UI surfaces "proposed" for
+// pending offers since that's how owners think about them.
+function formatProposalStatus(status) {
+  if (status === "pending") return "proposed";
+  return status;
 }
 
 // --- Rendering: Trophy Room ---
@@ -3591,8 +3629,11 @@ function renderTrophyRoomView() {
 
 // Historical abbrevs that don't match the current ESPN_ABBREV_TO_LOCAL map.
 const HISTORICAL_ABBREV_OVERRIDES = {
-  "WAR": "dave",   // 2021 third place
-  "BUST": "matt",  // 2019 third place
+  "WAR":  "dave",   // 2021 third place
+  "BUST": "matt",   // 2019 third place
+  "ROTB": "matt",   // Matt Rotbart, 2017–2018 (Rotbart Means Red Beard / Yu Maeda Me Do It)
+  "LEVY": "zack",   // Zach Levy, 2017 (Team Levy)
+  "#416": "dave",   // David Warshafsky, 2018 (The Yanger Bombs)
 };
 
 const _trophyAbbrevWarned = new Set();
