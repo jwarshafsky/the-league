@@ -4,11 +4,16 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="The League">
   <meta name="theme-color" content="#1e40af">
-  <title>Fantasy League Manager</title>
+  <title>The League</title>
   <link rel="manifest" href="manifest.json">
-  <link rel="stylesheet" href="css/styles.css?v=89">
+  <link rel="apple-touch-icon" href="icons/icon-180.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+  <link rel="icon" type="image/png" sizes="512x512" href="icons/icon-512.png">
+  <link rel="stylesheet" href="css/styles.css?v=90">
 </head>
 <body>
   <header class="app-header">
@@ -35,14 +40,25 @@
   </main>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.74.0/dist/umd/supabase.min.js"></script>
-  <script src="js/supabase-client.js?v=89"></script>
-  <script src="js/db.js?v=89"></script>
-  <script src="js/data.js?v=89"></script>
-  <script src="js/player-stats-snapshot.js?v=89"></script>
-  <script src="js/espn-snapshot.js?v=89"></script>
-  <script src="js/history-snapshot.js?v=89"></script>
-  <script src="js/prospects.js?v=89"></script>
-  <script src="js/app.js?v=89"></script>
-  <script src="js/rules-bot.js?v=89"></script>
+  <script src="js/supabase-client.js?v=90"></script>
+  <script src="js/db.js?v=90"></script>
+  <script src="js/data.js?v=90"></script>
+  <script src="js/player-stats-snapshot.js?v=90"></script>
+  <script src="js/espn-snapshot.js?v=90"></script>
+  <script src="js/history-snapshot.js?v=90"></script>
+  <script src="js/prospects.js?v=90"></script>
+  <script src="js/app.js?v=90"></script>
+  <script src="js/rules-bot.js?v=90"></script>
+  <script>
+    // Register the PWA service worker. Only on https + non-localhost (browsers
+    // require a secure context). Failures are logged but never block the app.
+    if ("serviceWorker" in navigator && location.protocol === "https:") {
+      window.addEventListener("load", () => {
+        navigator.serviceWorker.register("./service-worker.js").catch((e) =>
+          console.warn("[sw] registration failed:", e)
+        );
+      });
+    }
+  </script>
 </body>
 </html>
