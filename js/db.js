@@ -292,7 +292,15 @@ function _subscribeToChanges() {
           if (currentView === "trade-inbox" || currentView === "trade-block") switchTab(currentView);
         }
       })
-      .on("postgres_changes", { event: "*", schema: "public", table: "roster_moves" }, refresh)
+      .on("postgres_changes", { event: "*", schema: "public", table: "roster_moves" }, async () => {
+        await _fetchAll();
+        const ae = document.activeElement;
+        const userIsTyping = ae && (ae.tagName === "INPUT" || ae.tagName === "TEXTAREA" || ae.tagName === "SELECT" || ae.isContentEditable);
+        if (userIsTyping) return;
+        if (document.getElementById("pick-editor-modal") || document.getElementById("commish-editor-modal")) return;
+        if (typeof _refreshAfterRosterMove === "function") _refreshAfterRosterMove();
+        else if (typeof switchTab === "function" && typeof currentView !== "undefined") switchTab(currentView);
+      })
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "trade_proposal_messages" }, async () => {
         await _fetchAll();
         const ae = document.activeElement;

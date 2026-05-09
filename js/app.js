@@ -205,9 +205,12 @@ function applyRosterAdjustments() {
         const player = callups.splice(idx, 1)[0];
         teamCallups.set(m.team_id, callups);
         const minors = teamMinors.get(m.team_id) || [];
-        // Demotions during the season trigger the $10 send-down fee, which
-        // shows up in the Keepers tab next to the contract.
-        if (!minors.find(p => p.name === player.name)) minors.push({ ...player, sentDown: true });
+        const existing = minors.find(p => p.name === player.name);
+        if (existing) {
+          existing.sendDownCount = (existing.sendDownCount || 0) + 1;
+        } else {
+          minors.push({ ...player, sentDown: true, sendDownCount: (player.sendDownCount || 0) + 1 });
+        }
         teamMinors.set(m.team_id, minors);
       }
     }
@@ -340,7 +343,7 @@ function renderMinorsKeepersTable(minors) {
               <td><span class="player-name">${escapeHtml(p.name)}</span>${ms.eligibilityWarning ? ` <span style="color:var(--orange);font-size:0.7rem;font-weight:600">${escapeHtml(ms.eligibilityWarning)}</span>` : ""}</td>
               <td class="player-year">${p.yearAcquired}</td>
               <td class="${statClass}">${p.careerStat} ${p.statType}</td>
-              <td><span style="color:var(--text-dim);font-size:0.8rem">${ms.contractNote}${ms.yearsRemaining !== null ? ` (${ms.yearsRemaining} yrs)` : ""}</span>${p.sentDown ? ` <span style="color:var(--red);font-size:0.7rem;font-weight:600">($10 send down fee)</span>` : ""}</td>
+              <td><span style="color:var(--text-dim);font-size:0.8rem">${ms.contractNote}${ms.yearsRemaining !== null ? ` (${ms.yearsRemaining} yrs)` : ""}</span>${p.sendDownCount ? ` <span style="color:var(--red);font-size:0.7rem;font-weight:600">($${p.sendDownCount * 10} send down fee)</span>` : ""}</td>
             </tr>
           `;
         }).join("")}
@@ -473,23 +476,28 @@ async function sendDownPlayer(playerName, teamId) {
   }
 }
 
-// Commish-only undo for a roster_move surfaced in the activity feed. The
-// activity log payload carries the move_id; deleting that row reverses
-// the call-up or send-down on the next render via applyRosterAdjustments.
-async function undoRosterMove(moveId) {
+async function undoActivityEntry(activityId) {
   if (!isCommissioner()) {
-    alert("Only commissioners can undo a roster move.");
+    alert("Only commissioners can undo activity entries.");
     return;
   }
-  if (!moveId) {
-    alert("This entry doesn't carry a move id — can't undo automatically.");
-    return;
-  }
-  if (!confirm("Undo this roster move?")) return;
+  if (!activityId) return;
+  const entry = _cache.activity?.find(a => a.id === activityId);
+  if (!confirm("Undo this entry and remove it from the log?")) return;
   try {
-    const { error } = await supabaseClient.from("roster_moves").delete().eq("id", moveId);
+    const moveId = entry?.payload?.move_id;
+    if (moveId && (entry.type === "player_called_up" || entry.type === "player_sent_down")) {
+      const { error } = await supabaseClient.from("roster_moves").delete().eq("id", moveId);
+      if (error) throw error;
+    }
+    const { error } = await supabaseClient.from("activity_log").delete().eq("id", activityId);
     if (error) throw error;
-    _refreshAfterRosterMove();
+    if (_cache.activity) {
+      const idx = _cache.activity.findIndex(a => a.id === activityId);
+      if (idx !== -1) _cache.activity.splice(idx, 1);
+    }
+    if (moveId) _refreshAfterRosterMove();
+    else if (typeof switchTab === "function" && typeof currentView !== "undefined") switchTab(currentView);
   } catch (e) {
     alert("Couldn't undo: " + (e.message || e));
   }
@@ -702,7 +710,7 @@ function renderMinorsTable(players, teamId) {
             </td>` : "";
           return `
             <tr>
-              <td><span class="player-name">${escapeHtml(p.name)}</span>${p.sentDown ? ' <span style="color:var(--red);font-size:0.65rem;font-weight:700">$10 fee</span>' : ''}</td>
+              <td><span class="player-name">${escapeHtml(p.name)}</span>${p.sendDownCount ? ` <span style="color:var(--red);font-size:0.65rem;font-weight:700">$${p.sendDownCount * 10} fee</span>` : ''}</td>
               <td class="player-year">${p.yearAcquired}</td>
               <td class="${statClass}">${statDisplay}</td>
               <td><span style="color:var(--text-dim);font-size:0.8rem">${ms.yearsRemaining !== null ? ms.yearsRemaining : '—'}</span></td>
@@ -2691,7 +2699,7 @@ function renderMinorsEligibleTable(minors, teamId, teamSelections) {
             <tr style="${rowBg}">
               <td>
                 <span class="player-name" style="${nameStyle}">${escapeHtml(p.name)}</span>
-                ${p.sentDown ? ' <span style="color:var(--red);font-size:0.65rem;font-weight:700">$10 fee</span>' : ''}
+                ${p.sendDownCount ? ` <span style="color:var(--red);font-size:0.65rem;font-weight:700">$${p.sendDownCount * 10} fee</span>` : ''}
                 <div style="font-size:0.7rem;color:var(--text-dim);margin-top:2px">
                   <span class="${statClass}">${p.careerStat} ${p.statType}</span>
                   ${ms.eligibilityWarning ? ` <span style="color:var(--orange);font-weight:700;margin-left:4px">${escapeHtml(ms.eligibilityWarning)}</span>` : ''}
@@ -3596,73 +3604,62 @@ function switchTab(tab) {
   const content = document.getElementById("main-content");
   const backBtn = document.getElementById("back-btn");
   const title = document.getElementById("header-title");
+  title.innerHTML = '<a href="https://fantasy.espn.com/baseball/league?leagueId=1200" target="_blank" rel="noopener">The League</a>';
 
   backBtn.classList.remove("visible");
 
   switch (tab) {
     case "teams":
       currentView = "teams";
-      title.textContent = "Fantasy League Manager";
       content.innerHTML = renderTeamGrid();
       break;
     case "eligible":
       currentView = "eligible";
-      title.textContent = "Select Keepers";
       content.innerHTML = renderEligibleKeepersView();
       document.getElementById("eligible-team-select").value = "all";
       updateEligibleKeepersView();
       break;
     case "keepers":
       currentView = "keepers";
-      title.textContent = "2026 Keepers";
       content.innerHTML = renderKeepersView();
       document.getElementById("keepers-team-select").value = "all";
       updateKeepersView();
       break;
     case "rosters":
       currentView = "rosters";
-      title.textContent = "Current Rosters";
       content.innerHTML = renderRostersView();
       document.getElementById("rosters-team-select").value = "all";
       updateRostersView();
       break;
     case "trades":
       currentView = "trades";
-      title.textContent = "Trade Log";
       content.innerHTML = renderTradesView();
       break;
     case "trade-block":
       currentView = "trade-block";
-      title.textContent = "Trade Block";
       content.innerHTML = renderTradeBlockView();
       break;
     case "trade-inbox":
       currentView = "trade-inbox";
-      title.textContent = "Trade Inbox";
       content.innerHTML = renderTradeInboxView();
       break;
     case "draft":
       currentView = "draft";
-      title.textContent = "2027 Minor League Draft";
       content.innerHTML = renderDraftView();
       renderProspectStatus();
       showDraftBoard();
-      // Auto-fetch if no cache exists
       if (!getCachedProspects()) kickOffProspectRefresh();
       break;
     case "rule5":
       currentView = "rule5";
-      title.textContent = "Rule 5 Draft";
       content.innerHTML = renderRule5View();
       break;
     case "trophy-room":
       currentView = "trophy-room";
-      title.textContent = "Trophy Room";
       content.innerHTML = renderTrophyRoomView();
       break;
     case "activity":
       currentView = "activity";
-      title.textContent = "Activity";
       content.innerHTML = renderActivityView();
       break;
   }
@@ -3771,16 +3768,11 @@ function renderActivityView() {
 }
 
 function renderActivityItem(a) {
-  // Roster-move events get a commish-only Undo affordance — clicking deletes
-  // the underlying roster_moves row by id (carried in payload.move_id).
   let undoBtn = "";
-  if (isCommissioner() && (a.type === "player_called_up" || a.type === "player_sent_down")) {
-    const moveId = a.payload?.move_id;
-    if (moveId) {
-      undoBtn = `<button onclick="undoRosterMove('${escapeJsString(moveId)}')"
-        title="Undo this roster move"
-        style="background:none;border:none;color:var(--text-dim);font-size:0.7rem;cursor:pointer;padding:2px 6px;margin-left:6px;text-decoration:underline">undo</button>`;
-    }
+  if (isCommissioner()) {
+    undoBtn = `<button onclick="undoActivityEntry('${escapeJsString(a.id)}')"
+      title="Undo this entry"
+      style="background:none;border:none;color:var(--text-dim);font-size:0.7rem;cursor:pointer;padding:2px 6px;margin-left:6px;text-decoration:underline">undo</button>`;
   }
   return `
     <div style="display:flex;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);font-size:0.85rem;align-items:center">

@@ -49,6 +49,13 @@ body {
   color: var(--text-bright);
   flex: 1;
 }
+.app-header h1 a {
+  color: inherit;
+  text-decoration: none;
+}
+.app-header h1 a:hover {
+  text-decoration: underline;
+}
 .back-btn {
   background: rgba(255,255,255,0.15);
   border: none;
