@@ -299,6 +299,72 @@
         minors: (myTeam.minors || []).map(annotateMinor),
         callups: (myTeam.callups || []).filter(isActiveCallup).map(annotateMajor),
       } : null;
+
+      // League-wide compact index so the bot can answer cross-team questions
+      // ("when does Workman's contract expire?"). One line per player:
+      //   Name|teamId|$price|last-yr|type    where type = M (major), m (minor).
+      function buildLeagueIndex() {
+        if (typeof getEspnSnapshot !== "function" || typeof CURRENT_SEASON === "undefined") return [];
+        const snap = getEspnSnapshot();
+        if (!snap) return [];
+        const lines = [];
+        for (const team of LEAGUE_DATA.teams) {
+          const espnTeam = snap.teams.find(t => ESPN_ABBREV_TO_LOCAL?.[t.abbrev] === team.id);
+          const picksByPlayerId = {};
+          if (espnTeam) {
+            for (const pick of (snap.draftPicks || [])) {
+              if (pick.teamId === espnTeam.espnId) picksByPlayerId[pick.playerId] = pick;
+            }
+          }
+          const dataJsNames = new Set((team.majors || []).map(p => p.name));
+          const callupNames = new Set((team.callups || []).map(p => p.name));
+          const minorNames = new Set((team.minors || []).map(p => p.name));
+
+          // data.js majors
+          for (const p of (team.majors || [])) {
+            try {
+              const cs = getContractStatus(p, CURRENT_SEASON);
+              const last = cs ? CURRENT_SEASON + cs.yearsRemaining : "?";
+              lines.push(`${p.name}|${team.id}|$${p.price}|→${last}|M`);
+            } catch { /* skip */ }
+          }
+          // ESPN-only majors (auction + FA)
+          if (espnTeam) {
+            for (const ep of (espnTeam.roster || [])) {
+              if (dataJsNames.has(ep.name) || callupNames.has(ep.name) || minorNames.has(ep.name)) continue;
+              const pick = picksByPlayerId[ep.playerId];
+              const price = pick ? pick.bidAmount : 6;
+              const synth = { name: ep.name, price, yearAcquired: CURRENT_SEASON, fromMinors: false };
+              try {
+                const cs = getContractStatus(synth, CURRENT_SEASON);
+                const last = CURRENT_SEASON + cs.yearsRemaining;
+                lines.push(`${ep.name}|${team.id}|$${price}|→${last}|M`);
+              } catch { /* skip */ }
+            }
+          }
+          // Active callups (filter dropped)
+          for (const p of (team.callups || [])) {
+            if (typeof getMinorTeamStatus === "function" &&
+                getMinorTeamStatus(p.name, team.id) !== "on-roster") continue;
+            try {
+              const cs = getContractStatus(p, CURRENT_SEASON);
+              const last = cs ? CURRENT_SEASON + cs.yearsRemaining : "?";
+              lines.push(`${p.name}|${team.id}|$${p.price ?? "?"}|→${last}|C`);
+            } catch { /* skip */ }
+          }
+          // Minors (no salary while in minors)
+          for (const p of (team.minors || [])) {
+            try {
+              const ms = getMinorLeagueContractStatus(p, CURRENT_SEASON);
+              const last = (ms && ms.yearsRemaining !== null) ? CURRENT_SEASON + ms.yearsRemaining : "callup+3";
+              lines.push(`${p.name}|${team.id}|—|→${last}|m`);
+            } catch { /* skip */ }
+          }
+        }
+        return lines;
+      }
+
+      const leagueIndex = buildLeagueIndex();
       const resp = await fetch(FN_URL, {
         method: "POST",
         headers: {
@@ -310,6 +376,7 @@
           question,
           history: turns.slice(0, -1).slice(-4),
           myRoster: rosterPayload,
+          leagueIndex,
         }),
       });
       const data = await resp.json();

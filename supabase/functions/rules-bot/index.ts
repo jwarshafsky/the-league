@@ -171,6 +171,7 @@ Deno.serve(async (req) => {
     question?: string;
     history?: { role: string; content: string }[];
     myRoster?: RosterPayload;
+    leagueIndex?: string[];
   };
   try { payload = await req.json(); } catch { return jsonResponse({ error: "bad json" }, 400, origin); }
   const question = (payload.question || "").trim();
@@ -183,6 +184,9 @@ Deno.serve(async (req) => {
   const myRoster = payload.myRoster &&
     (payload.myRoster.team_id === owner.team_id || owner.is_commissioner)
     ? payload.myRoster : null;
+  const leagueIndex = Array.isArray(payload.leagueIndex)
+    ? payload.leagueIndex.filter(s => typeof s === "string")
+    : [];
 
   // Pull only the asker's trades. Other context blocks (full constitution,
   // keeper selections, all trades, draft/rule5 states, callup overrides,
@@ -243,6 +247,11 @@ Deno.serve(async (req) => {
     "",
     "=== ASKER'S TRADES (last 20) ===",
     _compactTrades(myTrades.slice(0, 20)),
+    "",
+    "=== LEAGUE INDEX (all 12 teams' players) ===",
+    "Format: Name|teamId|$price|→lastKeepableYear|type   (M=major, C=callup, m=minor)",
+    "Use this for cross-team questions like 'when does Workman's contract expire?'",
+    leagueIndex.length ? leagueIndex.join("\n") : "(no league index sent)",
   ].join("\n");
 
   // Build OpenAI-compatible chat history (Groq uses the OpenAI schema).

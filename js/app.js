@@ -3074,11 +3074,14 @@ function getCurrentPickInfo(draft) {
 }
 
 function renderDraftView() {
+  const resetBtn = isCommissioner()
+    ? `<button class="trade-btn trade-btn-cancel" onclick="resetDraftConfirm()" style="margin-left:auto">Reset</button>`
+    : "";
   return `
     <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap">
       <button class="trade-btn" id="dv-btn-board" onclick="showDraftBoard()">Draft Board</button>
       <button class="trade-btn trade-btn-cancel" id="dv-btn-setup" onclick="showDraftOrderSetup()">Order / Traded Picks</button>
-      <button class="trade-btn trade-btn-cancel" onclick="resetDraftConfirm()" style="margin-left:auto">Reset</button>
+      ${resetBtn}
     </div>
     <div id="prospect-status" style="font-size:0.75rem;color:var(--text-dim);margin-bottom:14px"></div>
     <div id="draft-content"></div>
@@ -3119,6 +3122,10 @@ async function kickOffProspectRefresh() {
 }
 
 function resetDraftConfirm() {
+  if (!isCommissioner()) {
+    alert("Only a commissioner can reset the draft.");
+    return;
+  }
   if (!confirm("Reset the entire 2027 draft? All picks and order customizations will be lost.")) return;
   if (typeof saveDraftAsync === "function") {
     saveDraftAsync(null)
