@@ -287,9 +287,11 @@ function updateKeepersView() {
     container.innerHTML = LEAGUE_DATA.teams.map(team => {
       // 2026 keepers = players acquired BEFORE 2026 (kept going into the season).
       // Players with yearAcquired === CURRENT_SEASON were drafted IN 2026 (auction
-      // or minor draft) and aren't keepers.
-      const milKeepers = [...(team.minors || []), ...(team.callups || [])]
-        .filter(p => (p.yearAcquired ?? 0) < CURRENT_SEASON);
+      // or minor draft) and aren't keepers. Tag callups so the table can mark them.
+      const milKeepers = [
+        ...(team.minors || []).map(p => ({ ...p, _calledUp: false })),
+        ...(team.callups || []).map(p => ({ ...p, _calledUp: true })),
+      ].filter(p => (p.yearAcquired ?? 0) < CURRENT_SEASON);
       return `
       <div style="margin-bottom:24px">
         <h3 style="color:var(--text-bright);margin-bottom:8px;cursor:pointer" onclick="document.getElementById('keepers-team-select').value='${team.id}';updateKeepersView()">
@@ -324,10 +326,18 @@ function updateKeepersView() {
         <div class="summary-label">Total Money</div>
       </div>
     </div>
+    ${(() => {
+      const milKeepers = [
+        ...(team.minors || []).map(p => ({ ...p, _calledUp: false })),
+        ...(team.callups || []).map(p => ({ ...p, _calledUp: true })),
+      ].filter(p => (p.yearAcquired ?? 0) < CURRENT_SEASON);
+      return `
     <div class="section-header">${CURRENT_SEASON} Major League Keepers <span class="section-count">${team.majors.length}/8</span></div>
     ${renderMajorsTable(team.majors)}
-    <div class="section-header">${CURRENT_SEASON} Minor League Keepers <span class="section-count">${[...(team.minors || []), ...(team.callups || [])].filter(p => (p.yearAcquired ?? 0) < CURRENT_SEASON).length}/10</span></div>
-    ${renderMinorsKeepersTable([...(team.minors || []), ...(team.callups || [])].filter(p => (p.yearAcquired ?? 0) < CURRENT_SEASON))}
+    <div class="section-header">${CURRENT_SEASON} Minor League Keepers <span class="section-count">${milKeepers.length}/10</span></div>
+    ${renderMinorsKeepersTable(milKeepers)}
+      `;
+    })()}
   `;
 }
 
@@ -345,9 +355,15 @@ function renderMinorsKeepersTable(minors) {
           let statClass = "";
           if ((p.statType === "AB" && p.careerStat >= 300) || (p.statType === "IP" && p.careerStat >= 75)) statClass = "stat-warning";
           else if ((p.statType === "AB" && p.careerStat >= 200) || (p.statType === "IP" && p.careerStat >= 50)) statClass = "stat-caution";
+          // Once a player is in the callups bucket, the "Must Call Up"
+          // eligibility warning no longer applies — they've already been
+          // called up. Show a "Called up" badge instead.
+          const statusBadge = p._calledUp
+            ? ` <span style="color:var(--purple);font-size:0.7rem;font-weight:600">Called up</span>`
+            : (ms.eligibilityWarning ? ` <span style="color:var(--orange);font-size:0.7rem;font-weight:600">${escapeHtml(ms.eligibilityWarning)}</span>` : "");
           return `
             <tr>
-              <td><span class="player-name">${escapeHtml(p.name)}</span>${ms.eligibilityWarning ? ` <span style="color:var(--orange);font-size:0.7rem;font-weight:600">${escapeHtml(ms.eligibilityWarning)}</span>` : ""}</td>
+              <td><span class="player-name">${escapeHtml(p.name)}</span>${statusBadge}</td>
               <td class="player-year">${p.yearAcquired}</td>
               <td class="${statClass}">${p.careerStat} ${p.statType}</td>
               <td><span style="color:var(--text-dim);font-size:0.8rem">${ms.contractNote}${ms.yearsRemaining !== null ? ` (${ms.yearsRemaining} yrs)` : ""}</span>${p.sendDownCount ? ` <span style="color:var(--red);font-size:0.7rem;font-weight:600">($${p.sendDownCount * 10} send down fee)</span>` : ""}</td>
