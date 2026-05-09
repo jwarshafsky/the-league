@@ -4120,93 +4120,197 @@ function openTrophyDetail(seasonIdx) {
 
 // --- Rendering: League Rules ---
 
-const DEFAULT_CONSTITUTION = `# The League — Constitution
+const DEFAULT_CONSTITUTION = `# The League Constitution
 
-## Format
-- **12 teams, 5x5 Rotisserie** (not H2H)
-- **Batting**: R, HR, RBI, SB, OBP
-- **Pitching**: QS, K, SV+HLD, ERA, WHIP
-- **Auction draft**: 26 rounds, $260 budget per team
-- **Roster**: C, 1B, 2B, SS, 3B, MI, CI, 5 OF, Util, 9 P, 4 Bench, 7 IL (post-draft only)
-- **Daily roster changes**
-- **Limits**: 200 GS pitchers, 2106 GS hitters, 1000 IP min for ERA/WHIP
+## 1) General Settings
 
-## Keeper Rules — Major League
-- **Max 8 major league keepers**
-- Drafted players: keep up to 3 additional years at draft value + $2/year escalation
-- FA pickups: $6 first keepable year, +$2/year, 3 years max
-- Players drafted >$40: max 2 additional keeper years
-- Players drafted >$50: max 1 additional keeper year
-- Minimum keeper cost: $1 (non-integers round up)
-- Traded players keep their cost basis
-- Players dropped in final contract year: can be added via FA but NOT kept
+### a) 26 Round Auction-style Draft
+- Nomination order is randomly assigned by ESPN
+- $260 budget per team
+- Positions: C, 1B, 2B, SS, 3B, MI, CI, 5 OF, Util, 9 P, 4 Bench
+- 7 IL spots are available during the season, but cannot be filled until after the draft
 
-## Keeper Rules — Minor League
-- **Max 10 minor league keepers** (no salary cost while in minors)
-- Pre-2027 drafted: 4-year contracts
-- 2027+ drafted: "call up + 3 year" contracts (kept 3 years after call-up)
-- Call-up pricing based on ESPN top 200 ranking on March 1:
-  - Outside top 200: $1
-  - 100–199: $3
-  - 50–99: $5
-  - 20–49: $10
-  - Top 19: $15
-  - Then +$2/year after that
-- Minor league eligibility: <200 career AB or <50 career IP
-- Must call up or drop minor leaguer after 75 IP or 300 AB milestone (by end of next ML draft)
-- Returning player to minors costs $10 REAL MONEY
+### b) Trading Draft Dollars
+- Trading draft dollars is permitted only for the next upcoming draft — not for other future drafts
+- No manager can acquire more than $30 for any draft (on top of the standard $260 budget — i.e., $290 max). A manager can trade away as many draft dollars as they want, but they do so at their own peril for the next season. If a manager wishes to trade away more than $10, he must pay a $200 security to the Commissioner, which he will get back upon returning to the league the next year. If the manager leaves the league following a season in which he traded away more than $10, he will forfeit the $200 security, which goes into the next season's prize pool
+  - *(1/31/20 MVR Clarification: A manager may collect more than $290 prior to a given auction draft, but may not enter the draft with more than $290. Any amount above $290 is forfeited.)*
+- Trading draft dollars has no effect on the process for determining keeper values for drafted players
 
-## Salary Cap / Luxury Tax
-- **Luxury tax threshold: $350**
-- Taxed on every dollar over $350 at trade deadline
-- Tax pool split: 60% to 4th place (max $300), 40% to 5th place, excess to 3rd
+### c) 5 × 5 Rotisserie
+- **Batting Categories:** Runs, HR, RBI, SB, OBP
+- **Pitching Categories:** Quality Starts, K's, Saves+Holds, ERA, WHIP
 
-## Draft Dollars
-- Can trade draft dollars for next draft only
-- Max $290 entering draft ($260 + $30 acquired)
-- Trading >$10 away requires $200 security deposit
+### d) Rosters
+- Daily Roster Changes
+- 200 Game Start limit for pitchers
+- 2106 Game Start limit for hitters
+- 1000 IP min to qualify for ERA and WHIP
 
-## FAAB (Free Agent Auction)
-- $1000 budget per season
-- Processes tri-weekly: Tuesdays, Thursdays, Sundays at 11am
-- $0 bids allowed
-- FAAB cost does NOT affect keeper value (all FA keepers = $6)
-- Trading FAAB dollars allowed (as of 2026)
-- Cannot pick up players on other teams' minor league rosters
+### e) ESPN Settings
+- Additional settings can be found on the league's ESPN page (use the "The League" header link)
 
-## Trades
-- Deadline set on ESPN each season
-- Post-deadline: only draft dollars, draft picks, minor leaguers (but traded minors can't be called up until next offseason)
-- Veto only by commissioner (collusion, mistakes, mutual agreement)
-- 24-hour protest window
-- No conditional trades
+## 2) Keeper Rules
 
-## Minor League Draft
-- 7 rounds, reverse standings order (not snake, not auction)
-- Anti-tanking: teams under 45 roto points move to bottom of draft order
-- Picks traded before May 15 are protected from anti-tanking rule
-- Can't exceed 10 minor leaguers at keeper deadline or end of ML draft
+### a) Keeper Limits
+- As of the keeper submission date (a week before draft day), managers can keep up to **8 players** on their major league roster, and up to **10 players** on their minor league roster
 
-## Rule 5 Draft
-- By Jan 31: shrink to 25-man roster (majors + minors)
-- Snake draft, reverse standings order
-- Selecting team pays original team $1
-- No obligation to select; must have open roster spot
-- Unprotected/unselected players can't be kept by original team
+### b) Major League Keepers (max 8)
+- Minimum cost = $1. Non-integer keeper values are rounded up
+- Players drafted can be kept for up to 3 additional years at their draft value. Each year, the price to keep a player increases by $2
+  - *Example: If Rotbart drafts Tulowitzki for $60, he can keep Tulo for the following season at $62 or return him to the draft pool. After Year 2, he again decides — keep for $64 or return.*
+- Players who are traded keep their cost basis if they are kept (see also: Trade Deadline rules)
+- Players picked up via free agency who are kept will cost **$6** to keep the first year they are eligible to be kept. FA can be kept for three years following the pickup year, with the price increasing by $2 each year
+  - *Example: Player A added off waivers in 2017 → keepable for $6 in 2018, $8 in 2019, $10 in 2020, then must be returned to FA pool*
+- If a player playing in the final year of his contract is dropped and subsequently added via FA/waivers, he is **not eligible to be kept**. He will return to the draft regardless
 
-## Fees & Prizes
-- $300 entry fee per season
-- 1st: $2,300 + collected fees (chooses draft location)
-- 2nd: $1,000
-- 3rd: $300 (+ luxury tax overflow)
-- 4th: luxury tax pool (60%, max $300)
-- 5th: luxury tax pool (40%)
+### c) Post-Keeper-Deadline Drops (Injury / Legal News)
+- After the keeper deadline and up to 3 hours before the auction draft, a team can drop a keeper (without replacing them) if it is announced or reported that the player has suffered an injury, there is concern that an injury may have occurred, or there is news of disciplinary or criminal legal proceedings
+- Only applies to news first reported **after** the keeper deadline. If a player was already known to be injured at the time of keeper selection, you cannot change your decision based on regret or new reporting about severity
 
-## Key Dates / Deadlines
-- Keeper deadline: 1 week before draft
-- Rule 5 roster shrink: Jan 31
-- Minor league eligibility check: March 1 (ESPN rankings for pricing)
-- Anti-tanking pick trade protection cutoff: May 15
+### d) Newly-Drafted Player Caps (since 2019)
+- Players whose auction price exceeds **$40** may be kept for a max of **2 additional years** beyond the year drafted
+- Players whose auction price exceeds **$50** may be kept for a max of **1 additional year** beyond the year drafted
+- All other players are subject to the existing 3-year rule
+
+### e) Minor League Keepers (max 10)
+- A player may be kept on the minor league roster — no major league keeper spots are used and the owner does not pay any real or draft dollars
+- **Pre-2027 drafted:** minor leaguers are drafted to 4-year contracts. Drafted in 2017 (year 1) → keepable through 2020
+- **2027+ drafted:** "call up + 3 year" contracts — kept up to 3 years after call-up to the major league roster. Drafted 2027, called up 2030 → keepable through 2033
+- In the first year a former minor league keeper is kept, his price is based on ESPN's roto rankings on March 1:
+  - Outside top 200: **$1**
+  - 100–199: **$3**
+  - 50–99: **$5**
+  - 20–49: **$10**
+  - Top 19: **$15**
+  - Then **+$2/year** after that
+  - *Example: David Dahl drafted to minors 2015, called up 2016, ranked 138 on March 1 → $3 in 2017, $5 in 2018, returned to draft 2019. Spreadsheet keeper values update March 1; before then, "TBD".*
+- If a Minor League player drafted in the League's Minor League draft is called up to their MLB team, **NO ONE** is allowed to pick that player up in FA should they appear on ESPN's "Available Players" queue. A Minor League restricted list is kept as a Google Doc and updated as needed. Undrafted call-ups are fair game through Waivers (see also: Waivers Auction)
+
+## 3) Minor Leagues
+
+### a) Minor League Draft
+- 7 rounds, run in **reverse standings order** from the previous season (not auction, not snake)
+- Tiebreaker: team with the lower keeper standings position drafts first
+- **Anti-tanking:** any team scoring under 45 rotisserie points moves to the bottom of the order for the next year's minor league draft. Does not impact picks already traded prior to the season's trade deadline
+  - *Example: If Matt traded his 1st round pick to Jeff in May, but finishes with 40 total roto points (11th), Matt picks last — but Jeff still has the original pick (first overall).*
+  - If multiple teams score below 45 roto points, the higher-scoring team gets the higher spot
+- **February 2025 Amendment:** Picks traded **after May 15** are not locked in place if the trading team finishes below 45 points. Only picks traded on or before May 15 are protected
+- Teams continue to draft in order until the earlier of (a) the team has filled a 10-man minor league roster, or (b) has used all of their picks
+- No team is ever permitted to hold more than 10 minor league players at keeper deadline or at the conclusion of the minor league draft. If a trade gives a manager more than 10 minor leaguers mid-season, they may hold all players, but may keep no more than 10 the following offseason
+- **Beginning in 2027:** the only way to exceed 10 minor leaguers is via trade — the limit cannot be exceeded by sending a player from majors down to minors
+- Managers forfeit any remaining draft picks that would put their minor league roster above 10 players
+- Managers can drop players from their Minor League roster at any point (except during the minors draft), but are never allowed to add to their minor league rosters via free agency — only via the draft and/or trades
+- Managers may trade minor league draft picks but only for the next draft — no further-out drafts in the future
+
+### b) Minor League Transactions
+- Minor leaguers can be called up to a manager's major league roster at any point without cost. The manager must create an open roster spot by moving a player to the DL or dropping a player; the commissioner will then add the player
+- You **can't** waive a minor league player during the minor league draft to draft someone new (otherwise you could block people from picking your minors guy with no consequence)
+- You **can** call a minor leaguer up to the majors during the minor league draft by dropping someone from your major league roster
+- After keepers are selected but before the major league draft, you may drop someone from your minors (without dropping a major league player) by announcing it to the league — the player then becomes available in the minor league draft
+- **$10 send-down fee:** Players recalled from a minors roster previously can be returned to the minors if still eligible for a fee of **$10 (REAL MONEY)**, at any time. These fees go into the season's prize pool
+- **As of Jan 30, 2026:** Managers can call up minor leaguers after the keeper deadline and before the major league draft. The minor leaguer would cost **$0** in the major league draft. No limit on the number of players that can be called up. Call-ups must happen at least **24 hours** prior to the majors draft
+
+### c) Eligibility
+- To be eligible to be drafted in the minor leagues, players must not have surpassed either of the following in their MLB regular-season career:
+  - **200 at-bats**, or
+  - **50 innings pitched**
+- If a player was drafted in the minor league draft and is currently in the final three years of his contract, he is "grandfathered" in and may be kept through the life of his contract
+- Players on a roster at the start of the minor league draft are not eligible to be selected in the draft
+- No free agent pickups or major league draft selections may be placed on the Minor League roster, even if a slot is available
+
+### d) Drop Restrictions for Pre-MLB Auction Draftees
+- Players who have not played any MLB games as of the auction draft date (excluding international FA signed in that prior offseason) drafted in the auction may not be dropped until **April 15** unless:
+  - They are placed on the major league or minor league DL, or
+  - They are acquired for more than $1 in the auction
+- The expectation/honor rule: owners will not nominate players during the auction for the purpose of preventing them from being selected in the minor league draft
+- **As of March 2026:** A grace period immediately following the auction allows a player subject to the above rule to be dropped prior to the minor league draft and then not need to be kept until April 15. Players dropped during the grace period are still eligible for the minor league draft
+
+### e) FAAB Restrictions on Outside-Top-300 Minor Eligible Players
+- **As of March 2026:** Players who are eligible for the minor league draft and ranked outside the ESPN top 300 as of March 1 may not be added via FAAB prior to or during the minor league draft. Once the minor league draft ends, these players may be added via FAAB
+
+### f) Mandatory Call-Up or Drop on AB/IP Threshold
+- **As of Jan 30, 2026:** Minor league players must be either called up or dropped from your minors roster by the end of the minor league draft following the season where the player achieves either **75 IP** or **300 AB**. Drops can only happen during the offseason prior to the keeper deadline
+  - *Example: Jackson Holliday reached his 300th MLB AB during the 2025 season. He must be either dropped during keeper selection or called up to the majors prior to the completion of the 2026 minor league draft.*
+
+## 4) Trades
+
+### a) Deadline
+- The trade deadline for each season is set on ESPN
+- No trades involving major league players are permitted after this deadline
+- No players picked up on FA after this deadline may be kept
+- After the deadline, trades involving draft dollars, draft picks, and minor leaguers are still permitted — but any traded minor leaguer is **not eligible** to be called up until the following offseason
+
+### b) Vetoes
+- Trades can only be vetoed by the league commissioner. League members may contact the commissioners to lodge a protest
+- The only acceptable reasons to veto a trade are: potential **collusion or unfair play**, **mistakenly accepted trades**, or **mutual agreement** among parties involved
+- These can be subjective. Trades cannot be vetoed out of personal disdain, fear of a rival improving, or bad sportsmanship
+
+### c) Trade Acceptance
+- All trades must be proposed and accepted on the ESPN platform. Additional terms (picks, draft $) should be announced by email or on the league Slack page
+- **No conditional trades** — all terms of the trade must be finalized when the trade is announced
+- If no protest is presented within **24 hours** of the trade, it processes automatically
+
+## 5) Rule 5 Draft
+
+*The purpose of the Rule 5 draft is to encourage off-season trading and activity.*
+
+- By **January 31st at midnight** (modifiable by commissioner if there are new teams joining), teams must shrink their full roster (Majors plus Minors) to **25 guys**. Failure to do so → commissioner drops players based on whoever the commissioner deems least valuable. All released/non-protected players are available for a Rule 5 draft maintaining their existing contract status
+- The Rule 5 draft begins on a date selected by the commissioner and is conducted in **snake fashion** in **reverse standings order**
+- If a player is drafted, the team selecting that player must pay the team from which the player originated **$1** for the upcoming season
+- There is no obligation to make any selections during the Rule 5 draft. There is no obligation to drop any player upon adding one in the Rule 5 draft
+- Rule 5 drafted players are eligible to be kept or traded by the team that drafts them. They maintain their prior contract status
+- Teams may only select players in the Rule 5 draft if they have an open spot on their **25-man roster**
+  - *Enter Rule 5 with 24 players → make 1 selection. Enter with 23 → up to 2. Etc.*
+- Players not protected in the Rule 5 draft who are not selected by another team are **not eligible** to be kept or traded by the original team who chose not to protect them
+
+## 6) Waiver Process (FAAB)
+
+- A free agent auction (FAAB) is held **tri-weekly**. Each week, managers can submit bids until **11am** on the days waivers process: **Tuesdays, Thursdays, and Sundays**
+- Managers begin each season with a **$1000 budget**. Winning bids do **NOT** determine the cost basis for keeper purposes — all FA keepers cost **$6**. Zero-dollar bids are permitted
+- Managers are expected to know all prohibited players (anyone on minors rosters), made public in the spreadsheet at all times. If a bid is processed for a player on another team's minors roster:
+  - The player is dropped from the manager's team
+  - No FAAB dollars are recovered
+  - No dropped player is returned
+  - **CHECK THE MINOR LEAGUE ROSTERS BEFORE SUBMITTING A CLAIM**
+- Players dropped in the **fourth and final year** of their contract are eligible to be added via free agency for the remainder of the season but **may not be kept**
+- Players may not be dropped and re-added with the intention to reset their contract status. The commissioner makes the final ruling in any dispute over intent
+- **Trading FAAB dollars is allowed (as of 2026)**
+
+## 7) Fees / Prizes
+
+- League entry fee is **$300 each season**, payable at or before the keeper deadline. **NO EXCEPTIONS**
+- Cost to return a player to the Minor League roster is **$10**. Minor League transaction fees are collected following the end of the season. Offseason send-down fees count toward the previous season's pot
+- **Payouts:**
+  - **1st place:** $2,300 + any other league fees collected for that year (minor league fees, forfeited security fees) + decides draft location for the next season (within geographical reason)
+  - **2nd place:** $1,000
+  - **3rd place:** $300
+- At the end of each season, **"keeper standings"** are posted to the league spreadsheet — total roto points each team has accumulated for the entirety of the league, and roto points per year. The point: show which teams and owners are best over time. Bragging rights ensure teams don't bottom out in any individual year. Expansion teams use roto points per year for missing seasons; their per-year value updates each season
+
+## 8) Expansion Draft Rules
+
+- **Protection counts:**
+  - Finished 1–3 prior year: protect up to **6 ML / 7 MiL**
+  - Finished 4–8: protect up to **7 ML / 8 MiL**
+  - Bottom three (9–11): protect up to **8 ML / 9 MiL**
+- All other players are available for the expansion team to select. The expansion team may choose **up to 25 players total**
+- If the expansion team takes more than two players from any team, it pays the owner of that team **$5 for the third** player selected and **$10 for each subsequent** player selected
+- The expansion team gets the **#4 overall pick** in the minor league draft and starts at **$260** draft dollars (pre-expansion draft)
+- League members get **at least two weeks' notice** of the expansion draft so teams can make trades in anticipation (e.g., to consolidate keepers)
+- The expansion draft runs for a few days (exact timing TBD); during that period the expansion drafter may trade with other teams (including in exchange for not selecting a player)
+
+## 9) Disputes
+
+- Any and all disputes are decided by a **league vote** (except for trade issues)
+- The trade veto rules, disputes rules, and this Constitution exist to prevent scenarios that could cause ill-will or tension. This is Fantasy Baseball, and like all Fantasies, it is meant to be fun. If a manager is attempting to **cheat, bribe, collude, or betray the good spirit** of the League, that manager may be kicked out and forfeit league fees already paid
+- Any **significant changes** to the constitution require a **majority vote**. The commissioner determines what constitutes a significant change and notifies the league of all changes. The commissioner also decides whether any rule changes should be delayed before being implemented to account for reliance on past rules in connection with decisions that could impact the value of keepers, picks, etc.
+
+## 10) Luxury Tax
+
+- Teams are taxed for every dollar of salary they exceed the luxury threshold of **$350** upon the conclusion of the trade deadline. The luxury tax is determined by a calculator in The League Google Sheet
+  - *Example: Total salary post-deadline of $450 → taxed $100*
+- The luxury tax pool is available for the **4th and 5th place teams**, split **60:40** to 4th and 5th
+  - Maximum 4th place can win is **$300**; any excess goes to **3rd place**
+  - *Example (2025): pool would have been $569 → 5th place wins $228, 4th place wins $300, 3rd place wins $341*
 `;
 
 function getConstitutionMarkdown() {
@@ -4272,10 +4376,7 @@ function renderRulesView() {
     : "";
   return `
     <div id="rules-view-container">
-      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:14px">
-        <div style="font-size:0.78rem;color:var(--text-dim)">League constitution. Commissioners can edit.</div>
-        ${editBtn}
-      </div>
+      ${editBtn ? `<div style="display:flex;justify-content:flex-end;margin-bottom:14px">${editBtn}</div>` : ""}
       <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:18px 22px;box-shadow:var(--shadow);max-width:780px">
         ${renderConstitutionHTML(md)}
       </div>
