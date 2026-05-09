@@ -3635,6 +3635,9 @@ const HISTORICAL_ABBREV_OVERRIDES = {
   "#416": "dave",   // David Warshafsky, 2018 (The Yanger Bombs)
   "KFP":  "sam",    // Samuel Rotbart, 2017 (Team Kung Froe Panda)
   "ES":   "sam",    // Samuel Rotbart, 2018 (Team Eaton Sanoas)
+  "JRAM": "dave",   // David Warshafsky, 2019
+  "HADR": "matt",   // Matt Rotbart, 2021–2023
+  "SDJ":  "sam",    // Samuel Rotbart, 2021–2023
 };
 
 const _trophyAbbrevWarned = new Set();
