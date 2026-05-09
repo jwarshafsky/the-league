@@ -163,7 +163,9 @@ function applyRosterAdjustments() {
     _applyAssetMoves(teamMinors, teamCallups, t.team2, t.team1, t.team1Receives);
     _applyAssetMoves(teamMinors, teamCallups, t.team1, t.team2, t.team2Receives);
   }
-  // 2. callup_overrides → minors→callups within the same team.
+  // 2. callup_overrides → minors→callups within the same team. Kept for
+  //    back-compat with any historical price-set actions; the new Call Up
+  //    flow uses roster_moves below.
   const overrides = (typeof dbGetCallupOverrides === "function") ? dbGetCallupOverrides() : {};
   for (const playerName of Object.keys(overrides)) {
     for (const team of LEAGUE_DATA.teams) {
@@ -179,12 +181,47 @@ function applyRosterAdjustments() {
       }
     }
   }
+  // 3. roster_moves: explicit call-up (minors→callups) and demote
+  //    (callups→minors) actions, processed in time order so the latest move
+  //    wins. Demotes here override anything the callup_overrides loop did.
+  const moves = (typeof dbGetRosterMoves === "function") ? dbGetRosterMoves() : [];
+  const sortedMoves = [...moves].sort((a, b) => new Date(a.at || 0) - new Date(b.at || 0));
+  for (const m of sortedMoves) {
+    if (!m || !m.player_name || !m.team_id) continue;
+    if (m.kind === "callup") {
+      const minors = teamMinors.get(m.team_id) || [];
+      const idx = minors.findIndex(p => p.name === m.player_name);
+      if (idx !== -1) {
+        const player = minors.splice(idx, 1)[0];
+        teamMinors.set(m.team_id, minors);
+        const callups = teamCallups.get(m.team_id) || [];
+        if (!callups.find(p => p.name === player.name)) callups.push(player);
+        teamCallups.set(m.team_id, callups);
+      }
+    } else if (m.kind === "demote") {
+      const callups = teamCallups.get(m.team_id) || [];
+      const idx = callups.findIndex(p => p.name === m.player_name);
+      if (idx !== -1) {
+        const player = callups.splice(idx, 1)[0];
+        teamCallups.set(m.team_id, callups);
+        const minors = teamMinors.get(m.team_id) || [];
+        // Demotions during the season trigger the $10 send-down fee, which
+        // shows up in the Keepers tab next to the contract.
+        if (!minors.find(p => p.name === player.name)) minors.push({ ...player, sentDown: true });
+        teamMinors.set(m.team_id, minors);
+      }
+    }
+  }
   // Mutate LEAGUE_DATA in place so existing call sites keep reading the
   // up-to-date arrays without code changes.
   for (const team of LEAGUE_DATA.teams) {
     team.minors  = teamMinors.get(team.id) || [];
     team.callups = teamCallups.get(team.id) || [];
   }
+  // Re-apply the daily-refreshed careerAB / careerIP from PLAYER_STATS so
+  // the rebuilt arrays don't fall back to the static (stale) careerStat
+  // values captured in the snapshot at script-load time.
+  if (typeof applyLivePlayerStats === "function") applyLivePlayerStats();
 }
 
 
@@ -300,10 +337,10 @@ function renderMinorsKeepersTable(minors) {
           else if ((p.statType === "AB" && p.careerStat >= 200) || (p.statType === "IP" && p.careerStat >= 50)) statClass = "stat-caution";
           return `
             <tr>
-              <td><span class="player-name">${escapeHtml(p.name)}</span>${p.sentDown ? ' <span style="color:var(--red);font-size:0.65rem;font-weight:700">$10 fee</span>' : ''}</td>
+              <td><span class="player-name">${escapeHtml(p.name)}</span>${ms.eligibilityWarning ? ` <span style="color:var(--orange);font-size:0.7rem;font-weight:600">${escapeHtml(ms.eligibilityWarning)}</span>` : ""}</td>
               <td class="player-year">${p.yearAcquired}</td>
               <td class="${statClass}">${p.careerStat} ${p.statType}</td>
-              <td><span style="color:var(--text-dim);font-size:0.8rem">${ms.contractNote}${ms.yearsRemaining !== null ? ` (${ms.yearsRemaining} yrs)` : ""}</span>${ms.eligibilityWarning ? ` <span style="color:var(--orange);font-size:0.75rem">${ms.eligibilityWarning}</span>` : ""}</td>
+              <td><span style="color:var(--text-dim);font-size:0.8rem">${ms.contractNote}${ms.yearsRemaining !== null ? ` (${ms.yearsRemaining} yrs)` : ""}</span>${p.sentDown ? ` <span style="color:var(--red);font-size:0.7rem;font-weight:600">($10 send down fee)</span>` : ""}</td>
             </tr>
           `;
         }).join("")}
@@ -371,7 +408,7 @@ function updateRostersView() {
       <div class="section-header">
         Called Up to Majors <span class="section-count">${team.callups.length}</span>
       </div>
-      ${renderCallupsTable(team.callups)}
+      ${renderCallupsTable(team.callups, team.id)}
     ` : ""}
 
     <div class="section-header">
@@ -386,26 +423,46 @@ async function callUpMinorPlayer(playerName, teamId) {
     alert("Only commissioners can call up players right now.");
     return;
   }
-  const yearStr = prompt(`Year ${playerName} was called up?`, String(CURRENT_SEASON));
-  if (yearStr == null) return;
-  const year = parseInt(yearStr, 10);
-  if (!Number.isFinite(year)) { alert("Invalid year"); return; }
-  const priceStr = prompt(`Call-up price for ${playerName}? (top-200 ranked: 1=$1, 2=$3, 3=$5, 4=$10, 5=$15, or enter custom)`, "5");
-  if (priceStr == null) return;
-  const price = parseInt(priceStr, 10);
-  if (!Number.isFinite(price)) { alert("Invalid price"); return; }
+  if (!confirm(`Call up ${playerName}? (Salary will be set in the offseason.)`)) return;
   try {
-    if (typeof saveCallupOverrideAsync === "function") {
-      await saveCallupOverrideAsync(playerName, price, year);
-    }
+    const moves = [...((typeof dbGetRosterMoves === "function") ? dbGetRosterMoves() : [])];
+    moves.push({
+      kind: "callup",
+      player_name: playerName,
+      team_id: teamId,
+      at: new Date().toISOString(),
+    });
+    if (typeof saveRosterMovesAsync === "function") await saveRosterMovesAsync(moves);
     if (typeof logActivityAsync === "function") {
-      logActivityAsync("player_called_up", {
-        player_name: playerName, year, price,
-      }, { targetTeamId: teamId });
+      logActivityAsync("player_called_up", { player_name: playerName }, { targetTeamId: teamId });
     }
     if (typeof switchTab === "function") switchTab(currentView);
   } catch (e) {
     alert("Couldn't call up: " + (e.message || e));
+  }
+}
+
+async function sendDownPlayer(playerName, teamId) {
+  if (!isCommissioner()) {
+    alert("Only commissioners can send a player down right now.");
+    return;
+  }
+  if (!confirm(`Send ${playerName} back to the minors?`)) return;
+  try {
+    const moves = [...((typeof dbGetRosterMoves === "function") ? dbGetRosterMoves() : [])];
+    moves.push({
+      kind: "demote",
+      player_name: playerName,
+      team_id: teamId,
+      at: new Date().toISOString(),
+    });
+    if (typeof saveRosterMovesAsync === "function") await saveRosterMovesAsync(moves);
+    if (typeof logActivityAsync === "function") {
+      logActivityAsync("player_sent_down", { player_name: playerName }, { targetTeamId: teamId });
+    }
+    if (typeof switchTab === "function") switchTab(currentView);
+  } catch (e) {
+    alert("Couldn't send down: " + (e.message || e));
   }
 }
 
@@ -491,7 +548,7 @@ function renderMinorsCompactTable(team) {
           if ((p.statType === "AB" && p.careerStat >= 300) || (p.statType === "IP" && p.careerStat >= 75)) statClass = "stat-warning";
           else if ((p.statType === "AB" && p.careerStat >= 200) || (p.statType === "IP" && p.careerStat >= 50)) statClass = "stat-caution";
           return `<tr>
-            <td><span class="player-name">${escapeHtml(p.name)}</span>${p.sentDown ? ' <span style="color:var(--red);font-size:0.65rem">$10</span>' : ''}</td>
+            <td><span class="player-name">${escapeHtml(p.name)}</span></td>
             <td class="player-year">${p.yearAcquired}</td>
             <td class="${statClass}">${p.careerStat} ${p.statType}</td>
           </tr>`;
@@ -517,12 +574,9 @@ function renderMajorsTable(players) {
           const cs = getContractStatus(p, CURRENT_SEASON);
           return `
             <tr>
-              <td>
-                <span class="player-name">${escapeHtml(p.name)}</span>
-                ${p.fromMinors ? '<span class="from-minors-tag">MiLB</span>' : ""}
-              </td>
+              <td><span class="player-name">${escapeHtml(p.name)}</span></td>
               <td class="player-price">$${p.price}</td>
-              <td class="player-year">${p.yearAcquired}</td>
+              <td class="player-year">${p.yearAcquired}${p.fromMinors ? ' <span class="from-minors-tag">MiLB</span>' : ""}</td>
               <td><span class="contract-tag contract-${escapeHtml(cs.status)}">${escapeHtml(cs.label)}</span></td>
               <td>${cs.canKeepNextYear ? `<span class="player-price">$${cs.nextYearPrice}</span>` : '<span style="color:var(--text-dim)">—</span>'}</td>
             </tr>
@@ -533,12 +587,16 @@ function renderMajorsTable(players) {
   `;
 }
 
-function renderCallupsTable(players) {
+function renderCallupsTable(players, teamId) {
   if (!players.length) return "";
   players = [...players].sort((a, b) => lastName(a.name).localeCompare(lastName(b.name)));
+  // Send Down button is commish-only and only shown when the player is still
+  // below the "must call up" threshold (200 AB / 50 IP).
+  const showSendDown = teamId && isCommissioner();
+  const headerActionCol = showSendDown ? "<th></th>" : "";
   return `
     <table class="player-table">
-      <thead><tr><th>Player</th><th>Drafted</th><th>Career Stats</th><th>Status</th></tr></thead>
+      <thead><tr><th>Player</th><th>Drafted</th><th>Career Stats</th><th>Status</th>${headerActionCol}</tr></thead>
       <tbody>
         ${players.map(p => {
           const ms = getMinorLeagueContractStatus(p, CURRENT_SEASON);
@@ -546,12 +604,19 @@ function renderCallupsTable(players) {
           let statClass = "";
           if ((p.statType === "AB" && p.careerStat >= 300) || (p.statType === "IP" && p.careerStat >= 75)) statClass = "stat-warning";
           else if ((p.statType === "AB" && p.careerStat >= 200) || (p.statType === "IP" && p.careerStat >= 50)) statClass = "stat-caution";
+          const belowThreshold = (p.statType === "AB" && p.careerStat < 200) || (p.statType === "IP" && p.careerStat < 50);
+          const actionCell = showSendDown ? `
+            <td style="text-align:right">
+              ${belowThreshold ? `<button class="trade-btn" onclick="sendDownPlayer('${escapeJsString(p.name)}','${escapeJsString(teamId)}')"
+                style="font-size:0.72rem;padding:3px 8px;background:var(--orange);color:#fff">Send Down</button>` : ""}
+            </td>` : "";
           return `
             <tr>
               <td><span class="player-name">${escapeHtml(p.name)}</span></td>
               <td class="player-year">${p.yearAcquired}</td>
               <td class="${statClass}">${statDisplay}</td>
               <td><span style="color:var(--text-dim);font-size:0.8rem">${formatCallupStatus(p, ms)}</span></td>
+              ${actionCell}
             </tr>
           `;
         }).join("")}
@@ -3627,10 +3692,33 @@ function collapseRepeatedToggles(items) {
   return out.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 }
 
+// When a draft pick is undone, hide both the original pick AND the undo
+// from the activity feed — the user wants the trail to look like the pick
+// just never happened. Same for Rule 5 picks.
+function _filterUndonePicks(items) {
+  const undoneR5 = new Set(); // round:idx:player_name keys
+  const undoneMD = new Set(); // round:pick_in_round:player_name keys
+  for (const a of items) {
+    const p = a.payload || {};
+    if (a.type === "rule5_pick_undone") {
+      undoneR5.add(`${p.round}|${p.idx}|${p.player_name || ""}`);
+    } else if (a.type === "minors_pick_undone") {
+      undoneMD.add(`${p.round}|${p.pick_in_round}|${p.player_name || ""}`);
+    }
+  }
+  return items.filter(a => {
+    if (a.type === "rule5_pick_undone" || a.type === "minors_pick_undone") return false;
+    const p = a.payload || {};
+    if (a.type === "rule5_pick_made") return !undoneR5.has(`${p.round}|${p.idx}|${p.player_name || ""}`);
+    if (a.type === "minors_pick_made") return !undoneMD.has(`${p.round}|${p.pick_in_round}|${p.player_name || ""}`);
+    return true;
+  });
+}
+
 function renderActivityView() {
   const raw = (typeof dbGetActivity === "function") ? dbGetActivity() : [];
   if (!raw.length) return '<p style="color:var(--text-dim)">No activity recorded yet.</p>';
-  const items = collapseRepeatedToggles(raw);
+  const items = collapseRepeatedToggles(_filterUndonePicks(raw));
   // Group by date label (Today / Yesterday / Mon May 6 etc.)
   const today = new Date().toDateString();
   const yesterday = new Date(Date.now() - 86400000).toDateString();
@@ -3716,7 +3804,14 @@ function describeActivity(a) {
     case "callup_price_set":
       return `${actor} set ${player}'s call-up price to <strong>$${escapeHtml(p.price)}</strong> (${escapeHtml(p.year)})`;
     case "player_called_up":
-      return `${actor} called up ${player} <span style="color:var(--text-dim)">($${escapeHtml(p.price)} · ${escapeHtml(p.year)})</span>`;
+      return `${actor} called up ${player}`;
+    case "player_sent_down":
+      return `${actor} sent ${player} back to the minors`;
+    case "rule5_pick_made": {
+      const fromTeam = p.from_team ? _teamName(p.from_team) : null;
+      const fromHtml = fromTeam ? ` from <strong>${escapeHtml(fromTeam)}</strong>` : "";
+      return `${target} Rule 5–picked ${player}${fromHtml} <span style="color:var(--text-dim)">(R${escapeHtml(p.round)}.${escapeHtml(p.idx)})</span>`;
+    }
     case "commish_override":
       return `${actor} overrode ${player}'s contract <span style="color:var(--text-dim)">(${(p.fields || []).map(f => escapeHtml(f)).join(", ")})</span>`;
     default:
@@ -4034,7 +4129,10 @@ function renderRule5View() {
     return `
       <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap">
         <span style="color:var(--text-dim);font-size:0.8rem;align-self:center">Pool loaded ${new Date(state.loadedAt).toLocaleString()} · ${pool.length} players</span>
-        ${commish ? `<button class="trade-btn trade-btn-cancel" style="margin-left:auto" onclick="resetRule5Draft()">Reload</button>` : ''}
+        ${commish ? `
+          <button class="trade-btn" style="margin-left:auto;font-size:0.78rem" onclick="refreshRule5Pool()">Refresh Pool</button>
+          <button class="trade-btn trade-btn-cancel" style="font-size:0.78rem" onclick="resetRule5Draft()">Reset</button>
+        ` : ''}
       </div>
       <div class="keeper-projection">
         <h3>Draft Order (Round 1)</h3>
@@ -4171,6 +4269,19 @@ function loadRule5Pool() {
     order: LEAGUE_DATA.teams.map(t => t.id), // commissioner can reorder before starting
     started: false,
   };
+  saveRule5State(state);
+  switchTab("rule5");
+}
+
+// Rebuild the pool without wiping picks/order/started — useful when the
+// stored pool was created before a roster change (e.g., a minor leaguer
+// was traded or sent down) so the picker reflects current state.
+function refreshRule5Pool() {
+  const state = getRule5State();
+  if (!state) return;
+  if (!confirm("Rebuild the Rule 5 pool from current rosters? Picks already made will be kept.")) return;
+  state.pool = buildRule5Pool();
+  state.loadedAt = Date.now();
   saveRule5State(state);
   switchTab("rule5");
 }

@@ -18,6 +18,7 @@ const _cache = {
   proposals: [],       // array of trade_proposals rows (raw)
   messages: [],        // array of trade_proposal_messages rows (raw)
   keeperDeadline: null,// { at: ISO string } | null — past `at`, non-commish keeper toggles are blocked
+  rosterMoves: [],     // [{ kind: "callup" | "demote", player_name, team_id, year?, at }]
 };
 // Cross-conversation read state for the trade inbox: { threadId: lastReadAt }.
 // Anything in the thread newer than lastReadAt counts as unread (covers BOTH
@@ -112,12 +113,14 @@ async function _fetchAll() {
   _cache.commishOverrides = {};
   _cache.workaroundOverrides = {};
   _cache.keeperDeadline = null;
+  _cache.rosterMoves = [];
   for (const r of (ls.data || [])) {
     if (r.key === "draft_2027") _cache.draft = r.state;
     else if (r.key === "rule5") _cache.rule5 = r.state;
     else if (r.key === "commish_overrides") _cache.commishOverrides = r.state || {};
     else if (r.key === "workaround_overrides") _cache.workaroundOverrides = r.state || {};
     else if (r.key === "keeper_deadline") _cache.keeperDeadline = r.state;
+    else if (r.key === "roster_moves") _cache.rosterMoves = r.state || [];
   }
 
   _cache.callup = {};
@@ -333,6 +336,7 @@ function _resetDb() {
   _cache.proposals = [];
   _cache.messages = [];
   _cache.keeperDeadline = null;
+  _cache.rosterMoves = [];
   _dbReady = false;
 }
 
@@ -627,6 +631,8 @@ async function saveCommishOverridesAsync(map)   { return _saveLeagueStateAsync("
 async function saveWorkaroundOverridesAsync(m)  { return _saveLeagueStateAsync("workaround_overrides", m, "workaroundOverrides"); }
 async function saveKeeperDeadlineAsync(state)   { return _saveLeagueStateAsync("keeper_deadline", state, "keeperDeadline"); }
 function dbGetKeeperDeadline() { return _cache.keeperDeadline; }
+async function saveRosterMovesAsync(moves)      { return _saveLeagueStateAsync("roster_moves", moves, "rosterMoves"); }
+function dbGetRosterMoves() { return _cache.rosterMoves || []; }
 
 // --- Trade Inbox writers ---
 
