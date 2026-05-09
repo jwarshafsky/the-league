@@ -601,6 +601,11 @@ grant select, insert, update, delete on public.owners to service_role;
 grant select, insert, update, delete on public.trade_proposals to service_role;
 grant select, insert, delete on public.trade_proposal_messages to service_role;
 grant select, insert, delete on public.roster_moves to service_role;
+-- Read access for the rules-bot edge function (assembles league context for Gemini).
+grant select on public.league_state    to service_role;
+grant select on public.trades          to service_role;
+grant select on public.keeper_selections to service_role;
+grant select on public.callup_overrides  to service_role;
 
 grant execute on function public.is_commissioner() to authenticated;
 grant execute on function public.my_team_id() to authenticated;
