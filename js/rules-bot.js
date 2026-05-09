@@ -219,18 +219,81 @@
       const annotateMinor = (p) => {
         try {
           const ms = (typeof getMinorLeagueContractStatus === "function") ? getMinorLeagueContractStatus(p, CURRENT_SEASON) : null;
-          // yrsRemaining counts seasons AFTER the current one, so last keepable year = CURRENT_SEASON + yrsRemaining
           const lastKeepableYear = (ms && ms.yearsRemaining !== null) ? CURRENT_SEASON + ms.yearsRemaining : null;
           return { ...p, keeperLastYear: lastKeepableYear, contractNote: ms?.contractNote ?? null, eligibilityWarning: ms?.eligibilityWarning ?? null };
         } catch { return p; }
       };
+      // Callups that aren't on the ESPN roster have been dropped — exclude them.
+      const teamIdForFilter = myTeam?.id;
+      const isActiveCallup = (p) => {
+        if (typeof getMinorTeamStatus !== "function" || !teamIdForFilter) return true;
+        return getMinorTeamStatus(p.name, teamIdForFilter) === "on-roster";
+      };
+
+      // data.js's majors only carry keepers locked in pre-auction. The 2026
+      // auction picks are on the ESPN roster but not in data.js. Merge them
+      // in so the bot sees the full ML roster. ESPN draftPicks carry
+      // bidAmount + keeper flag; for non-keepers, yearAcquired is this season.
+      function buildMergedMajors() {
+        const baseList = (myTeam.majors || []);
+        if (typeof getEspnSnapshot !== "function") return baseList;
+        const snap = getEspnSnapshot();
+        const espnTeam = snap?.teams?.find(t => ESPN_ABBREV_TO_LOCAL?.[t.abbrev] === myTeam.id);
+        if (!espnTeam) return baseList;
+
+        const dataJsNames = new Set(baseList.map(p => p.name));
+        const callupNames = new Set((myTeam.callups || []).map(p => p.name));
+        const minorNames = new Set((myTeam.minors || []).map(p => p.name));
+
+        const picksByPlayerId = {};
+        for (const pick of (snap.draftPicks || [])) {
+          if (pick.teamId === espnTeam.espnId) picksByPlayerId[pick.playerId] = pick;
+        }
+
+        const synthesized = [];
+        for (const ep of (espnTeam.roster || [])) {
+          if (dataJsNames.has(ep.name)) continue;
+          if (callupNames.has(ep.name) || minorNames.has(ep.name)) continue;
+          const pick = picksByPlayerId[ep.playerId];
+          if (pick && !pick.keeper) {
+            synthesized.push({
+              name: ep.name,
+              price: pick.bidAmount,
+              yearAcquired: CURRENT_SEASON,
+              source: "auction",
+              fromMinors: false,
+            });
+          } else if (!pick) {
+            // No draft pick → likely FA pickup. §2(b): keepable at $6 first yr.
+            synthesized.push({
+              name: ep.name,
+              price: 6,
+              yearAcquired: CURRENT_SEASON,
+              source: "fa",
+              fromMinors: false,
+            });
+          } else {
+            // Keeper not in data.js — unusual; include with what we know
+            synthesized.push({
+              name: ep.name,
+              price: pick.bidAmount,
+              yearAcquired: CURRENT_SEASON,
+              source: "auction",
+              fromMinors: false,
+            });
+          }
+        }
+        return [...baseList, ...synthesized];
+      }
+
+      const mergedMajors = buildMergedMajors();
       const rosterPayload = myTeam ? {
         team_id: myTeam.id,
         name: myTeam.name,
         currentSeason: (typeof CURRENT_SEASON !== "undefined") ? CURRENT_SEASON : null,
-        majors: (myTeam.majors || []).map(annotateMajor),
+        majors: mergedMajors.map(annotateMajor),
         minors: (myTeam.minors || []).map(annotateMinor),
-        callups: (myTeam.callups || []).map(annotateMajor),
+        callups: (myTeam.callups || []).filter(isActiveCallup).map(annotateMajor),
       } : null;
       const resp = await fetch(FN_URL, {
         method: "POST",
