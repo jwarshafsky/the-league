@@ -59,26 +59,9 @@ const RULES_DIGEST = `
 §10 Luxury tax: every $ over $350 at trade deadline. Pool 60/40 to 4th/5th, 4th capped at $300, excess to 3rd.
 `.trim();
 
-// Compact site guide — describes the app's tabs/features so the bot can
-// answer "where do I find X" questions.
+// Ultra-compact site guide — Groq's 6k TPM ceiling means every token counts.
 const SITE_GUIDE = `
-App: https://jwarshafsky.github.io/the-league/ — static site + Supabase. Sign in with Google or email magic link / OTP code.
-Header: "The League" link goes to the ESPN league. Commissioners (★) can click their name to toggle "Manager view" (👁) for an owner-perspective preview.
-
-Tabs:
-- Select Keepers: tick keepers, MiLB keepers, Rule 5, trade-block flags. Caps 8 ML / 10 MiL / 25 Rule 5. Press Keep auto-protects via Rule 5. Commish can lock.
-- Keepers: read-only summary of each team's locked keepers + contract status. "$10 send-down fee" badges accumulate ($10/$20/$30).
-- Rule 5 Draft: snake, reverse standings. Pick creates a $1 trade. Pass skips. Commish has Undo Last.
-- Minors Draft: 7 rounds, reverse standings. Click a pick to edit. "Reset to Original Owner" reverts trade-log or manual overrides.
-- Minors Rosters: per-team. Owner/commish sees Call Up on minors and Send Down on callups (when eligible).
-- Trade Block: per-team cards of flagged players. Propose Trade pre-fills the composer.
-- Trade Inbox: full proposal lifecycle (create, counter, accept, reject, messages). Red (N) badge counts unread.
-- Trade Log: all accepted trades. Commish can Edit/Delete in place.
-- Activity: chronological feed. Commish has "undo" on every entry — reverses the underlying action (toggles, trades, picks, callups, lock, overrides).
-- League History: past-season standings (snapshot, ESPN-independent).
-- League Rules: this constitution. Commish has Edit.
-
-Common commish tasks: lock/unlock keepers via the Lock button on Select Keepers; set call-up prices via "Set Price" on the MiLB row; override contracts via ⚙ on the player row.
+Tabs: Select Keepers, 2026 Keepers, Rule 5 Draft, Minors Draft, Minors Rosters, Trade Block, Trade Inbox, Trade Log, Activity, League History, League Rules. Auth via Google or email OTP. Header link → ESPN league. Commissioners have Edit/Delete on trades, Undo on Activity, Lock Keepers button, "Manager view" toggle, Reset on drafts.
 `.trim();
 
 // Compact, line-per-player roster. Cuts JSON overhead ~70%.
@@ -193,12 +176,9 @@ Deno.serve(async (req) => {
   // proposals, roster moves) were dropped to fit Groq's 6,000 TPM free-tier
   // limit. The asker's roster (with pre-computed keeperLastYear) is sent
   // from the frontend and covers most "team data" questions.
-  const allTrades = await admin
-    .from("trades")
-    .select("id, date, team1, team2, team1_receives, team2_receives, notes")
-    .order("created_at", { ascending: false })
-    .limit(80);
-  const myTrades = (allTrades.data || []).filter(t => t.team1 === owner.team_id || t.team2 === owner.team_id);
+  // Trades section removed too — was costing ~500 tokens and rarely the
+  // subject of CommishAI questions. Users who want trade history go to the
+  // Trade Log tab.
 
   const systemPrompt = [
     "You are The League Assistant for The League — a 12-team keeper baseball league.",
@@ -245,9 +225,6 @@ Deno.serve(async (req) => {
     "Each player has keeperLastYear (last yr keepable). Filter on it for keeper questions.",
     _compactRoster(myRoster),
     "",
-    "=== ASKER'S TRADES (last 20) ===",
-    _compactTrades(myTrades.slice(0, 20)),
-    "",
     "=== LEAGUE INDEX (other 11 teams) ===",
     "Format per line: `teamId ML: Name$price→YY, ...` or `teamId MiL: Name→YY, ...`",
     "YY is last two digits of last keepable year (e.g. →28 means 2028). (C) marks an active callup.",
@@ -291,7 +268,7 @@ Deno.serve(async (req) => {
           model,
           messages,
           temperature: 0.2,
-          max_tokens: 2048,
+          max_tokens: 1024,
         }),
       });
     } catch (e) {
