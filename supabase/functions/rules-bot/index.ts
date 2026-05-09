@@ -1,9 +1,9 @@
-// rules-bot — Supabase Edge Function. Routes a user question through Gemini
-// Flash with the league constitution + the asker's team context as system
-// prompt. Free-tier-friendly: gemini-2.0-flash gives 1500 req/day per project.
+// rules-bot — Supabase Edge Function. Routes a user question through Groq
+// (Llama 3.3 70B) with the league constitution + the asker's team context
+// as system prompt. Free-tier-friendly: 14,400 req/day on the free tier.
 //
 // Required secrets (Supabase dashboard → Project Settings → Edge Functions):
-//   GEMINI_API_KEY    — from https://aistudio.google.com/app/apikey
+//   GROQ_API_KEY      — from https://console.groq.com/keys
 //   SUPABASE_URL      — auto-injected
 //   SUPABASE_ANON_KEY — auto-injected
 //   SUPABASE_SERVICE_ROLE_KEY — auto-injected
@@ -119,9 +119,9 @@ Deno.serve(async (req) => {
   const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
   const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
   const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-  const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
+  const GROQ_API_KEY = Deno.env.get("GROQ_API_KEY");
 
-  if (!GEMINI_API_KEY) return jsonResponse({ error: "GEMINI_API_KEY not configured" }, 500, origin);
+  if (!GROQ_API_KEY) return jsonResponse({ error: "GROQ_API_KEY not configured" }, 500, origin);
 
   // Verify the JWT and find the asker.
   const userClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
@@ -251,24 +251,18 @@ Deno.serve(async (req) => {
     JSON.stringify(rule5State ? { picksMade: (rule5State.picks || []).length, poolSize: (rule5State.pool || []).length } : null),
   ].join("\n");
 
-  // Gemini conversation: a single "user" turn carries the system prompt + the
-  // first message; subsequent turns alternate user/model. (Gemini doesn't have
-  // a dedicated system role on the v1beta endpoint we use.)
-  const contents = [
-    { role: "user", parts: [{ text: systemPrompt + "\n\n=== QUESTION ===\n" + (history.length ? "(see conversation below)" : question) }] },
+  // Build OpenAI-compatible chat history (Groq uses the OpenAI schema).
+  const messages: { role: "system" | "user" | "assistant"; content: string }[] = [
+    { role: "system", content: systemPrompt },
   ];
-  if (history.length) {
-    contents.push({ role: "model", parts: [{ text: "Understood. I'll help with rules and your team's data." }] });
-    for (const m of history) {
-      contents.push({ role: m.role === "assistant" ? "model" : "user", parts: [{ text: m.content }] });
-    }
-    contents.push({ role: "user", parts: [{ text: question }] });
+  for (const m of history) {
+    messages.push({ role: m.role === "assistant" ? "assistant" : "user", content: m.content });
   }
+  messages.push({ role: "user", content: question });
 
-  // Try a sequence of models; fall through to the next on 429 (quota
-  // exhausted) or 404 (model unavailable). Makes the bot resilient to
-  // Google rotating which flash variants get free-tier quota.
-  const MODELS = ["gemini-2.5-flash", "gemini-2.0-flash-lite", "gemini-2.0-flash", "gemini-1.5-flash"];
+  // Try a sequence of Groq models; fall through on 429 / 404. The free-tier
+  // limit is per-model, so the fallback chain extends total throughput.
+  const MODELS = ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "llama3-70b-8192", "llama3-8b-8192"];
   const errors: string[] = [];
   let answer = "";
   let usedModel = "";
@@ -276,25 +270,19 @@ Deno.serve(async (req) => {
   for (const model of MODELS) {
     let resp: Response;
     try {
-      resp = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_API_KEY}`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            contents,
-            generationConfig: {
-              temperature: 0.2,
-              maxOutputTokens: 8192,
-              // gemini-2.5-flash has "thinking mode" on by default, and those
-              // thinking tokens count against maxOutputTokens. Disable it so
-              // the budget is spent on the actual answer (we don't need
-              // chain-of-thought for rules lookup).
-              thinkingConfig: { thinkingBudget: 0 },
-            },
-          }),
+      resp = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${GROQ_API_KEY}`,
         },
-      );
+        body: JSON.stringify({
+          model,
+          messages,
+          temperature: 0.2,
+          max_tokens: 4096,
+        }),
+      });
     } catch (e) {
       errors.push(`${model}: fetch failed: ${(e as Error).message}`);
       continue;
@@ -307,17 +295,17 @@ Deno.serve(async (req) => {
     }
     if (!resp.ok) {
       const text = await resp.text();
-      return jsonResponse({ error: `gemini ${resp.status}: ${text.slice(0, 400)}` }, 502, origin);
+      return jsonResponse({ error: `groq ${resp.status}: ${text.slice(0, 400)}` }, 502, origin);
     }
 
     const data = await resp.json();
-    answer = data?.candidates?.[0]?.content?.parts?.map((p: { text?: string }) => p.text || "").join("") || "";
+    answer = data?.choices?.[0]?.message?.content || "";
     if (answer) { usedModel = model; break; }
     errors.push(`${model}: empty response`);
   }
 
   if (!answer) {
-    return jsonResponse({ error: "all gemini models exhausted: " + errors.join(" | ") }, 502, origin);
+    return jsonResponse({ error: "all groq models exhausted: " + errors.join(" | ") }, 502, origin);
   }
 
   return jsonResponse({ answer, model: usedModel }, 200, origin);
