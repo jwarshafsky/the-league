@@ -84,6 +84,110 @@ function getMinorLeagueContractStatus(player, currentSeason) {
 }
 
 
+// --- Roster adjustments (trades + call-ups) ---
+//
+// data.js gives a static "anchor" snapshot of every team's minors + callups.
+// Real moves happen via two sources after that:
+//   1) The trades log — minor / callup -typed assets actually move ownership.
+//   2) callup_overrides — when an owner has a callup price set for a player
+//      that's still in their minors anchor, treat that as "this player has
+//      been called up" and shift them from minors to callups.
+//
+// applyRosterAdjustments() rebuilds team.minors and team.callups in place
+// from the snapshot every render so existing callers (renderMinorsTable,
+// renderTeamAssetPicker, getEligiblePlayers, etc.) keep working unchanged.
+
+const _originalRosterSnapshot = (typeof LEAGUE_DATA !== "undefined")
+  ? new Map(LEAGUE_DATA.teams.map(t => [t.id, {
+      minors: (t.minors || []).map(p => ({ ...p })),
+      callups: (t.callups || []).map(p => ({ ...p })),
+    }]))
+  : new Map();
+
+function _findOriginalMinorRecord(name) {
+  if (!name) return null;
+  for (const snap of _originalRosterSnapshot.values()) {
+    const m = (snap.minors || []).find(p => p.name === name);
+    if (m) return m;
+    const c = (snap.callups || []).find(p => p.name === name);
+    if (c) return c;
+  }
+  return null;
+}
+
+function _moveBetweenLists(map, fromTeamId, toTeamId, name) {
+  const fromList = map.get(fromTeamId) || [];
+  let player;
+  const idx = fromList.findIndex(p => p.name === name);
+  if (idx !== -1) {
+    player = fromList.splice(idx, 1)[0];
+    map.set(fromTeamId, fromList);
+  } else {
+    // Player not in from team's current list — pull their full record from
+    // the original anchor so the destination team gets a complete entry.
+    const orig = _findOriginalMinorRecord(name);
+    if (!orig) return;
+    player = { ...orig };
+  }
+  const toList = map.get(toTeamId) || [];
+  if (!toList.find(p => p.name === player.name)) toList.push({ ...player });
+  map.set(toTeamId, toList);
+}
+
+function _applyAssetMoves(teamMinors, teamCallups, fromTeamId, toTeamId, receives) {
+  if (!receives || !receives.length) return;
+  for (const asset of receives) {
+    const name = asset.value || asset.name;
+    if (!name) continue;
+    if (asset.type === "minor")  _moveBetweenLists(teamMinors,  fromTeamId, toTeamId, name);
+    else if (asset.type === "callup") _moveBetweenLists(teamCallups, fromTeamId, toTeamId, name);
+  }
+}
+
+function applyRosterAdjustments() {
+  if (typeof LEAGUE_DATA === "undefined") return;
+  const teamMinors  = new Map();
+  const teamCallups = new Map();
+  for (const team of LEAGUE_DATA.teams) {
+    const snap = _originalRosterSnapshot.get(team.id);
+    teamMinors.set(team.id,  snap ? snap.minors.map(p => ({ ...p })) : []);
+    teamCallups.set(team.id, snap ? snap.callups.map(p => ({ ...p })) : []);
+  }
+  // 1. Apply trade-log moves chronologically. team1Receives = what team1
+  //    GETS (came from team2), so the asset moves team2 → team1.
+  const trades = (typeof getTrades === "function") ? getTrades() : [];
+  const sorted = [...trades].sort((a, b) =>
+    new Date(a.createdAt || 0) - new Date(b.createdAt || 0)
+  );
+  for (const t of sorted) {
+    _applyAssetMoves(teamMinors, teamCallups, t.team2, t.team1, t.team1Receives);
+    _applyAssetMoves(teamMinors, teamCallups, t.team1, t.team2, t.team2Receives);
+  }
+  // 2. callup_overrides → minors→callups within the same team.
+  const overrides = (typeof dbGetCallupOverrides === "function") ? dbGetCallupOverrides() : {};
+  for (const playerName of Object.keys(overrides)) {
+    for (const team of LEAGUE_DATA.teams) {
+      const minors = teamMinors.get(team.id) || [];
+      const idx = minors.findIndex(p => p.name === playerName);
+      if (idx !== -1) {
+        const player = minors.splice(idx, 1)[0];
+        teamMinors.set(team.id, minors);
+        const callups = teamCallups.get(team.id) || [];
+        if (!callups.find(p => p.name === player.name)) callups.push(player);
+        teamCallups.set(team.id, callups);
+        break;
+      }
+    }
+  }
+  // Mutate LEAGUE_DATA in place so existing call sites keep reading the
+  // up-to-date arrays without code changes.
+  for (const team of LEAGUE_DATA.teams) {
+    team.minors  = teamMinors.get(team.id) || [];
+    team.callups = teamCallups.get(team.id) || [];
+  }
+}
+
+
 // --- Rendering: Team Grid (Home) ---
 
 function renderTeamGrid() {
@@ -273,8 +377,36 @@ function updateRostersView() {
     <div class="section-header">
       Minor League Roster <span class="section-count">${minorsWithDropFlag.length}/10</span>
     </div>
-    ${renderMinorsTable(minorsWithDropFlag)}
+    ${renderMinorsTable(minorsWithDropFlag, team.id)}
   `;
+}
+
+async function callUpMinorPlayer(playerName, teamId) {
+  if (!isCommissioner()) {
+    alert("Only commissioners can call up players right now.");
+    return;
+  }
+  const yearStr = prompt(`Year ${playerName} was called up?`, String(CURRENT_SEASON));
+  if (yearStr == null) return;
+  const year = parseInt(yearStr, 10);
+  if (!Number.isFinite(year)) { alert("Invalid year"); return; }
+  const priceStr = prompt(`Call-up price for ${playerName}? (top-200 ranked: 1=$1, 2=$3, 3=$5, 4=$10, 5=$15, or enter custom)`, "5");
+  if (priceStr == null) return;
+  const price = parseInt(priceStr, 10);
+  if (!Number.isFinite(price)) { alert("Invalid price"); return; }
+  try {
+    if (typeof saveCallupOverrideAsync === "function") {
+      await saveCallupOverrideAsync(playerName, price, year);
+    }
+    if (typeof logActivityAsync === "function") {
+      logActivityAsync("player_called_up", {
+        player_name: playerName, year, price,
+      }, { targetTeamId: teamId });
+    }
+    if (typeof switchTab === "function") switchTab(currentView);
+  } catch (e) {
+    alert("Couldn't call up: " + (e.message || e));
+  }
 }
 
 // Returns "on-roster" | "traded" | "dropped" | null (null = not enough info / true prospect).
@@ -450,12 +582,17 @@ function formatCallupStatus(player, ms) {
   return `${ms.contractNote}, ${priceStr}`;
 }
 
-function renderMinorsTable(players) {
+function renderMinorsTable(players, teamId) {
   if (!players.length) return "<p style='color:var(--text-dim)'>No minor league players</p>";
   players = [...players].sort((a, b) => lastName(a.name).localeCompare(lastName(b.name)));
+  // The Call Up button is commish-only because callup_overrides RLS is
+  // commish-only. Owner-initiated callups would need a schema change to
+  // relax that — flagged in HANDOVER as a follow-up if you want it later.
+  const showCallUp = teamId && isCommissioner();
+  const headerActionCol = showCallUp ? "<th></th>" : "";
   return `
     <table class="player-table">
-      <thead><tr><th>Player</th><th>Drafted</th><th>Career Stats</th><th>Yrs Left</th><th>Status</th></tr></thead>
+      <thead><tr><th>Player</th><th>Drafted</th><th>Career Stats</th><th>Yrs Left</th><th>Status</th>${headerActionCol}</tr></thead>
       <tbody>
         ${players.map(p => {
           const ms = getMinorLeagueContractStatus(p, CURRENT_SEASON);
@@ -463,6 +600,11 @@ function renderMinorsTable(players) {
           let statClass = "";
           if ((p.statType === "AB" && p.careerStat >= 300) || (p.statType === "IP" && p.careerStat >= 75)) statClass = "stat-warning";
           else if ((p.statType === "AB" && p.careerStat >= 200) || (p.statType === "IP" && p.careerStat >= 50)) statClass = "stat-caution";
+          const actionCell = showCallUp ? `
+            <td style="text-align:right">
+              <button class="trade-btn" onclick="callUpMinorPlayer('${escapeJsString(p.name)}','${escapeJsString(teamId)}')"
+                style="font-size:0.72rem;padding:3px 8px;background:var(--purple);color:#fff">Call Up</button>
+            </td>` : "";
           return `
             <tr>
               <td><span class="player-name">${escapeHtml(p.name)}</span>${p.sentDown ? ' <span style="color:var(--red);font-size:0.65rem;font-weight:700">$10 fee</span>' : ''}</td>
@@ -475,6 +617,7 @@ function renderMinorsTable(players) {
                 ms.eligibilityWarning ? `<span style="color:var(--orange);font-size:0.8rem">${ms.eligibilityWarning}</span>` :
                 '<span style="color:var(--green);font-size:0.8rem">Active</span>'
               }</td>
+              ${actionCell}
             </tr>
           `;
         }).join("")}
@@ -3345,6 +3488,9 @@ function removeTradedPick(key) {
 let currentView = "eligible";
 
 function switchTab(tab) {
+  // Re-derive each team's current minors/callups from the static anchor +
+  // trade log + callup overrides before any render reads them.
+  if (typeof applyRosterAdjustments === "function") applyRosterAdjustments();
   // Reset the asset-price memo so any view that renders trade assets
   // picks up fresh prices (after a callup, FA pickup, override, etc.).
   if (typeof _invalidatePriceMap === "function") _invalidatePriceMap();
@@ -3569,6 +3715,8 @@ function describeActivity(a) {
       return `${actor} reset the Rule 5 Draft`;
     case "callup_price_set":
       return `${actor} set ${player}'s call-up price to <strong>$${escapeHtml(p.price)}</strong> (${escapeHtml(p.year)})`;
+    case "player_called_up":
+      return `${actor} called up ${player} <span style="color:var(--text-dim)">($${escapeHtml(p.price)} · ${escapeHtml(p.year)})</span>`;
     case "commish_override":
       return `${actor} overrode ${player}'s contract <span style="color:var(--text-dim)">(${(p.fields || []).map(f => escapeHtml(f)).join(", ")})</span>`;
     default:
