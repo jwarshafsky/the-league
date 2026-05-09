@@ -29,9 +29,38 @@ const corsHeaders = (origin: string | null) => {
   };
 };
 
+// Compact rules digest — Groq's free-tier TPM (6,000 on 8B, 12,000 on 70B)
+// can't fit the full 18KB constitution per request. We send a digest the bot
+// can cite by section, and tell users the full text is in the Rules tab.
+// Sections numbered to match the constitution.
+const RULES_DIGEST = `
+§1 Format: 12 teams, 5×5 roto. Auction draft 26 rounds, $260 budget. Roster: C, 1B, 2B, SS, 3B, MI, CI, 5 OF, Util, 9 P, 4 Bench, 7 IL (post-draft only). Daily moves. Limits: 200 GS pitchers, 2106 GS hitters, 1000 IP min for ERA/WHIP. Bat cats: R, HR, RBI, SB, OBP. Pitch cats: QS, K, SV+HLD, ERA, WHIP.
+§1b Trading draft $: only for next draft. Max $290 entering draft ($260+$30 acquired). Trading >$10 away requires $200 security deposit.
+§2a Keeper caps: max 8 ML, max 10 MiL.
+§2b ML keepers (drafted): keep up to 3 add'l yrs at draft value, +$2/yr. Min cost $1, non-int rounded up. Traded players keep cost basis.
+§2b ML keepers (FA): $6 first keepable yr, +$2/yr, 3 yrs max. Players dropped in final contract yr → can be added in FA but NOT kept.
+§2c Post-keeper-deadline drops only allowed for newly-reported injury/legal news (not regret).
+§2d $40+ auction price → max 2 add'l yrs. $50+ → max 1 add'l yr.
+§2e MiL keepers (max 10): no salary while in minors. Pre-2027 drafted = 4-yr contracts (e.g. drafted 2017 → keepable through 2020). 2027+ drafted = "call up + 3 yr" (kept up to 3 yrs after call-up).
+§2e MiL→ML pricing on first ML kept yr, based on ESPN top-200 ranking March 1: outside top 200=$1, 100-199=$3, 50-99=$5, 20-49=$10, top 19=$15. Then +$2/yr after.
+§3a Minor draft: 7 rounds, reverse standings. Anti-tanking: <45 roto pts → bottom of next year's order. Picks traded after May 15 NOT protected (Feb 2025 amendment).
+§3 Limits: never >10 minors at keeper deadline or end of MiL draft. Forfeit picks that would exceed 10.
+§3b MiL transactions: call-up free anytime. Send-down to minors costs $10 REAL MONEY (per send-down). Call-ups during MiL draft permitted (drop ML player). Post-Jan-2026: call up minors after keeper deadline before ML draft for $0.
+§3c Eligibility: <200 career AB or <50 career IP for MiL drafting. Existing MiL keepers grandfathered in their final 3 contract yrs.
+§3d Pre-MLB auction draftees can't be dropped until April 15 unless DL'd or acquired >$1.
+§3f Post-Jan-2026: MiL players who hit 75 IP / 300 AB must be called up or dropped by end of next MiL draft.
+§4a Trade deadline set on ESPN. After deadline: only $/picks/MiL trades; traded MiL can't be called up until next offseason. FA pickups after deadline can't be kept.
+§4b Veto: commish only, only for collusion / mistake / mutual agreement.
+§4c No conditional trades. 24-hr protest window.
+§5 Rule 5 Draft: by Jan 31 shrink full roster (ML+MiL) to 25. Snake, reverse standings. Drafting team pays origin team $1. Need open 25-man slot. Unprotected/unselected players can't be kept by original team.
+§6 FAAB: tri-weekly (Tue/Thu/Sun 11am). $1000/season. $0 bids OK. All FA keepers cost $6 regardless of bid. FAAB$ tradeable as of 2026. Bidding on another team's MiL → drop+forfeit$.
+§7 Fees: $300/season. 1st place = $2300+collected fees+chooses draft loc. 2nd=$1000. 3rd=$300+luxury overflow. 4th=luxury 60% (max $300). 5th=luxury 40%.
+§9c Constitution changes need majority vote (commish judges significance).
+§10 Luxury tax: every $ over $350 at trade deadline. Pool 60/40 to 4th/5th, 4th capped at $300, excess to 3rd.
+`.trim();
+
 // Compact site guide — describes the app's tabs/features so the bot can
-// answer "where do I find X" questions. Trimmed aggressively to fit Groq's
-// 12k TPM budget on Llama 3.3 70B.
+// answer "where do I find X" questions.
 const SITE_GUIDE = `
 App: https://jwarshafsky.github.io/the-league/ — static site + Supabase. Sign in with Google or email magic link / OTP code.
 Header: "The League" link goes to the ESPN league. Commissioners (★) can click their name to toggle "Manager view" (👁) for an owner-perspective preview.
@@ -51,6 +80,42 @@ Tabs:
 
 Common commish tasks: lock/unlock keepers via the Lock button on Select Keepers; set call-up prices via "Set Price" on the MiLB row; override contracts via ⚙ on the player row.
 `.trim();
+
+// Compact, line-per-player roster. Cuts JSON overhead ~70%.
+function _compactRoster(r: { team_id?: string; name?: string; majors?: unknown[]; minors?: unknown[]; callups?: unknown[] } | null): string {
+  if (!r) return "(no roster — frontend may be stale)";
+  const fmt = (p: Record<string, unknown>): string => {
+    const name = String(p.name ?? "?");
+    const price = p.price != null ? `$${p.price}` : "";
+    const year = p.yearAcquired != null ? ` y${p.yearAcquired}` : "";
+    const src = p.source ? ` ${p.source}` : "";
+    const last = p.keeperLastYear != null ? ` keep→${p.keeperLastYear}` : "";
+    const next = p.nextYearPrice != null ? ` next$${p.nextYearPrice}` : "";
+    return `${name}${price}${year}${src}${last}${next}`.trim();
+  };
+  const lines: string[] = [];
+  if (r.majors?.length) lines.push("Majors:", ...(r.majors as Record<string, unknown>[]).map(p => "  " + fmt(p)));
+  if (r.callups?.length) lines.push("Callups:", ...(r.callups as Record<string, unknown>[]).map(p => "  " + fmt(p)));
+  if (r.minors?.length) lines.push("Minors:", ...(r.minors as Record<string, unknown>[]).map(p => "  " + fmt(p)));
+  return lines.join("\n");
+}
+
+// Compact trades: one line each, "date | team1 → team2 | t1gets ↔ t2gets".
+function _compactTrades(trades: Array<Record<string, unknown>>): string {
+  if (!trades.length) return "(none)";
+  const formatAssets = (arr: unknown): string => {
+    if (!Array.isArray(arr) || !arr.length) return "—";
+    return arr.map((a: Record<string, unknown>) => String(a.value ?? a.type ?? "?")).join(", ");
+  };
+  return trades.map(t => {
+    const date = t.date ?? "?";
+    const t1 = t.team1 ?? "?";
+    const t2 = t.team2 ?? "?";
+    const r1 = formatAssets(t.team1_receives);
+    const r2 = formatAssets(t.team2_receives);
+    return `${date} | ${t1} gets [${r1}] ↔ ${t2} gets [${r2}]`;
+  }).join("\n");
+}
 
 function jsonResponse(body: unknown, status: number, origin: string | null) {
   return new Response(JSON.stringify(body), {
@@ -102,104 +167,62 @@ Deno.serve(async (req) => {
   const ownerName = TEAM_NAMES[owner.team_id] || owner.team_id;
 
   type RosterPayload = { team_id: string; name?: string; majors?: unknown[]; minors?: unknown[]; callups?: unknown[] };
-  type SummaryRow = { team_id: string; name?: string; majors?: number; minors?: number; callups?: number };
   let payload: {
     question?: string;
     history?: { role: string; content: string }[];
     myRoster?: RosterPayload;
-    allTeamsSummary?: SummaryRow[];
   };
   try { payload = await req.json(); } catch { return jsonResponse({ error: "bad json" }, 400, origin); }
   const question = (payload.question || "").trim();
   if (!question) return jsonResponse({ error: "empty question" }, 400, origin);
   if (question.length > 2000) return jsonResponse({ error: "question too long (max 2000 chars)" }, 400, origin);
-  const history = (payload.history || []).slice(-10).filter(m => m && typeof m.content === "string");
+  // Last 4 turns is enough conversational context — older turns blow up the prompt.
+  const history = (payload.history || []).slice(-4).filter(m => m && typeof m.content === "string");
   // Only trust the client-supplied roster if its team_id matches the asker's
   // verified team (or the asker is a commish — they can ask about anyone).
   const myRoster = payload.myRoster &&
     (payload.myRoster.team_id === owner.team_id || owner.is_commissioner)
     ? payload.myRoster : null;
-  const allTeamsSummary = Array.isArray(payload.allTeamsSummary) ? payload.allTeamsSummary : [];
 
-  // Pull league context. Almost everything in this league is public to all
-  // owners; we filter trade_proposal_messages to only the asker's threads.
-  const [constitutionRow, allKeepers, allTrades, callupRows, leagueState, rosterMoves, propThreads] = await Promise.all([
-    admin.from("league_state").select("state").eq("key", "constitution").maybeSingle(),
-    admin.from("keeper_selections").select("team_id, player_name, keeper, minor_keeper, rule5, trade_block"),
-    admin.from("trades").select("id, date, team1, team2, team1_receives, team2_receives, notes").order("created_at", { ascending: false }).limit(80),
-    admin.from("callup_overrides").select("player_name, price, year"),
-    admin.from("league_state").select("key, state").in("key", ["draft_2027", "rule5", "commish_overrides", "keeper_deadline"]),
-    admin.from("roster_moves").select("kind, player_name, team_id, at").order("at", { ascending: false }).limit(50),
-    admin.from("trade_proposals").select("id, from_team_id, to_team_id, status, team1_receives, team2_receives, created_at")
-      .or(`from_team_id.eq.${owner.team_id},to_team_id.eq.${owner.team_id}`)
-      .order("created_at", { ascending: false }).limit(20),
-  ]);
-
-  const constitution: string = constitutionRow?.data?.state?.markdown || "(constitution not yet saved)";
-  const myKeepers = (allKeepers.data || []).filter(k => k.team_id === owner.team_id);
+  // Pull only the asker's trades. Other context blocks (full constitution,
+  // keeper selections, all trades, draft/rule5 states, callup overrides,
+  // proposals, roster moves) were dropped to fit Groq's 6,000 TPM free-tier
+  // limit. The asker's roster (with pre-computed keeperLastYear) is sent
+  // from the frontend and covers most "team data" questions.
+  const allTrades = await admin
+    .from("trades")
+    .select("id, date, team1, team2, team1_receives, team2_receives, notes")
+    .order("created_at", { ascending: false })
+    .limit(80);
   const myTrades = (allTrades.data || []).filter(t => t.team1 === owner.team_id || t.team2 === owner.team_id);
-  const myMoves = (rosterMoves.data || []).filter(m => m.team_id === owner.team_id);
-  const draftState = (leagueState.data || []).find(r => r.key === "draft_2027")?.state || null;
-  const rule5State = (leagueState.data || []).find(r => r.key === "rule5")?.state || null;
-  const keeperDeadline = (leagueState.data || []).find(r => r.key === "keeper_deadline")?.state || null;
 
   const systemPrompt = [
     "You are The League Assistant for The League — a 12-team keeper baseball league.",
     `The user asking is "${ownerName}" (team_id: ${owner.team_id}).`,
     owner.is_commissioner ? "This user is a commissioner." : "This user is a regular owner.",
     "",
-    "You answer two kinds of questions:",
-    "  1. League rules — cite the constitution section number (e.g. 'per §2(d)').",
+    "You answer three kinds of questions:",
+    "  1. League rules — cite by section (e.g. '§2(d)'). For full text, point users to the League Rules tab.",
     "  2. How to use this site — refer to the SITE GUIDE below.",
+    "  3. The asker's own roster — use the keeperLastYear field on each player.",
     "",
-    "Be concise. If you don't know or it isn't in the data provided, say so plainly. Do not invent rules, numbers, or features.",
-    "Do not reveal another team's pending trade proposals or messages — only the asker's own threads are visible to you.",
-    "",
-    "IMPORTANT — keeper eligibility: every player on the asker's roster includes a `keeperLastYear`",
-    "field, pre-computed by the app's authoritative contract-status logic. To answer 'who can I keep",
-    "through 2029', filter players where keeperLastYear >= 2029. Do NOT derive eligibility yourself",
-    "from yearAcquired alone — call-ups, trades, source (auction|fa|keeper|callup), and the $40/$50",
-    "draft-price caps all change the math, and getting it wrong is worse than declining. If",
-    "keeperLastYear is null on a player, say so rather than guessing.",
+    "Be concise. Don't invent rules, numbers, or features. If something isn't in the digest or roster, say so.",
+    "For 'who can I keep through year N' questions, filter the roster where keeperLastYear >= N.",
+    "Don't derive keeper eligibility from yearAcquired yourself — keeperLastYear is authoritative.",
     "",
     "=== SITE GUIDE ===",
     SITE_GUIDE,
     "",
-    "=== CONSTITUTION ===",
-    constitution,
+    "=== RULES DIGEST (cite by §) ===",
+    "Full text in the League Rules tab. Use this digest for citations.",
+    RULES_DIGEST,
     "",
-    "=== ASKER'S CURRENT ROSTER (post-trades, post-callups) ===",
-    "Each player carries: name, price (auction $), yearAcquired, source",
-    "(auction|fa|keeper|callup|callup-via-trade), and contract metadata.",
-    "Use this to compute keeper eligibility and next-year prices per the constitution.",
-    JSON.stringify(myRoster || "(no roster sent — frontend may be stale)"),
+    "=== ASKER'S ROSTER ===",
+    "Each player has keeperLastYear (last yr keepable). Filter on it for keeper questions.",
+    _compactRoster(myRoster),
     "",
-    "=== ASKER'S KEEPER SELECTIONS (the flags they've checked) ===",
-    JSON.stringify(myKeepers),
-    "",
-    "=== ASKER'S TRADES ===",
-    JSON.stringify(myTrades),
-    "",
-    "=== ASKER'S MINORS ROSTER MOVES ===",
-    JSON.stringify(myMoves),
-    "",
-    "=== ASKER'S TRADE PROPOSALS (own threads only) ===",
-    JSON.stringify(propThreads.data || []),
-    "",
-    "=== LEAGUE-PUBLIC: ALL TEAMS' ROSTER SIZES ===",
-    JSON.stringify(allTeamsSummary),
-    "",
-    "=== LEAGUE-PUBLIC: CALL-UP PRICE OVERRIDES ===",
-    JSON.stringify(callupRows.data || []),
-    "",
-    "=== LEAGUE-PUBLIC: KEEPER DEADLINE STATE ===",
-    JSON.stringify(keeperDeadline),
-    "",
-    "=== LEAGUE-PUBLIC: MINORS DRAFT STATE (summary) ===",
-    JSON.stringify(draftState ? { type: draftState.type, year: draftState.year, picksMade: (draftState.picks || []).length, passed: (draftState.passed || []).length } : null),
-    "",
-    "=== LEAGUE-PUBLIC: RULE 5 DRAFT STATE (summary) ===",
-    JSON.stringify(rule5State ? { picksMade: (rule5State.picks || []).length, poolSize: (rule5State.pool || []).length } : null),
+    "=== ASKER'S TRADES (last 20) ===",
+    _compactTrades(myTrades.slice(0, 20)),
   ].join("\n");
 
   // Build OpenAI-compatible chat history (Groq uses the OpenAI schema).
@@ -218,7 +241,6 @@ Deno.serve(async (req) => {
   const MODELS = [
     "llama-3.3-70b-versatile",
     "llama-3.1-8b-instant",
-    "gemma2-9b-it",
   ];
   const errors: string[] = [];
   let answer = "";
