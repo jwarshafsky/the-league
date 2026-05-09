@@ -285,7 +285,11 @@ function updateKeepersView() {
 
   if (teamId === "all") {
     container.innerHTML = LEAGUE_DATA.teams.map(team => {
-      const milKeepers = [...(team.minors || []), ...(team.callups || [])];
+      // 2026 keepers = players acquired BEFORE 2026 (kept going into the season).
+      // Players with yearAcquired === CURRENT_SEASON were drafted IN 2026 (auction
+      // or minor draft) and aren't keepers.
+      const milKeepers = [...(team.minors || []), ...(team.callups || [])]
+        .filter(p => (p.yearAcquired ?? 0) < CURRENT_SEASON);
       return `
       <div style="margin-bottom:24px">
         <h3 style="color:var(--text-bright);margin-bottom:8px;cursor:pointer" onclick="document.getElementById('keepers-team-select').value='${team.id}';updateKeepersView()">
@@ -322,8 +326,8 @@ function updateKeepersView() {
     </div>
     <div class="section-header">${CURRENT_SEASON} Major League Keepers <span class="section-count">${team.majors.length}/8</span></div>
     ${renderMajorsTable(team.majors)}
-    <div class="section-header">${CURRENT_SEASON} Minor League Keepers <span class="section-count">${[...(team.minors || []), ...(team.callups || [])].length}/10</span></div>
-    ${renderMinorsKeepersTable([...(team.minors || []), ...(team.callups || [])])}
+    <div class="section-header">${CURRENT_SEASON} Minor League Keepers <span class="section-count">${[...(team.minors || []), ...(team.callups || [])].filter(p => (p.yearAcquired ?? 0) < CURRENT_SEASON).length}/10</span></div>
+    ${renderMinorsKeepersTable([...(team.minors || []), ...(team.callups || [])].filter(p => (p.yearAcquired ?? 0) < CURRENT_SEASON))}
   `;
 }
 
