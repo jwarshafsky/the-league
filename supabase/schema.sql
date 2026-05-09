@@ -358,6 +358,57 @@ create policy "al_delete_admin"
 
 
 -- ============================================================================
+-- 5g. roster_moves — owner- or commissioner-recorded minors↔callups
+--     transitions. Drives the live derivation of each team's minors and
+--     callups arrays in app.js (alongside the trade log and the static
+--     data.js anchor). Owners can move their own players; commissioners
+--     can move anyone's.
+-- ============================================================================
+create table if not exists public.roster_moves (
+  id           uuid primary key default gen_random_uuid(),
+  kind         text not null,
+  player_name  text not null,
+  team_id      text not null,
+  created_by   uuid references auth.users(id),
+  at           timestamptz not null default now(),
+  constraint roster_moves_kind_check check (kind in ('callup', 'demote'))
+);
+create index if not exists idx_roster_moves_team_at
+  on public.roster_moves (team_id, at);
+
+alter table public.roster_moves enable row level security;
+
+drop policy if exists "rm_select_all"  on public.roster_moves;
+drop policy if exists "rm_insert_self" on public.roster_moves;
+drop policy if exists "rm_delete_admin" on public.roster_moves;
+
+create policy "rm_select_all"
+  on public.roster_moves for select
+  using (auth.role() = 'authenticated');
+
+create policy "rm_insert_self"
+  on public.roster_moves for insert
+  with check (
+    auth.role() = 'authenticated'
+    and (team_id = public.my_team_id() or public.is_commissioner())
+  );
+
+create policy "rm_delete_admin"
+  on public.roster_moves for delete
+  using (public.is_commissioner());
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname='supabase_realtime' and schemaname='public' and tablename='roster_moves'
+  ) then
+    alter publication supabase_realtime add table public.roster_moves;
+  end if;
+end $$;
+
+
+-- ============================================================================
 -- 5d. Realtime publication — add the owners table so the client can react
 --     to commissioner promotion/demotion without a reload. Idempotent.
 -- ============================================================================
@@ -541,11 +592,15 @@ grant delete on public.activity_log to authenticated;  -- gated by RLS to commis
 grant select, insert on public.trade_proposal_messages to authenticated;
 grant delete on public.trade_proposal_messages to authenticated;  -- gated by RLS
 
+grant select, insert on public.roster_moves to authenticated;
+grant delete on public.roster_moves to authenticated;  -- gated by RLS to commish
+
 grant select, insert, update, delete on public.invited_emails to service_role;
 grant select, insert, delete on public.activity_log to service_role;
 grant select, insert, update, delete on public.owners to service_role;
 grant select, insert, update, delete on public.trade_proposals to service_role;
 grant select, insert, delete on public.trade_proposal_messages to service_role;
+grant select, insert, delete on public.roster_moves to service_role;
 
 grant execute on function public.is_commissioner() to authenticated;
 grant execute on function public.my_team_id() to authenticated;

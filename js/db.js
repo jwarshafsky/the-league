@@ -65,7 +65,7 @@ function onDbReady(fn) {
 }
 
 async function _fetchAll() {
-  const [trades, ks, ls, co, act, props, msgs] = await Promise.all([
+  const [trades, ks, ls, co, act, props, msgs, rm] = await Promise.all([
     supabaseClient.from("trades").select("*").order("created_at", { ascending: true }),
     supabaseClient.from("keeper_selections").select("*"),
     supabaseClient.from("league_state").select("*"),
@@ -73,6 +73,7 @@ async function _fetchAll() {
     supabaseClient.from("activity_log").select("*").order("created_at", { ascending: false }).limit(200),
     supabaseClient.from("trade_proposals").select("*").order("created_at", { ascending: false }),
     supabaseClient.from("trade_proposal_messages").select("*").order("created_at", { ascending: true }),
+    supabaseClient.from("roster_moves").select("*").order("at", { ascending: true }),
   ]);
   // Surface query errors so a transient network/RLS issue doesn't silently
   // wipe the UI to empty caches. Each table is independent — we still load
@@ -91,9 +92,11 @@ async function _fetchAll() {
   _surface("activity_log", act);
   _surface("trade_proposals", props);
   _surface("trade_proposal_messages", msgs);
+  _surface("roster_moves", rm);
   _cache.activity = act.data || [];
   _cache.proposals = props.data || [];
   _cache.messages = msgs.data || [];
+  _cache.rosterMoves = rm.data || [];
 
   _cache.trades = (trades.data || []).map(_rowToTrade);
 
@@ -120,7 +123,6 @@ async function _fetchAll() {
     else if (r.key === "commish_overrides") _cache.commishOverrides = r.state || {};
     else if (r.key === "workaround_overrides") _cache.workaroundOverrides = r.state || {};
     else if (r.key === "keeper_deadline") _cache.keeperDeadline = r.state;
-    else if (r.key === "roster_moves") _cache.rosterMoves = r.state || [];
   }
 
   _cache.callup = {};
@@ -287,6 +289,7 @@ function _subscribeToChanges() {
           if (currentView === "trade-inbox" || currentView === "trade-block") switchTab(currentView);
         }
       })
+      .on("postgres_changes", { event: "*", schema: "public", table: "roster_moves" }, refresh)
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "trade_proposal_messages" }, async () => {
         await _fetchAll();
         const ae = document.activeElement;
@@ -631,7 +634,17 @@ async function saveCommishOverridesAsync(map)   { return _saveLeagueStateAsync("
 async function saveWorkaroundOverridesAsync(m)  { return _saveLeagueStateAsync("workaround_overrides", m, "workaroundOverrides"); }
 async function saveKeeperDeadlineAsync(state)   { return _saveLeagueStateAsync("keeper_deadline", state, "keeperDeadline"); }
 function dbGetKeeperDeadline() { return _cache.keeperDeadline; }
-async function saveRosterMovesAsync(moves)      { return _saveLeagueStateAsync("roster_moves", moves, "rosterMoves"); }
+// Single-row append. RLS allows the write when team_id = my_team_id() OR
+// the user is a commissioner — that's enforced server-side.
+async function appendRosterMoveAsync({ kind, player_name, team_id }) {
+  if (!currentUser) throw new Error("Not signed in");
+  const { data, error } = await supabaseClient.from("roster_moves").insert({
+    kind, player_name, team_id, created_by: currentUser.id,
+  }).select().single();
+  if (error) throw error;
+  _cache.rosterMoves = [...(_cache.rosterMoves || []), data];
+  return data;
+}
 function dbGetRosterMoves() { return _cache.rosterMoves || []; }
 
 // --- Trade Inbox writers ---

@@ -419,20 +419,15 @@ function updateRostersView() {
 }
 
 async function callUpMinorPlayer(playerName, teamId) {
-  if (!isCommissioner()) {
-    alert("Only commissioners can call up players right now.");
+  if (!canEditTeam(teamId)) {
+    alert("Only the team owner or a commissioner can call up players on this team.");
     return;
   }
   if (!confirm(`Call up ${playerName}? (Salary will be set in the offseason.)`)) return;
   try {
-    const moves = [...((typeof dbGetRosterMoves === "function") ? dbGetRosterMoves() : [])];
-    moves.push({
-      kind: "callup",
-      player_name: playerName,
-      team_id: teamId,
-      at: new Date().toISOString(),
-    });
-    if (typeof saveRosterMovesAsync === "function") await saveRosterMovesAsync(moves);
+    if (typeof appendRosterMoveAsync === "function") {
+      await appendRosterMoveAsync({ kind: "callup", player_name: playerName, team_id: teamId });
+    }
     if (typeof logActivityAsync === "function") {
       logActivityAsync("player_called_up", { player_name: playerName }, { targetTeamId: teamId });
     }
@@ -443,20 +438,15 @@ async function callUpMinorPlayer(playerName, teamId) {
 }
 
 async function sendDownPlayer(playerName, teamId) {
-  if (!isCommissioner()) {
-    alert("Only commissioners can send a player down right now.");
+  if (!canEditTeam(teamId)) {
+    alert("Only the team owner or a commissioner can send down players on this team.");
     return;
   }
   if (!confirm(`Send ${playerName} back to the minors?`)) return;
   try {
-    const moves = [...((typeof dbGetRosterMoves === "function") ? dbGetRosterMoves() : [])];
-    moves.push({
-      kind: "demote",
-      player_name: playerName,
-      team_id: teamId,
-      at: new Date().toISOString(),
-    });
-    if (typeof saveRosterMovesAsync === "function") await saveRosterMovesAsync(moves);
+    if (typeof appendRosterMoveAsync === "function") {
+      await appendRosterMoveAsync({ kind: "demote", player_name: playerName, team_id: teamId });
+    }
     if (typeof logActivityAsync === "function") {
       logActivityAsync("player_sent_down", { player_name: playerName }, { targetTeamId: teamId });
     }
@@ -590,9 +580,10 @@ function renderMajorsTable(players) {
 function renderCallupsTable(players, teamId) {
   if (!players.length) return "";
   players = [...players].sort((a, b) => lastName(a.name).localeCompare(lastName(b.name)));
-  // Send Down button is commish-only and only shown when the player is still
-  // below the "must call up" threshold (200 AB / 50 IP).
-  const showSendDown = teamId && isCommissioner();
+  // Send Down is available to the team's owner OR any commissioner, and only
+  // shown when the player is still below the "must call up" threshold
+  // (200 AB / 50 IP).
+  const showSendDown = teamId && canEditTeam(teamId);
   const headerActionCol = showSendDown ? "<th></th>" : "";
   return `
     <table class="player-table">
@@ -605,9 +596,10 @@ function renderCallupsTable(players, teamId) {
           if ((p.statType === "AB" && p.careerStat >= 300) || (p.statType === "IP" && p.careerStat >= 75)) statClass = "stat-warning";
           else if ((p.statType === "AB" && p.careerStat >= 200) || (p.statType === "IP" && p.careerStat >= 50)) statClass = "stat-caution";
           const belowThreshold = (p.statType === "AB" && p.careerStat < 200) || (p.statType === "IP" && p.careerStat < 50);
+          const onEspnRoster = typeof isPlayerDroppedFromEspn === "function" ? !isPlayerDroppedFromEspn(p.name) : true;
           const actionCell = showSendDown ? `
             <td style="text-align:right">
-              ${belowThreshold ? `<button class="trade-btn" onclick="sendDownPlayer('${escapeJsString(p.name)}','${escapeJsString(teamId)}')"
+              ${belowThreshold && onEspnRoster ? `<button class="trade-btn" onclick="sendDownPlayer('${escapeJsString(p.name)}','${escapeJsString(teamId)}')"
                 style="font-size:0.72rem;padding:3px 8px;background:var(--orange);color:#fff">Send Down</button>` : ""}
             </td>` : "";
           return `
@@ -650,10 +642,9 @@ function formatCallupStatus(player, ms) {
 function renderMinorsTable(players, teamId) {
   if (!players.length) return "<p style='color:var(--text-dim)'>No minor league players</p>";
   players = [...players].sort((a, b) => lastName(a.name).localeCompare(lastName(b.name)));
-  // The Call Up button is commish-only because callup_overrides RLS is
-  // commish-only. Owner-initiated callups would need a schema change to
-  // relax that — flagged in HANDOVER as a follow-up if you want it later.
-  const showCallUp = teamId && isCommissioner();
+  // Call Up is available to the team's owner OR any commissioner. RLS on
+  // roster_moves enforces the same rule server-side.
+  const showCallUp = teamId && canEditTeam(teamId);
   const headerActionCol = showCallUp ? "<th></th>" : "";
   return `
     <table class="player-table">
