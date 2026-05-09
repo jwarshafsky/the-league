@@ -3633,6 +3633,8 @@ const HISTORICAL_ABBREV_OVERRIDES = {
   "BUST": "matt",   // 2019 third place
   "ROTB": "matt",   // Matt Rotbart, 2017–2018 (Rotbart Means Red Beard / Yu Maeda Me Do It)
   "#416": "dave",   // David Warshafsky, 2018 (The Yanger Bombs)
+  "KFP":  "sam",    // Samuel Rotbart, 2017 (Team Kung Froe Panda)
+  "ES":   "sam",    // Samuel Rotbart, 2018 (Team Eaton Sanoas)
 };
 
 const _trophyAbbrevWarned = new Set();
