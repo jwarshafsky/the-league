@@ -19,6 +19,7 @@ const _cache = {
   messages: [],        // array of trade_proposal_messages rows (raw)
   keeperDeadline: null,// { at: ISO string } | null — past `at`, non-commish keeper toggles are blocked
   rosterMoves: [],     // [{ kind: "callup" | "demote", player_name, team_id, year?, at }]
+  constitution: null,  // string (markdown) | null — commish-editable league rules
 };
 // Cross-conversation read state for the trade inbox: { threadId: lastReadAt }.
 // Anything in the thread newer than lastReadAt counts as unread (covers BOTH
@@ -116,6 +117,7 @@ async function _fetchAll() {
   _cache.commishOverrides = {};
   _cache.workaroundOverrides = {};
   _cache.keeperDeadline = null;
+  _cache.constitution = null;
   // NOTE: do NOT reset _cache.rosterMoves here — it's already populated above
   // from the dedicated roster_moves table. A leftover reset from when this
   // data lived in league_state was the cause of a bug where send-downs
@@ -126,6 +128,7 @@ async function _fetchAll() {
     else if (r.key === "commish_overrides") _cache.commishOverrides = r.state || {};
     else if (r.key === "workaround_overrides") _cache.workaroundOverrides = r.state || {};
     else if (r.key === "keeper_deadline") _cache.keeperDeadline = r.state;
+    else if (r.key === "constitution") _cache.constitution = (r.state && r.state.markdown) || null;
   }
 
   _cache.callup = {};
@@ -644,7 +647,24 @@ async function saveRule5Async(state)            { return _saveLeagueStateAsync("
 async function saveCommishOverridesAsync(map)   { return _saveLeagueStateAsync("commish_overrides", map, "commishOverrides"); }
 async function saveWorkaroundOverridesAsync(m)  { return _saveLeagueStateAsync("workaround_overrides", m, "workaroundOverrides"); }
 async function saveKeeperDeadlineAsync(state)   { return _saveLeagueStateAsync("keeper_deadline", state, "keeperDeadline"); }
+async function saveConstitutionAsync(markdown) {
+  const prev = _cache.constitution;
+  _cache.constitution = markdown;
+  try {
+    if (markdown == null || markdown === "") {
+      const { error } = await supabaseClient.from("league_state").delete().eq("key", "constitution");
+      if (error) throw error;
+    } else {
+      const { error } = await supabaseClient.from("league_state").upsert({ key: "constitution", state: { markdown } });
+      if (error) throw error;
+    }
+  } catch (e) {
+    _cache.constitution = prev;
+    throw e;
+  }
+}
 function dbGetKeeperDeadline() { return _cache.keeperDeadline; }
+function dbGetConstitution() { return _cache.constitution; }
 // Single-row append. RLS allows the write when team_id = my_team_id() OR
 // the user is a commissioner — that's enforced server-side.
 async function appendRosterMoveAsync({ kind, player_name, team_id }) {

@@ -3336,7 +3336,7 @@ function openPickEditor(round, pickInRound) {
         <button class="trade-btn trade-btn-cancel" onclick="document.getElementById('pick-editor-modal').remove()">Cancel</button>
         ${pickRecord ? `<button class="trade-btn" style="background:var(--red);margin-left:auto" onclick="deletePickFromEditor(${round},${pickInRound})">Delete Pick</button>` : ""}
         ${isPassed && !pickRecord ? `<button class="trade-btn trade-btn-cancel" style="margin-left:auto" onclick="unpassPickFromEditor(${round},${pickInRound})">Un-pass</button>` : ""}
-        ${draft.tradedPicks[pickKey] ? `<button class="trade-btn trade-btn-cancel" style="margin-left:auto" onclick="clearPickOverride(${round},${pickInRound})">Reset to Original Owner</button>` : ""}
+        ${currentOwner !== originalOwner ? `<button class="trade-btn trade-btn-cancel" style="margin-left:auto" onclick="clearPickOverride(${round},${pickInRound})">Reset to Original Owner</button>` : ""}
       </div>
     </div>
   `;
@@ -3399,11 +3399,14 @@ function unpassPickFromEditor(round, pickInRound) {
 
 function clearPickOverride(round, pickInRound) {
   const draft = getDraft();
-  delete draft.tradedPicks[`${round}p${pickInRound}`];
+  const pickKey = `${round}p${pickInRound}`;
+  const originalOwner = draft.baseOrder[draft.type === "snake" && round % 2 === 0 ? draft.baseOrder.length - pickInRound : pickInRound - 1];
+  // Force the pick back to its original owner. We write an explicit override
+  // (rather than delete) because trade-log-derived ownership would otherwise
+  // re-route the pick on the next render.
+  draft.tradedPicks[pickKey] = originalOwner;
   const pickRecord = draft.picks.find(p => p.round === round && p.pickInRound === pickInRound);
-  if (pickRecord) {
-    pickRecord.team = draft.baseOrder[draft.type === "snake" && round % 2 === 0 ? draft.baseOrder.length - pickInRound : pickInRound - 1];
-  }
+  if (pickRecord) pickRecord.team = originalOwner;
   saveDraft(draft);
   document.getElementById("pick-editor-modal").remove();
   showDraftBoard();
@@ -3736,6 +3739,10 @@ function switchTab(tab) {
       currentView = "activity";
       content.innerHTML = renderActivityView();
       break;
+    case "rules":
+      currentView = "rules";
+      content.innerHTML = renderRulesView();
+      break;
   }
 }
 
@@ -3921,6 +3928,8 @@ function describeActivity(a) {
     }
     case "commish_override":
       return `${actor} overrode ${player}'s contract <span style="color:var(--text-dim)">(${(p.fields || []).map(f => escapeHtml(f)).join(", ")})</span>`;
+    case "constitution_edited":
+      return `${actor} updated the league constitution`;
     default:
       return `${actor} did <code>${a.type}</code>`;
   }
@@ -4073,6 +4082,204 @@ function openTrophyDetail(seasonIdx) {
     </div>
   `;
   document.body.appendChild(modal);
+}
+
+// --- Rendering: League Rules ---
+
+const DEFAULT_CONSTITUTION = `# The League — Constitution
+
+## Format
+- **12 teams, 5x5 Rotisserie** (not H2H)
+- **Batting**: R, HR, RBI, SB, OBP
+- **Pitching**: QS, K, SV+HLD, ERA, WHIP
+- **Auction draft**: 26 rounds, $260 budget per team
+- **Roster**: C, 1B, 2B, SS, 3B, MI, CI, 5 OF, Util, 9 P, 4 Bench, 7 IL (post-draft only)
+- **Daily roster changes**
+- **Limits**: 200 GS pitchers, 2106 GS hitters, 1000 IP min for ERA/WHIP
+
+## Keeper Rules — Major League
+- **Max 8 major league keepers**
+- Drafted players: keep up to 3 additional years at draft value + $2/year escalation
+- FA pickups: $6 first keepable year, +$2/year, 3 years max
+- Players drafted >$40: max 2 additional keeper years
+- Players drafted >$50: max 1 additional keeper year
+- Minimum keeper cost: $1 (non-integers round up)
+- Traded players keep their cost basis
+- Players dropped in final contract year: can be added via FA but NOT kept
+
+## Keeper Rules — Minor League
+- **Max 10 minor league keepers** (no salary cost while in minors)
+- Pre-2027 drafted: 4-year contracts
+- 2027+ drafted: "call up + 3 year" contracts (kept 3 years after call-up)
+- Call-up pricing based on ESPN top 200 ranking on March 1:
+  - Outside top 200: $1
+  - 100–199: $3
+  - 50–99: $5
+  - 20–49: $10
+  - Top 19: $15
+  - Then +$2/year after that
+- Minor league eligibility: <200 career AB or <50 career IP
+- Must call up or drop minor leaguer after 75 IP or 300 AB milestone (by end of next ML draft)
+- Returning player to minors costs $10 REAL MONEY
+
+## Salary Cap / Luxury Tax
+- **Luxury tax threshold: $350**
+- Taxed on every dollar over $350 at trade deadline
+- Tax pool split: 60% to 4th place (max $300), 40% to 5th place, excess to 3rd
+
+## Draft Dollars
+- Can trade draft dollars for next draft only
+- Max $290 entering draft ($260 + $30 acquired)
+- Trading >$10 away requires $200 security deposit
+
+## FAAB (Free Agent Auction)
+- $1000 budget per season
+- Processes tri-weekly: Tuesdays, Thursdays, Sundays at 11am
+- $0 bids allowed
+- FAAB cost does NOT affect keeper value (all FA keepers = $6)
+- Trading FAAB dollars allowed (as of 2026)
+- Cannot pick up players on other teams' minor league rosters
+
+## Trades
+- Deadline set on ESPN each season
+- Post-deadline: only draft dollars, draft picks, minor leaguers (but traded minors can't be called up until next offseason)
+- Veto only by commissioner (collusion, mistakes, mutual agreement)
+- 24-hour protest window
+- No conditional trades
+
+## Minor League Draft
+- 7 rounds, reverse standings order (not snake, not auction)
+- Anti-tanking: teams under 45 roto points move to bottom of draft order
+- Picks traded before May 15 are protected from anti-tanking rule
+- Can't exceed 10 minor leaguers at keeper deadline or end of ML draft
+
+## Rule 5 Draft
+- By Jan 31: shrink to 25-man roster (majors + minors)
+- Snake draft, reverse standings order
+- Selecting team pays original team $1
+- No obligation to select; must have open roster spot
+- Unprotected/unselected players can't be kept by original team
+
+## Fees & Prizes
+- $300 entry fee per season
+- 1st: $2,300 + collected fees (chooses draft location)
+- 2nd: $1,000
+- 3rd: $300 (+ luxury tax overflow)
+- 4th: luxury tax pool (60%, max $300)
+- 5th: luxury tax pool (40%)
+
+## Key Dates / Deadlines
+- Keeper deadline: 1 week before draft
+- Rule 5 roster shrink: Jan 31
+- Minor league eligibility check: March 1 (ESPN rankings for pricing)
+- Anti-tanking pick trade protection cutoff: May 15
+`;
+
+function getConstitutionMarkdown() {
+  const stored = (typeof dbGetConstitution === "function") ? dbGetConstitution() : null;
+  return stored && stored.trim() ? stored : DEFAULT_CONSTITUTION;
+}
+
+// Lightweight markdown→HTML for the constitution. Intentionally narrow: handles
+// h1/h2/h3, bullets (incl. one level of nesting via 2-space indent), bold, italic,
+// inline code, and paragraphs. Anything else gets escaped.
+function renderConstitutionHTML(md) {
+  const lines = md.replace(/\r\n/g, "\n").split("\n");
+  const out = [];
+  let listStack = []; // array of indent levels
+  const closeListsTo = (target) => {
+    while (listStack.length > target) {
+      out.push("</ul>");
+      listStack.pop();
+    }
+  };
+  const inline = (s) => {
+    let t = escapeHtml(s);
+    t = t.replace(/`([^`]+)`/g, '<code style="background:rgba(255,255,255,0.06);padding:1px 5px;border-radius:4px;font-size:0.9em">$1</code>');
+    t = t.replace(/\*\*([^*]+)\*\*/g, '<strong style="color:var(--text-bright)">$1</strong>');
+    t = t.replace(/(?<!\*)\*([^*\n]+)\*(?!\*)/g, '<em>$1</em>');
+    return t;
+  };
+  for (const raw of lines) {
+    const line = raw.replace(/\s+$/, "");
+    if (!line.trim()) { closeListsTo(0); continue; }
+    const h = line.match(/^(#{1,3})\s+(.*)$/);
+    if (h) {
+      closeListsTo(0);
+      const level = h[1].length;
+      const text = inline(h[2]);
+      if (level === 1) out.push(`<h2 style="color:var(--text-bright);margin:24px 0 10px;font-size:1.5rem">${text}</h2>`);
+      else if (level === 2) out.push(`<h3 style="color:var(--accent);margin:20px 0 8px;font-size:1.1rem;border-bottom:1px solid var(--border);padding-bottom:4px">${text}</h3>`);
+      else out.push(`<h4 style="color:var(--text-bright);margin:14px 0 6px;font-size:0.95rem">${text}</h4>`);
+      continue;
+    }
+    const bullet = line.match(/^(\s*)[-*]\s+(.*)$/);
+    if (bullet) {
+      const indent = Math.floor(bullet[1].length / 2);
+      while (listStack.length <= indent) {
+        out.push('<ul style="margin:6px 0 6px 18px;padding:0;line-height:1.65">');
+        listStack.push(listStack.length);
+      }
+      closeListsTo(indent + 1);
+      out.push(`<li style="margin:3px 0">${inline(bullet[2])}</li>`);
+      continue;
+    }
+    closeListsTo(0);
+    out.push(`<p style="margin:8px 0;line-height:1.6">${inline(line)}</p>`);
+  }
+  closeListsTo(0);
+  return out.join("\n");
+}
+
+function renderRulesView() {
+  const md = getConstitutionMarkdown();
+  const editBtn = isCommissioner()
+    ? `<button class="trade-btn" onclick="enterRulesEdit()" style="font-size:0.78rem">Edit</button>`
+    : "";
+  return `
+    <div id="rules-view-container">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:14px">
+        <div style="font-size:0.78rem;color:var(--text-dim)">League constitution. Commissioners can edit.</div>
+        ${editBtn}
+      </div>
+      <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:18px 22px;box-shadow:var(--shadow);max-width:780px">
+        ${renderConstitutionHTML(md)}
+      </div>
+    </div>
+  `;
+}
+
+function enterRulesEdit() {
+  if (!isCommissioner()) return;
+  const md = getConstitutionMarkdown();
+  const main = document.getElementById("main-content");
+  if (!main) return;
+  main.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:10px">
+      <div style="font-size:0.78rem;color:var(--text-dim)">Markdown. Use <code>#</code>/<code>##</code> for headings, <code>-</code> for bullets, <code>**bold**</code>, <code>*italic*</code>.</div>
+      <div style="display:flex;gap:8px">
+        <button class="trade-btn trade-btn-cancel" onclick="switchTab('rules')">Cancel</button>
+        <button class="trade-btn trade-btn-submit" onclick="saveRulesEdit()">Save</button>
+      </div>
+    </div>
+    <textarea id="rules-edit-textarea"
+      style="width:100%;min-height:62vh;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:12px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:0.85rem;line-height:1.5"
+    >${escapeHtml(md)}</textarea>
+  `;
+}
+
+async function saveRulesEdit() {
+  if (!isCommissioner()) return;
+  const ta = document.getElementById("rules-edit-textarea");
+  if (!ta) return;
+  const next = ta.value;
+  try {
+    if (typeof saveConstitutionAsync === "function") await saveConstitutionAsync(next);
+    if (typeof logActivityAsync === "function") logActivityAsync("constitution_edited", {});
+    if (typeof switchTab === "function") switchTab("rules");
+  } catch (e) {
+    alert("Save failed: " + (e.message || e));
+  }
 }
 
 // --- Rule 5 Draft ---
