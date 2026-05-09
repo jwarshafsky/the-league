@@ -116,7 +116,10 @@ async function _fetchAll() {
   _cache.commishOverrides = {};
   _cache.workaroundOverrides = {};
   _cache.keeperDeadline = null;
-  _cache.rosterMoves = [];
+  // NOTE: do NOT reset _cache.rosterMoves here — it's already populated above
+  // from the dedicated roster_moves table. A leftover reset from when this
+  // data lived in league_state was the cause of a bug where send-downs
+  // appeared to work in the DB but never moved the player in the UI.
   for (const r of (ls.data || [])) {
     if (r.key === "draft_2027") _cache.draft = r.state;
     else if (r.key === "rule5") _cache.rule5 = r.state;

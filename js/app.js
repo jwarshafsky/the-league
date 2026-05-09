@@ -418,6 +418,19 @@ function updateRostersView() {
   `;
 }
 
+// Re-render the rosters view in place after a roster move, preserving the
+// team that's currently selected in the dropdown. Falls back to a full
+// switchTab() when not on the rosters view.
+function _refreshAfterRosterMove() {
+  if (typeof applyRosterAdjustments === "function") applyRosterAdjustments();
+  if (typeof _invalidatePriceMap === "function") _invalidatePriceMap();
+  if (typeof currentView !== "undefined" && currentView === "rosters" && typeof updateRostersView === "function") {
+    updateRostersView();
+  } else if (typeof switchTab === "function" && typeof currentView !== "undefined") {
+    switchTab(currentView);
+  }
+}
+
 async function callUpMinorPlayer(playerName, teamId) {
   if (!canEditTeam(teamId)) {
     alert("Only the team owner or a commissioner can call up players on this team.");
@@ -425,13 +438,15 @@ async function callUpMinorPlayer(playerName, teamId) {
   }
   if (!confirm(`Call up ${playerName}? (Salary will be set in the offseason.)`)) return;
   try {
+    let moveId = null;
     if (typeof appendRosterMoveAsync === "function") {
-      await appendRosterMoveAsync({ kind: "callup", player_name: playerName, team_id: teamId });
+      const move = await appendRosterMoveAsync({ kind: "callup", player_name: playerName, team_id: teamId });
+      moveId = move?.id || null;
     }
     if (typeof logActivityAsync === "function") {
-      logActivityAsync("player_called_up", { player_name: playerName }, { targetTeamId: teamId });
+      logActivityAsync("player_called_up", { player_name: playerName, move_id: moveId }, { targetTeamId: teamId });
     }
-    if (typeof switchTab === "function") switchTab(currentView);
+    _refreshAfterRosterMove();
   } catch (e) {
     alert("Couldn't call up: " + (e.message || e));
   }
@@ -444,15 +459,39 @@ async function sendDownPlayer(playerName, teamId) {
   }
   if (!confirm(`Send ${playerName} back to the minors?`)) return;
   try {
+    let moveId = null;
     if (typeof appendRosterMoveAsync === "function") {
-      await appendRosterMoveAsync({ kind: "demote", player_name: playerName, team_id: teamId });
+      const move = await appendRosterMoveAsync({ kind: "demote", player_name: playerName, team_id: teamId });
+      moveId = move?.id || null;
     }
     if (typeof logActivityAsync === "function") {
-      logActivityAsync("player_sent_down", { player_name: playerName }, { targetTeamId: teamId });
+      logActivityAsync("player_sent_down", { player_name: playerName, move_id: moveId }, { targetTeamId: teamId });
     }
-    if (typeof switchTab === "function") switchTab(currentView);
+    _refreshAfterRosterMove();
   } catch (e) {
     alert("Couldn't send down: " + (e.message || e));
+  }
+}
+
+// Commish-only undo for a roster_move surfaced in the activity feed. The
+// activity log payload carries the move_id; deleting that row reverses
+// the call-up or send-down on the next render via applyRosterAdjustments.
+async function undoRosterMove(moveId) {
+  if (!isCommissioner()) {
+    alert("Only commissioners can undo a roster move.");
+    return;
+  }
+  if (!moveId) {
+    alert("This entry doesn't carry a move id — can't undo automatically.");
+    return;
+  }
+  if (!confirm("Undo this roster move?")) return;
+  try {
+    const { error } = await supabaseClient.from("roster_moves").delete().eq("id", moveId);
+    if (error) throw error;
+    _refreshAfterRosterMove();
+  } catch (e) {
+    alert("Couldn't undo: " + (e.message || e));
   }
 }
 
@@ -3732,10 +3771,21 @@ function renderActivityView() {
 }
 
 function renderActivityItem(a) {
+  // Roster-move events get a commish-only Undo affordance — clicking deletes
+  // the underlying roster_moves row by id (carried in payload.move_id).
+  let undoBtn = "";
+  if (isCommissioner() && (a.type === "player_called_up" || a.type === "player_sent_down")) {
+    const moveId = a.payload?.move_id;
+    if (moveId) {
+      undoBtn = `<button onclick="undoRosterMove('${escapeJsString(moveId)}')"
+        title="Undo this roster move"
+        style="background:none;border:none;color:var(--text-dim);font-size:0.7rem;cursor:pointer;padding:2px 6px;margin-left:6px;text-decoration:underline">undo</button>`;
+    }
+  }
   return `
-    <div style="display:flex;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);font-size:0.85rem">
-      <div style="color:var(--text-dim);font-size:0.72rem;min-width:64px;padding-top:2px">${timestampHTML(a.created_at)}</div>
-      <div style="flex:1;color:var(--text)">${describeActivity(a)}</div>
+    <div style="display:flex;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);font-size:0.85rem;align-items:center">
+      <div style="color:var(--text-dim);font-size:0.72rem;min-width:64px">${timestampHTML(a.created_at)}</div>
+      <div style="flex:1;color:var(--text)">${describeActivity(a)}${undoBtn}</div>
     </div>
   `;
 }
