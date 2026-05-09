@@ -79,7 +79,7 @@
 
       <div id="rules-bot-panel"
         style="position:fixed;bottom:84px;right:20px;z-index:991;
-               width:min(420px,calc(100vw - 32px));
+               width:min(340px,calc(100vw - 32px));
                height:min(560px,calc(100vh - 120px));
                background:var(--bg-card);border:1px solid var(--border);
                border-radius:14px;box-shadow:0 10px 40px rgba(0,0,0,0.45);
