@@ -387,7 +387,7 @@ const LEAGUE_DATA = {
         { name: "Thomas White", yearAcquired: 2025, careerStat: 0, statType: "IP" },
         { name: "Sebastian Walcott", yearAcquired: 2025, careerStat: 0, statType: "AB" },
         { name: "J.R. Ritchie", yearAcquired: 2026, careerStat: 0, statType: "AB" },
-        { name: "Dylan Beavers", yearAcquired: 2026, careerStat: 0, statType: "AB" },
+        { name: "Dylan Beavers", yearAcquired: 2026, careerStat: 0, statType: "AB", sentDown: true, sendDownCount: 1 },
         { name: "Logan Henderson", yearAcquired: 2026, careerStat: 0, statType: "IP" }
       ]
     },

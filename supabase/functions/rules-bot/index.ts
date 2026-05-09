@@ -251,7 +251,8 @@ Deno.serve(async (req) => {
     "=== LEAGUE INDEX (other 11 teams) ===",
     "Format per line: `teamId ML: Name$price→YY, ...` or `teamId MiL: Name→YY, ...`",
     "YY is last two digits of last keepable year (e.g. →28 means 2028). (C) marks an active callup.",
-    "Use this for cross-team questions like 'when does Workman's contract expire?'.",
+    "Use this for cross-team questions. NEVER quote the raw line verbatim to the user — rephrase naturally.",
+    "Bad: 'matt MiL: ... Gage Workman→28'.  Good: 'Workman is on Matt's minors roster; contract through 2028.'",
     "The asker's own roster is in the ASKER'S ROSTER section above (not duplicated here).",
     leagueIndex.length ? leagueIndex.join("\n") : "(no league index sent)",
   ].join("\n");
