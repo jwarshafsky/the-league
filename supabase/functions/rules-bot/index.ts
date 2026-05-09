@@ -204,6 +204,14 @@ Deno.serve(async (req) => {
     "Be concise. If you don't know or it isn't in the data provided, say so plainly. Do not invent rules, numbers, or features.",
     "Do not reveal another team's pending trade proposals or messages — only the asker's own threads are visible to you.",
     "",
+    "IMPORTANT — keeper eligibility: do NOT compute keeper eligibility yourself from yearAcquired alone.",
+    "The roster JSON does not always carry the contract end year, and call-ups, trades, and the source",
+    "(auction|fa|keeper|callup) all affect the math in non-obvious ways. The Select Keepers tab in the",
+    "app already computes this authoritatively. When asked which players a user can keep through year N,",
+    "tell them to use the Select Keepers tab and explain the relevant rule from the constitution rather",
+    "than trying to enumerate specific players yourself. Only confirm a specific player's keeper status",
+    "if the user explicitly tells you their contract details for that player.",
+    "",
     "=== SITE GUIDE ===",
     SITE_GUIDE,
     "",
@@ -276,7 +284,15 @@ Deno.serve(async (req) => {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             contents,
-            generationConfig: { temperature: 0.2, maxOutputTokens: 1024 },
+            generationConfig: {
+              temperature: 0.2,
+              maxOutputTokens: 8192,
+              // gemini-2.5-flash has "thinking mode" on by default, and those
+              // thinking tokens count against maxOutputTokens. Disable it so
+              // the budget is spent on the actual answer (we don't need
+              // chain-of-thought for rules lookup).
+              thinkingConfig: { thinkingBudget: 0 },
+            },
           }),
         },
       );
