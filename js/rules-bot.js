@@ -70,7 +70,7 @@
     const root = document.createElement("div");
     root.id = "rules-bot-root";
     root.innerHTML = `
-      <button id="rules-bot-fab" title="Ask the league rules bot"
+      <button id="rules-bot-fab" title="Ask CommishAI"
         style="position:fixed;bottom:20px;right:20px;z-index:990;
                width:54px;height:54px;border-radius:50%;border:none;
                background:linear-gradient(135deg,var(--accent),#1e3a5f);
@@ -87,7 +87,7 @@
         <div style="display:flex;align-items:center;justify-content:space-between;
                     gap:8px;padding:12px 14px;border-bottom:1px solid var(--border);
                     background:linear-gradient(135deg,var(--accent-dim),#1e3a5f)">
-          <div style="font-weight:700;color:var(--text-bright);font-size:0.95rem">Ask the League</div>
+          <div style="font-weight:700;color:var(--text-bright);font-size:0.95rem">Ask CommishAI</div>
           <div style="display:flex;gap:6px">
             <button id="rules-bot-clear" title="Clear conversation"
               style="background:rgba(255,255,255,0.12);border:none;color:#fff;
@@ -103,7 +103,7 @@
           style="display:flex;gap:8px;padding:10px;border-top:1px solid var(--border);
                  background:var(--bg)">
           <input type="text" id="rules-bot-input" autocomplete="off"
-            placeholder="Ask a rules or site question…"
+            placeholder="Ask CommishAI…"
             style="flex:1;background:var(--bg-card);color:var(--text);
                    border:1px solid var(--border);border-radius:8px;
                    padding:8px 10px;font-size:0.88rem">
@@ -153,13 +153,12 @@
     if (!turns.length) {
       log.innerHTML = `
         <div style="color:var(--text-dim);font-size:0.82rem;line-height:1.55">
-          Hi! I'm the league assistant. I can answer:
+          Hi, I'm CommishAI. I can answer:
           <ul style="margin:8px 0 0 18px;padding:0">
             <li>Rules questions (cited from the constitution)</li>
             <li>How to use this site</li>
             <li>Questions about your team's keepers, trades, and roster</li>
           </ul>
-          <div style="margin-top:10px;font-style:italic">Try: "Can I keep a $42 player for 3 more years?"</div>
         </div>`;
       return;
     }
