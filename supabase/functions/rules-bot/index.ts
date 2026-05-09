@@ -1,15 +1,9 @@
-// rules-bot — Supabase Edge Function. Routes a user question through Google's
-// Gemini API (2.5 Flash-Lite primary, 2.5 Flash fallback) using the OpenAI-
-// compatibility endpoint.
+// rules-bot — Supabase Edge Function. Routes a user question through Groq
+// (Llama 3.1 8B Instant primary, 3.3 70B fallback). Free tier for now.
 //
 // Required secrets (Supabase dashboard → Project Settings → Edge Functions):
-//   GEMINI_API_KEY              — paid AI Studio key (https://aistudio.google.com/app/apikey)
-//                                 with billing enabled on the linked Cloud project.
+//   GROQ_API_KEY                — from https://console.groq.com/keys
 //   COMMISHAI_DAILY_TOKEN_CAP   — optional, defaults to 2,000,000 tokens/day.
-//                                 At 2.5 Flash-Lite ($0.10 in / $0.40 out per M)
-//                                 that's <$1/day max → <$30/mo even if hit daily.
-//                                 In practice expect well under $1/month at
-//                                 typical 12-team league usage.
 //                                 Set to "0" to disable the cap entirely.
 //   SUPABASE_URL                — auto-injected
 //   SUPABASE_ANON_KEY           — auto-injected
@@ -128,9 +122,9 @@ Deno.serve(async (req) => {
   const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
   const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
   const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-  const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
+  const GROQ_API_KEY = Deno.env.get("GROQ_API_KEY");
 
-  if (!GEMINI_API_KEY) return jsonResponse({ error: "GEMINI_API_KEY not configured" }, 500, origin);
+  if (!GROQ_API_KEY) return jsonResponse({ error: "GROQ_API_KEY not configured" }, 500, origin);
 
   // Verify the JWT and find the asker.
   const userClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
@@ -181,7 +175,7 @@ Deno.serve(async (req) => {
     ? payload.leagueIndex.filter(s => typeof s === "string")
     : [];
 
-  // Daily token cap — prevents runaway spend on Gemini's paid tier.
+  // Daily token cap — backstop in case we ever upgrade to a paid tier.
   // Reads/writes a single league_state row with the day's running total.
   const today = new Date().toISOString().slice(0, 10); // "YYYY-MM-DD" UTC
   const capStr = Deno.env.get("COMMISHAI_DAILY_TOKEN_CAP") || "2000000";
@@ -196,11 +190,17 @@ Deno.serve(async (req) => {
     const stored = usageRow?.state as typeof usageState | undefined;
     if (stored && stored.day === today) usageState = stored;
     if (usageState.total >= dailyCap) {
+      const realMsg = `CommishAI daily token cap reached (${usageState.total.toLocaleString()} / ${dailyCap.toLocaleString()}). Resets at midnight UTC.`;
       return jsonResponse({
-        error: `CommishAI daily token cap reached (${usageState.total.toLocaleString()} / ${dailyCap.toLocaleString()}). Resets at midnight UTC.`,
+        error: owner.is_commissioner ? realMsg : "I don't have the answer. Please ask the commissioner.",
       }, 429, origin);
     }
   }
+
+  // Mask upstream errors for non-commissioners; commissioners see the real
+  // text so they can debug.
+  const maskError = (real: string) =>
+    owner.is_commissioner ? real : "I don't have the answer. Please ask the commissioner.";
 
   // Most context (full constitution, keeper selections, draft/rule5 states,
   // callup overrides, proposals, roster moves, trades) is intentionally NOT
@@ -262,7 +262,7 @@ Deno.serve(async (req) => {
     leagueIndex.length ? leagueIndex.join("\n") : "(no league index sent)",
   ].join("\n");
 
-  // Build OpenAI-compatible chat history (Gemini's compat endpoint accepts it).
+  // Build OpenAI-compatible chat history (Groq uses the OpenAI schema).
   const messages: { role: "system" | "user" | "assistant"; content: string }[] = [
     { role: "system", content: systemPrompt },
   ];
@@ -271,13 +271,10 @@ Deno.serve(async (req) => {
   }
   messages.push({ role: "user", content: question });
 
-  // Primary: Gemini 2.5 Flash-Lite ($0.10 in / $0.40 out per M tokens, plenty
-  // smart for rules + keeper Q&A). Fallback to 2.5 Flash if Lite errors.
-  // Uses Google's OpenAI-compatibility endpoint so the request format matches
-  // what we used for Groq.
+  // Primary: Llama 3.1 8B Instant. Fallback: 3.3 70B Versatile.
   const MODELS = [
-    "gemini-2.5-flash-lite",
-    "gemini-2.5-flash",
+    "llama-3.1-8b-instant",
+    "llama-3.3-70b-versatile",
   ];
   const errors: string[] = [];
   let answer = "";
@@ -286,11 +283,11 @@ Deno.serve(async (req) => {
   for (const model of MODELS) {
     let resp: Response;
     try {
-      resp = await fetch("https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", {
+      resp = await fetch("https://api.groq.com/openai/v1/chat/completions", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${GEMINI_API_KEY}`,
+          "Authorization": `Bearer ${GROQ_API_KEY}`,
         },
         body: JSON.stringify({
           model,
@@ -318,11 +315,11 @@ Deno.serve(async (req) => {
         errors.push(`${model}: ${resp.status}: ${text.slice(0, 200)}`);
         continue;
       }
-      return jsonResponse({ error: `gemini 400: ${text.slice(0, 400)}` }, 502, origin);
+      return jsonResponse({ error: maskError(`groq 400: ${text.slice(0, 400)}`) }, 502, origin);
     }
     if (!resp.ok) {
       const text = await resp.text();
-      return jsonResponse({ error: `gemini ${resp.status}: ${text.slice(0, 400)}` }, 502, origin);
+      return jsonResponse({ error: maskError(`groq ${resp.status}: ${text.slice(0, 400)}`) }, 502, origin);
     }
 
     const data = await resp.json();
@@ -343,7 +340,7 @@ Deno.serve(async (req) => {
   }
 
   if (!answer) {
-    return jsonResponse({ error: "all gemini models exhausted: " + errors.join(" | ") }, 502, origin);
+    return jsonResponse({ error: maskError("all groq models exhausted: " + errors.join(" | ")) }, 502, origin);
   }
 
   // Persist updated usage. Don't block the response on this — fire and forget.
