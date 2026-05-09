@@ -211,9 +211,15 @@ Deno.serve(async (req) => {
   }
   messages.push({ role: "user", content: question });
 
-  // Try a sequence of Groq models; fall through on 429 / 404. The free-tier
-  // limit is per-model, so the fallback chain extends total throughput.
-  const MODELS = ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "llama3-70b-8192", "llama3-8b-8192"];
+  // Try a sequence of Groq models; fall through on size/quota/availability
+  // errors. Order matters: 70B-versatile first for quality, then 8B-instant
+  // for higher TPM headroom on big requests, then alternates if those are
+  // both rate-limited at once.
+  const MODELS = [
+    "llama-3.3-70b-versatile",
+    "llama-3.1-8b-instant",
+    "gemma2-9b-it",
+  ];
   const errors: string[] = [];
   let answer = "";
   let usedModel = "";
@@ -239,12 +245,21 @@ Deno.serve(async (req) => {
       continue;
     }
 
-    // Fall through on 429 (TPM/RPD quota), 413 (request too large for this
-    // model's TPM), or 404 (model unavailable / deprecated).
+    // Fall through on retryable conditions: 429 (TPM/RPD quota), 413 (request
+    // too large for this model's TPM), 404 (model unavailable), 400 with
+    // model_decommissioned (Groq retired it).
     if (resp.status === 429 || resp.status === 404 || resp.status === 413) {
       const text = await resp.text();
       errors.push(`${model}: ${resp.status}: ${text.slice(0, 200)}`);
       continue;
+    }
+    if (resp.status === 400) {
+      const text = await resp.text();
+      if (text.includes("model_decommissioned") || text.includes("model_not_found")) {
+        errors.push(`${model}: ${resp.status}: ${text.slice(0, 200)}`);
+        continue;
+      }
+      return jsonResponse({ error: `groq 400: ${text.slice(0, 400)}` }, 502, origin);
     }
     if (!resp.ok) {
       const text = await resp.text();
