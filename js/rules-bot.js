@@ -201,19 +201,36 @@
         : null;
       if (!session) throw new Error("Not signed in");
 
-      // Include the asker's currently-computed roster (post-trades, post-callups).
-      // Static data.js can't be pulled server-side easily; the frontend already
-      // has the live, adjusted roster in memory.
+      // Include the asker's currently-computed roster (post-trades, post-callups)
+      // with keeper-eligibility math already applied. Static data.js can't be
+      // pulled server-side easily; the frontend has the live adjusted roster
+      // plus the authoritative contract-status helpers.
       const teamId = currentOwner?.team_id;
       const myTeam = (typeof LEAGUE_DATA !== "undefined" && teamId)
         ? LEAGUE_DATA.teams.find(t => t.id === teamId)
         : null;
+      const annotateMajor = (p) => {
+        try {
+          const cs = (typeof getContractStatus === "function") ? getContractStatus(p, CURRENT_SEASON) : null;
+          const lastKeepableYear = cs ? CURRENT_SEASON + cs.yearsRemaining : null;
+          return { ...p, keeperLastYear: lastKeepableYear, nextYearPrice: cs?.nextYearPrice ?? null, contractStatus: cs?.status ?? null };
+        } catch { return p; }
+      };
+      const annotateMinor = (p) => {
+        try {
+          const ms = (typeof getMinorLeagueContractStatus === "function") ? getMinorLeagueContractStatus(p, CURRENT_SEASON) : null;
+          // yrsRemaining counts seasons AFTER the current one, so last keepable year = CURRENT_SEASON + yrsRemaining
+          const lastKeepableYear = (ms && ms.yearsRemaining !== null) ? CURRENT_SEASON + ms.yearsRemaining : null;
+          return { ...p, keeperLastYear: lastKeepableYear, contractNote: ms?.contractNote ?? null, eligibilityWarning: ms?.eligibilityWarning ?? null };
+        } catch { return p; }
+      };
       const rosterPayload = myTeam ? {
         team_id: myTeam.id,
         name: myTeam.name,
-        majors: myTeam.majors || [],
-        minors: myTeam.minors || [],
-        callups: myTeam.callups || [],
+        currentSeason: (typeof CURRENT_SEASON !== "undefined") ? CURRENT_SEASON : null,
+        majors: (myTeam.majors || []).map(annotateMajor),
+        minors: (myTeam.minors || []).map(annotateMinor),
+        callups: (myTeam.callups || []).map(annotateMajor),
       } : null;
       // All-team roster summary (sizes only) so the bot can answer
       // "how many minors does Corey have" type questions without leaking data.
