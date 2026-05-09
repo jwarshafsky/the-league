@@ -284,7 +284,9 @@ function updateKeepersView() {
   if (!teamId) { container.innerHTML = ""; return; }
 
   if (teamId === "all") {
-    container.innerHTML = LEAGUE_DATA.teams.map(team => `
+    container.innerHTML = LEAGUE_DATA.teams.map(team => {
+      const milKeepers = [...(team.minors || []), ...(team.callups || [])];
+      return `
       <div style="margin-bottom:24px">
         <h3 style="color:var(--text-bright);margin-bottom:8px;cursor:pointer" onclick="document.getElementById('keepers-team-select').value='${team.id}';updateKeepersView()">
           ${team.name} <span style="color:var(--green);font-size:0.85rem">$${team.totalKeeperCost}</span>
@@ -292,10 +294,11 @@ function updateKeepersView() {
         </h3>
         <div class="section-header">${CURRENT_SEASON} Major League Keepers <span class="section-count">${team.majors.length}/8</span></div>
         ${renderMajorsTable(team.majors)}
-        <div class="section-header">${CURRENT_SEASON} Minor League Keepers <span class="section-count">${team.minors.length}/10</span></div>
-        ${renderMinorsKeepersTable(team.minors)}
+        <div class="section-header">${CURRENT_SEASON} Minor League Keepers <span class="section-count">${milKeepers.length}/10</span></div>
+        ${renderMinorsKeepersTable(milKeepers)}
       </div>
-    `).join("");
+    `;
+    }).join("");
     return;
   }
 
@@ -319,8 +322,8 @@ function updateKeepersView() {
     </div>
     <div class="section-header">${CURRENT_SEASON} Major League Keepers <span class="section-count">${team.majors.length}/8</span></div>
     ${renderMajorsTable(team.majors)}
-    <div class="section-header">${CURRENT_SEASON} Minor League Keepers <span class="section-count">${team.minors.length}/10</span></div>
-    ${renderMinorsKeepersTable(team.minors)}
+    <div class="section-header">${CURRENT_SEASON} Minor League Keepers <span class="section-count">${[...(team.minors || []), ...(team.callups || [])].length}/10</span></div>
+    ${renderMinorsKeepersTable([...(team.minors || []), ...(team.callups || [])])}
   `;
 }
 
