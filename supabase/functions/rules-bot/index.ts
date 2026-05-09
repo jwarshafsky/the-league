@@ -248,9 +248,11 @@ Deno.serve(async (req) => {
     "=== ASKER'S TRADES (last 20) ===",
     _compactTrades(myTrades.slice(0, 20)),
     "",
-    "=== LEAGUE INDEX (all 12 teams' players) ===",
-    "Format: Name|teamId|$price|→lastKeepableYear|type   (M=major, C=callup, m=minor)",
-    "Use this for cross-team questions like 'when does Workman's contract expire?'",
+    "=== LEAGUE INDEX (other 11 teams) ===",
+    "Format per line: `teamId ML: Name$price→YY, ...` or `teamId MiL: Name→YY, ...`",
+    "YY is last two digits of last keepable year (e.g. →28 means 2028). (C) marks an active callup.",
+    "Use this for cross-team questions like 'when does Workman's contract expire?'.",
+    "The asker's own roster is in the ASKER'S ROSTER section above (not duplicated here).",
     leagueIndex.length ? leagueIndex.join("\n") : "(no league index sent)",
   ].join("\n");
 

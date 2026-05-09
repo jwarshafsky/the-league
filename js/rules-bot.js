@@ -300,15 +300,20 @@
         callups: (myTeam.callups || []).filter(isActiveCallup).map(annotateMajor),
       } : null;
 
-      // League-wide compact index so the bot can answer cross-team questions
-      // ("when does Workman's contract expire?"). One line per player:
-      //   Name|teamId|$price|last-yr|type    where type = M (major), m (minor).
+      // Compact per-team league index for cross-team questions ("when does
+      // Workman's contract expire?"). Format: one block per team with
+      //   teamId M: Name$price→year, ...
+      //   teamId m: Name→year, ...
+      // Excludes the asker's own team (their full roster goes separately).
+      // Goal: stay well under Groq's 6k TPM ceiling for the 8B fallback.
       function buildLeagueIndex() {
         if (typeof getEspnSnapshot !== "function" || typeof CURRENT_SEASON === "undefined") return [];
         const snap = getEspnSnapshot();
         if (!snap) return [];
         const lines = [];
+        const ySuffix = (yr) => yr === "?" ? "?" : String(yr).slice(-2); // 2028 → "28"
         for (const team of LEAGUE_DATA.teams) {
+          if (myTeam && team.id === myTeam.id) continue; // asker's own team is in rosterPayload
           const espnTeam = snap.teams.find(t => ESPN_ABBREV_TO_LOCAL?.[t.abbrev] === team.id);
           const picksByPlayerId = {};
           if (espnTeam) {
@@ -320,15 +325,13 @@
           const callupNames = new Set((team.callups || []).map(p => p.name));
           const minorNames = new Set((team.minors || []).map(p => p.name));
 
-          // data.js majors
+          const majors = [];
           for (const p of (team.majors || [])) {
             try {
               const cs = getContractStatus(p, CURRENT_SEASON);
-              const last = cs ? CURRENT_SEASON + cs.yearsRemaining : "?";
-              lines.push(`${p.name}|${team.id}|$${p.price}|→${last}|M`);
+              majors.push(`${p.name}$${p.price}→${ySuffix(CURRENT_SEASON + cs.yearsRemaining)}`);
             } catch { /* skip */ }
           }
-          // ESPN-only majors (auction + FA)
           if (espnTeam) {
             for (const ep of (espnTeam.roster || [])) {
               if (dataJsNames.has(ep.name) || callupNames.has(ep.name) || minorNames.has(ep.name)) continue;
@@ -337,29 +340,28 @@
               const synth = { name: ep.name, price, yearAcquired: CURRENT_SEASON, fromMinors: false };
               try {
                 const cs = getContractStatus(synth, CURRENT_SEASON);
-                const last = CURRENT_SEASON + cs.yearsRemaining;
-                lines.push(`${ep.name}|${team.id}|$${price}|→${last}|M`);
+                majors.push(`${ep.name}$${price}→${ySuffix(CURRENT_SEASON + cs.yearsRemaining)}`);
               } catch { /* skip */ }
             }
           }
-          // Active callups (filter dropped)
           for (const p of (team.callups || [])) {
             if (typeof getMinorTeamStatus === "function" &&
                 getMinorTeamStatus(p.name, team.id) !== "on-roster") continue;
             try {
               const cs = getContractStatus(p, CURRENT_SEASON);
-              const last = cs ? CURRENT_SEASON + cs.yearsRemaining : "?";
-              lines.push(`${p.name}|${team.id}|$${p.price ?? "?"}|→${last}|C`);
+              majors.push(`${p.name}(C)→${ySuffix(CURRENT_SEASON + cs.yearsRemaining)}`);
             } catch { /* skip */ }
           }
-          // Minors (no salary while in minors)
+          const minors = [];
           for (const p of (team.minors || [])) {
             try {
               const ms = getMinorLeagueContractStatus(p, CURRENT_SEASON);
-              const last = (ms && ms.yearsRemaining !== null) ? CURRENT_SEASON + ms.yearsRemaining : "callup+3";
-              lines.push(`${p.name}|${team.id}|—|→${last}|m`);
+              const last = (ms && ms.yearsRemaining !== null) ? CURRENT_SEASON + ms.yearsRemaining : "C+3";
+              minors.push(`${p.name}→${ySuffix(last)}`);
             } catch { /* skip */ }
           }
+          if (majors.length) lines.push(`${team.id} ML: ${majors.join(", ")}`);
+          if (minors.length) lines.push(`${team.id} MiL: ${minors.join(", ")}`);
         }
         return lines;
       }
