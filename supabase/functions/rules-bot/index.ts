@@ -134,12 +134,21 @@ Deno.serve(async (req) => {
 
   const { data: owner, error: ownerErr } = await admin
     .from("owners")
-    .select("id, team_id, name, role")
+    .select("id, team_id, is_commissioner")
     .eq("id", userData.user.id)
     .maybeSingle();
-  if (ownerErr || !owner || !owner.team_id) {
+  if (ownerErr) return jsonResponse({ error: "owner lookup failed: " + ownerErr.message }, 500, origin);
+  if (!owner || !owner.team_id) {
     return jsonResponse({ error: "no team assigned to your account" }, 403, origin);
   }
+  // Display name lookup — owners table doesn't store a name, so we map
+  // team_id → owner name via a hardcoded table that matches data.js.
+  const TEAM_NAMES: Record<string, string> = {
+    jeff: "Jeff", matt: "Matt", jesse: "Jesse", sam: "Sam",
+    saxton: "Saxton", aj: "AJ", corey: "Corey", dave: "Dave",
+    "josh-doug": "Josh/Doug", larry: "Larry", zack: "Zack", glicksman: "Glicksman",
+  };
+  const ownerName = TEAM_NAMES[owner.team_id] || owner.team_id;
 
   let payload: { question?: string; history?: { role: string; content: string }[] };
   try { payload = await req.json(); } catch { return jsonResponse({ error: "bad json" }, 400, origin); }
@@ -172,8 +181,8 @@ Deno.serve(async (req) => {
 
   const systemPrompt = [
     "You are The League Assistant for The League — a 12-team keeper baseball league.",
-    `The user asking is "${owner.name}" (team_id: ${owner.team_id}).`,
-    owner.role === "commish" ? "This user is a commissioner." : "This user is a regular owner.",
+    `The user asking is "${ownerName}" (team_id: ${owner.team_id}).`,
+    owner.is_commissioner ? "This user is a commissioner." : "This user is a regular owner.",
     "",
     "You answer two kinds of questions:",
     "  1. League rules — cite the constitution section number (e.g. 'per §2(d)').",
