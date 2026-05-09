@@ -76,11 +76,25 @@ Mac stays mostly-on; if it sleeps, syncs catch up on next wake.
   disabled in the Supabase dashboard, so `invited_emails` is the actual gate.
 - **Data layer**: All league state in Supabase tables (`trades`,
   `keeper_selections`, `league_state`, `callup_overrides`, `activity_log`,
-  `owners`, `invited_emails`). `db.js` keeps an in-memory cache; getters return
-  deep clones for mutation-prone caches (draft / rule5 / keeper sel / commish
-  overrides / workaround overrides) so callers can't corrupt state by accident.
-  Writers are optimistic + revert on failure. `_fetchAll` surfaces per-table
-  query errors as toasts so a transient blip can't silently wipe the cache.
+  `owners`, `invited_emails`, `trade_proposals`, `trade_proposal_messages`,
+  `roster_moves`). `db.js` keeps an in-memory cache; getters return deep
+  clones for mutation-prone caches (draft / rule5 / keeper sel / commish
+  overrides / workaround overrides) so callers can't corrupt state by
+  accident. Writers are optimistic + revert on failure. `_fetchAll`
+  surfaces per-table query errors as toasts so a transient blip can't
+  silently wipe the cache.
+- **MiLB roster auto-derivation**: `applyRosterAdjustments()` in `app.js`
+  rebuilds every team's `minors`/`callups` arrays at the start of every
+  `switchTab` from a static anchor (data.js) + the trades log + the
+  `roster_moves` log. So a trade involving a `minor` or `callup` asset
+  automatically moves the player on every tab; a Call Up moves them
+  minors→callups; a Send Down moves callups→minors and tags the player
+  with `sentDown:true` so the "$10 send down fee" badge shows on the
+  team Keepers page. Mutates LEAGUE_DATA.teams in place so existing
+  callers (renderMinorsTable, getEligiblePlayers, etc.) see the live
+  state. Re-applies live stats from PLAYER_STATS at the end so the
+  daily-refreshed careerAB/IP isn't overwritten by the stale anchor
+  values.
 - **Realtime**: One channel for `postgres_changes` on the data tables, one for
   presence. `_subscribeToChanges` refreshes the active tab on any change but
   skips if a form input is focused or a modal is open (so live syncs don't
@@ -111,54 +125,86 @@ Mac stays mostly-on; if it sleeps, syncs catch up on next wake.
 
 - Auth: Jeff (jwarshafsky@gmail.com) and Dave (davidwarsh@gmail.com)
   bootstrapped as commissioners. Josh (jib33@cornell.edu) signed in
-  successfully via the OTP code flow on the most recent attempt.
+  successfully via the OTP code flow on the most recent attempt. Public
+  sign-up is disabled in the Supabase dashboard so `invited_emails` is
+  the actual gate.
 - Trades, keepers, draft, rule5 all persist to Supabase. Realtime echoes work.
 - Activity tab populates. Daily email digest sends successfully.
-- Trophy Room shows 2017-2025 (with 2017 + 2018 manually entered, top-3 only).
-  Click "Full standings" on any year to see all 12 teams ranked.
-- "Select Keepers" (formerly "Eligible Keepers"), Minors Rosters, Trade Log,
-  Trade Block, Trade Inbox, Draft (with passes/activates) all working.
+- Trophy Room shows 2017–2025 with **all 12 teams' final standings**
+  backfilled. Click "Full standings" on any year for the rank table.
+  Historical owner mappings live in `HISTORICAL_ABBREV_OVERRIDES` in
+  `app.js` (e.g. ROTB→matt, KFP→sam, JRAM→dave, HADR→matt, SDJ→sam).
+- "Select Keepers" (formerly "Eligible Keepers"), Minors Rosters, Trade
+  Log, Trade Block, Trade Inbox, Minors Draft (with passes/activates),
+  Rule 5 Draft all working.
 - Trade Inbox: full proposal lifecycle with counters and message threads.
   Red `(N)` badge on the tab counts new pending proposals + new messages.
+- Trade Block tab is its own first-class nav tab (left of Trade Inbox).
+  Each team card has a "Propose Trade" button that opens the composer
+  pre-filled. There's also a "New Proposal" button on the Trade Inbox
+  tab for proposing without going through Trade Block.
 - Keeper lockout: commissioners click "Lock Keepers" to freeze selections
   for everyone else; click again to unlock.
-- Commissioners can edit trades in place (Edit link next to Delete on any
-  trade card). Activity logs `trade_edited`.
-- Mobile layouts: tables scroll horizontally rather than overflow; two-column
-  forms stack to one column at ≤600px.
-- Timestamps everywhere render relative ("2h ago") with the full date+time
-  in a hover tooltip via the `timestampHTML(ts)` helper.
+- Commissioners can edit trades in place (Edit link next to Delete on
+  any trade card). Activity logs `trade_edited`.
+- **MiLB roster auto-moves**: trades involving `minor` or `callup`
+  assets, plus the new Call Up and Send Down buttons, all reflect
+  automatically on the Minors Rosters tab and the Select Keepers MiLB
+  section without manually editing `data.js`.
+- **Call Up button** (Minors Rosters → per team): owner or commish
+  promotes a player to callups. No salary/year prompts — salary is set
+  in the offseason via Set Price on Select Keepers.
+- **Send Down button** (callups list, only when player is below 200 AB
+  / 50 IP and still on the team's ESPN roster): owner or commish demotes
+  back to minors. The demoted player gets `sentDown: true`, which shows
+  as "($10 send down fee)" next to the contract column on the team
+  Keepers page.
+- **Undo on Activity feed**: every `player_called_up` / `player_sent_down`
+  entry gets a commish-only `undo` link that deletes the underlying
+  `roster_moves` row by id and re-renders, fully reversing the move.
+- **Manager-view preview**: commissioners click their name in the
+  header to flip between "Commissioner view" (★) and "Manager view" (👁)
+  to see what regular owners see. Pure UI override — server permissions
+  unchanged. A "MANAGER VIEW" pill appears in the header while active.
+- Mobile layouts: tables scroll horizontally rather than overflow;
+  two-column forms stack to one column at ≤600px.
+- Timestamps everywhere render relative ("2h ago") with the full
+  date+time in a hover tooltip via the `timestampHTML(ts)` helper.
+- Activity feed: rapid-fire toggles collapse ("Josh/Doug toggled X's
+  Rule 5 protection 4× (currently off)"). Undone draft/Rule 5 picks
+  are hidden entirely (the pick AND the undo). Rule 5 picks render
+  with the from-team ("Saxton Rule 5–picked Joe Ryan from Jeff (R1.4)").
 
 ## Outstanding bugs
 
-**None known.** Multiple rounds of audit are clear (see git log: rounds 1-2
-in February-April, rounds 3-5 on 2026-05-07, A/B/D backlog on 2026-05-08).
+**None known.** Multiple rounds of audit are clear (see git log: rounds
+1-2 in February–April, rounds 3-5 on 2026-05-07, A/B/D backlog +
+trade inbox + 2017/18 backfill on 2026-05-08, MiLB auto-derivation +
+Call Up / Send Down on 2026-05-09).
 
 Knowingly accepted trade-offs (not fixed):
 
 - **`is_email_invited` is anon-callable** — anyone (no login) can probe
   whether an email is on the league allowlist. Needed for the pre-login
-  gate. Acceptable for a 12-person league; closeable via a Supabase Edge
-  Function if the league ever grows or this becomes sensitive.
+  gate. Acceptable for a 12-person league; closeable via a Supabase
+  Edge Function if the league ever grows or this becomes sensitive.
 - **One-sided trades require a `confirm()` rather than a hard block** —
   preserves the legitimate "gift" / salary-dump use case while catching
   accidental empty-side submissions.
-- **Auth `flowType: "implicit"`** — PKCE would be slightly safer (access
-  tokens stay out of URL fragments) but Supabase JS only supports one
-  flowType per client, and PKCE breaks cross-device magic-link clicks
-  (Josh signed in by clicking the link on a different device than where
-  he requested it). The OTP-code fallback in the login UI would cover
-  cross-device, but it's a downgrade from "click and you're in." Implicit
-  is the right call for this 12-person league. Two-client setups with
-  shared session storage are too fragile for the marginal gain.
-
-Pending small follow-ups (TODO, not bugs):
-
-- **2017 + 2018 Trophy Room standings** — top-3 are populated manually,
-  but full standings for those two years still need to be backfilled.
-  Path: edit the manual fallback in `scripts/sync_history.py`, then re-run
-  it. Or directly edit `js/history-snapshot.js`. Verify in the new "Full
-  standings" modal that all 12 teams appear.
+- **Auth `flowType: "implicit"`** — PKCE would be slightly safer
+  (access tokens stay out of URL fragments) but Supabase JS only
+  supports one flowType per client, and PKCE breaks cross-device
+  magic-link clicks (Josh signed in by clicking the link on a different
+  device than where he requested it). The OTP-code fallback in the
+  login UI would cover cross-device, but it's a downgrade from "click
+  and you're in." Implicit is the right call for this 12-person
+  league. Two-client setups with shared session storage are too fragile
+  for the marginal gain.
+- **Owner-initiated callup *prices*** — owners can call up their own
+  players via Send Up (RLS on `roster_moves` allows it), but setting a
+  callup *price* still goes through `callup_overrides` which is
+  commish-write only. Per the design, the salary is set in the
+  offseason; commish runs Set Price on Select Keepers when needed.
 
 If you spot something new, add a row above this paragraph rather than
 appending — keeps the most-recent state at the top.
