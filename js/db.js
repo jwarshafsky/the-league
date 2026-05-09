@@ -722,10 +722,10 @@ async function acceptProposalAsync(proposal) {
     team2Receives: proposal.team1_receives || [],
     notes: "",
   };
-  await addTradeAsync(tradeRow);
+  const tradeId = await addTradeAsync(tradeRow);
   // 2. Mark the proposal accepted.
   await setProposalStatusAsync(proposal.id, "accepted");
-  return tradeRow;
+  return { ...tradeRow, _id: tradeId };
 }
 
 async function sendProposalMessageAsync(thread_id, body) {

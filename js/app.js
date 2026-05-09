@@ -483,23 +483,98 @@ async function undoActivityEntry(activityId) {
   }
   if (!activityId) return;
   const entry = _cache.activity?.find(a => a.id === activityId);
+  if (!entry) {
+    alert("Couldn't find this entry.");
+    return;
+  }
   if (!confirm("Undo this entry and remove it from the log?")) return;
   try {
-    const moveId = entry?.payload?.move_id;
-    if (moveId && (entry.type === "player_called_up" || entry.type === "player_sent_down")) {
-      const { error } = await supabaseClient.from("roster_moves").delete().eq("id", moveId);
-      if (error) throw error;
-    }
+    await _reverseActivityEffect(entry);
     const { error } = await supabaseClient.from("activity_log").delete().eq("id", activityId);
     if (error) throw error;
     if (_cache.activity) {
       const idx = _cache.activity.findIndex(a => a.id === activityId);
       if (idx !== -1) _cache.activity.splice(idx, 1);
     }
-    if (moveId) _refreshAfterRosterMove();
-    else if (typeof switchTab === "function" && typeof currentView !== "undefined") switchTab(currentView);
+    _refreshAfterRosterMove();
   } catch (e) {
     alert("Couldn't undo: " + (e.message || e));
+  }
+}
+
+async function _reverseActivityEffect(entry) {
+  const p = entry.payload || {};
+  const team = entry.target_team_id || entry.actor_team_id;
+  const playerName = p.player_name;
+
+  switch (entry.type) {
+    case "player_called_up":
+    case "player_sent_down": {
+      if (p.move_id) {
+        const { error } = await supabaseClient.from("roster_moves").delete().eq("id", p.move_id);
+        if (error) throw error;
+      }
+      return;
+    }
+    case "keeper_added":
+    case "keeper_removed":
+    case "minor_keeper_added":
+    case "minor_keeper_removed":
+    case "rule5_added":
+    case "rule5_removed":
+    case "trade_block_added":
+    case "trade_block_removed": {
+      if (!team || !playerName) return;
+      const flagMap = {
+        keeper:       "keeper",
+        minor_keeper: "minorKeeper",
+        rule5:        "rule5",
+        trade_block:  "tradeBlock",
+      };
+      const fieldKey = entry.type.replace(/_(added|removed)$/, "");
+      const flagKey = flagMap[fieldKey];
+      const wasAdded = entry.type.endsWith("_added");
+      const current = _cache.keeperSel[team]?.[playerName] || {};
+      const newFlags = {
+        keeper:      !!current.keeper,
+        minorKeeper: !!current.minorKeeper,
+        rule5:       !!current.rule5,
+        tradeBlock:  !!current.tradeBlock,
+      };
+      newFlags[flagKey] = !wasAdded;
+      await setKeeperSelectionAsync(team, playerName, newFlags);
+      return;
+    }
+    case "trade_recorded": {
+      if (p.trade_id && typeof deleteTradeAsync === "function") {
+        await deleteTradeAsync(p.trade_id);
+      }
+      return;
+    }
+    case "callup_price_set": {
+      if (!playerName) return;
+      const { error } = await supabaseClient.from("callup_overrides").delete().eq("player_name", playerName);
+      if (error) throw error;
+      if (_cache.callup) delete _cache.callup[playerName];
+      return;
+    }
+    case "keepers_locked":
+      await saveKeeperDeadlineAsync(null);
+      return;
+    case "keepers_unlocked":
+      await saveKeeperDeadlineAsync({ locked: true });
+      return;
+    case "commish_override": {
+      if (!playerName) return;
+      const map = (typeof dbGetCommishOverrides === "function") ? dbGetCommishOverrides() : {};
+      delete map[playerName];
+      if (typeof saveCommishOverridesAsync === "function") await saveCommishOverridesAsync(map);
+      return;
+    }
+    default:
+      // Trade edits/deletes, draft picks, draft resets, and pick-undo entries
+      // aren't reversed automatically — only the log row is removed.
+      return;
   }
 }
 
@@ -1175,12 +1250,10 @@ async function acceptThreadProposal(proposalId) {
   if (!proposal) return;
   if (!confirm("Accept this trade? It will be recorded in the Trade Log.")) return;
   try {
-    await acceptProposalAsync(proposal);
+    const acceptedTrade = await acceptProposalAsync(proposal);
     if (typeof logActivityAsync === "function") {
-      // Notes intentionally omitted — the proposal's negotiation context
-      // stays in the inbox; the Trade Log + activity feed record just the
-      // swap.
       logActivityAsync("trade_recorded", {
+        trade_id: acceptedTrade?._id,
         team1: proposal.from_team_id, team2: proposal.to_team_id,
         team1_receives: proposal.team1_receives,
         team2_receives: proposal.team2_receives,
@@ -1669,13 +1742,14 @@ function submitTrade() {
 
   if (typeof addTradeAsync === "function") {
     addTradeAsync(trade)
-      .then(() => {
+      .then(tradeId => {
         // Only clear the form on a successful save — preserves queued assets
         // if the network/RLS rejects the write.
         tradeAssets.t1 = [];
         tradeAssets.t2 = [];
         if (typeof logActivityAsync === "function") {
           logActivityAsync("trade_recorded", {
+            trade_id: tradeId,
             team1: trade.team1, team2: trade.team2,
             team1_receives: trade.team1Receives,
             team2_receives: trade.team2Receives,
