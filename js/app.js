@@ -571,8 +571,42 @@ async function _reverseActivityEffect(entry) {
       if (typeof saveCommishOverridesAsync === "function") await saveCommishOverridesAsync(map);
       return;
     }
+    case "rule5_pick_made": {
+      // Activity payload has 1-indexed idx; rule5 state stores 0-indexed.
+      const state = (typeof getRule5State === "function") ? getRule5State() : null;
+      if (!state || !state.picks) return;
+      const targetIdx0 = (typeof p.idx === "number") ? p.idx - 1 : null;
+      const match = state.picks.find(pick =>
+        pick.round === p.round && pick.idx === targetIdx0 && pick.playerName === playerName
+      );
+      if (!match) return;
+      if (match.tradeId && typeof deleteTradeAsync === "function") {
+        try { await deleteTradeAsync(match.tradeId); } catch (e) { console.warn("Rule 5 trade delete failed:", e); }
+      }
+      state.picks = state.picks.filter(pick => pick !== match);
+      if (typeof saveRule5Async === "function") await saveRule5Async(state);
+      else if (typeof saveRule5State === "function") saveRule5State(state);
+      return;
+    }
+    case "minors_pick_made":
+    case "minors_pick_passed": {
+      const draft = (typeof getDraft === "function") ? getDraft() : null;
+      if (!draft) return;
+      const round = p.round;
+      const pickInRound = p.pick_in_round;
+      if (entry.type === "minors_pick_made" && Array.isArray(draft.picks)) {
+        draft.picks = draft.picks.filter(pick =>
+          !(pick.round === round && pick.pickInRound === pickInRound && pick.player === playerName)
+        );
+      } else if (entry.type === "minors_pick_passed" && Array.isArray(draft.passed)) {
+        draft.passed = draft.passed.filter(pp => !(pp.round === round && pp.pickInRound === pickInRound));
+      }
+      if (typeof saveDraftAsync === "function") await saveDraftAsync(draft);
+      else if (typeof saveDraft === "function") saveDraft(draft);
+      return;
+    }
     default:
-      // Trade edits/deletes, draft picks, draft resets, and pick-undo entries
+      // Trade edits/deletes, draft resets, and existing pick-undo entries
       // aren't reversed automatically — only the log row is removed.
       return;
   }
