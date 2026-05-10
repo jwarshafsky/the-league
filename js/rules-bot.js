@@ -477,15 +477,16 @@
     }
   }
 
-  // Show / hide the FAB based on auth state. Polls every 2s until we see
-  // currentOwner; then keeps the visibility in sync via the same poll.
+  // Show / hide the FAB based on auth state. Polls every 2s.
+  // We deliberately do NOT auto-close the panel when not signed in — token
+  // refreshes briefly null currentOwner during the await on fetchOwnerRow,
+  // which was causing the panel to flicker shut. The FAB hide/show is enough.
   function _watchAuth() {
     setInterval(() => {
       const fab = document.getElementById("rules-bot-fab");
       if (!fab) return;
       const signedIn = (typeof currentOwner !== "undefined" && !!currentOwner);
       fab.style.display = signedIn ? "block" : "none";
-      if (!signedIn && _open) _toggle(false);
     }, 2000);
   }
 
