@@ -4114,8 +4114,11 @@ const HISTORICAL_ABBREV_OVERRIDES = {
 };
 
 const _trophyAbbrevWarned = new Set();
+function trophyTeamLocalId(team) {
+  return HISTORICAL_ABBREV_OVERRIDES[team.abbrev] || ESPN_ABBREV_TO_LOCAL[team.abbrev] || null;
+}
 function trophyTeamLabel(team) {
-  const localId = HISTORICAL_ABBREV_OVERRIDES[team.abbrev] || ESPN_ABBREV_TO_LOCAL[team.abbrev];
+  const localId = trophyTeamLocalId(team);
   if (localId) {
     const t = LEAGUE_DATA.teams.find(x => x.id === localId);
     if (t) return t.name;
@@ -4125,6 +4128,14 @@ function trophyTeamLabel(team) {
     console.warn(`[trophy] Unmapped historical abbrev "${team.abbrev}" — add it to HISTORICAL_ABBREV_OVERRIDES.`);
   }
   return team.name || team.abbrev || "?";
+}
+// Clickable label: if the historical team maps to a current LEAGUE_DATA team,
+// wrap the name in a button that opens the manager-history modal.
+function trophyTeamClickableLabel(team) {
+  const label = trophyTeamLabel(team);
+  const localId = trophyTeamLocalId(team);
+  if (!localId) return escapeHtml(label);
+  return `<span onclick="openManagerHistory('${escapeJsString(localId)}')" style="cursor:pointer;text-decoration:underline;text-decoration-color:rgba(255,255,255,0.25);text-underline-offset:3px" title="Click for finish history">${escapeHtml(label)}</span>`;
 }
 
 function renderTrophyRow(season, idx) {
@@ -4141,7 +4152,7 @@ function renderTrophyRow(season, idx) {
         <div style="margin-top:8px;color:var(--text-bright);font-weight:700;font-size:1rem;line-height:1.35">
           ${teams.length ? teams.map(t => {
             const pts = t.points != null ? ` <span style="color:var(--text-dim);font-weight:500;font-size:0.85rem">(${Number.isInteger(t.points) ? t.points : t.points.toFixed(1)})</span>` : "";
-            return `${trophyTeamLabel(t)}${pts}`;
+            return `${trophyTeamClickableLabel(t)}${pts}`;
           }).join("<br>") : '<span style="color:var(--text-dim);font-weight:400">—</span>'}
         </div>
       </div>
@@ -4187,12 +4198,139 @@ function openTrophyDetail(seasonIdx) {
             const pts = t.points != null ? (Number.isInteger(t.points) ? t.points : t.points.toFixed(1)) : "—";
             return `<tr>
               <td style="text-align:left">${t.rank}</td>
-              <td><span class="player-name">${escapeHtml(trophyTeamLabel(t))}</span>${medal ? ` ${medal}` : ""}</td>
+              <td><span class="player-name">${trophyTeamClickableLabel(t)}</span>${medal ? ` ${medal}` : ""}</td>
               <td style="text-align:right;color:var(--text-bright);font-weight:600">${pts}</td>
             </tr>`;
           }).join("")}
         </tbody>
       </table>
+    </div>
+  `;
+  document.body.appendChild(modal);
+}
+
+// Manager finish history modal — line chart of year-over-year rank for the
+// given current-team id. Only invoked from clickable team labels in trophy
+// view (which already filtered to teams that map to a current LEAGUE_DATA team).
+function openManagerHistory(teamId) {
+  if (typeof HISTORY_SNAPSHOT === "undefined") return;
+  const team = LEAGUE_DATA.teams.find(t => t.id === teamId);
+  if (!team) return;
+
+  // Walk every season; find this manager's row by mapping each historical
+  // standings entry's abbrev → localId via trophyTeamLocalId.
+  const points = [];
+  for (const season of HISTORY_SNAPSHOT.seasons) {
+    const row = (season.standings || []).find(t => trophyTeamLocalId(t) === teamId);
+    if (row) {
+      points.push({ year: season.year, rank: row.rank, score: row.points });
+    }
+  }
+  // Sort oldest → newest left-to-right.
+  points.sort((a, b) => a.year - b.year);
+
+  // Find the maximum rank ever (so the y-axis covers all finishes — rank 12
+  // most years but used to be 11 in earlier expansion eras).
+  let maxRank = 12;
+  for (const s of HISTORY_SNAPSHOT.seasons) {
+    for (const t of (s.standings || [])) {
+      if (t.rank > maxRank) maxRank = t.rank;
+    }
+  }
+
+  const existing = document.getElementById("manager-history-modal");
+  if (existing) existing.remove();
+  const modal = document.createElement("div");
+  modal.id = "manager-history-modal";
+  modal.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:1000;display:flex;align-items:flex-start;justify-content:center;padding:24px 16px;overflow-y:auto";
+  modal.onclick = e => { if (e.target === modal) modal.remove(); };
+
+  const W = 560;          // SVG width
+  const H = 320;          // SVG height
+  const PADL = 36;        // left axis padding
+  const PADR = 24;
+  const PADT = 24;
+  const PADB = 36;
+  const innerW = W - PADL - PADR;
+  const innerH = H - PADT - PADB;
+
+  let chart = "";
+  if (points.length === 0) {
+    chart = `<div style="color:var(--text-dim);text-align:center;padding:30px 0">No history found for ${escapeHtml(team.name)} yet.</div>`;
+  } else {
+    const years = points.map(p => p.year);
+    const minY = Math.min(...years);
+    const maxY = Math.max(...years);
+    const yearSpan = Math.max(1, maxY - minY);
+    const xFor = (year) => PADL + (yearSpan === 0 ? innerW / 2 : ((year - minY) / yearSpan) * innerW);
+    const yFor = (rank) => PADT + ((rank - 1) / (maxRank - 1)) * innerH; // rank 1 → top
+
+    // Y-axis grid lines for ranks 1, mid, max
+    const gridRanks = [1, Math.ceil(maxRank / 2), maxRank];
+    let grid = "";
+    for (const r of gridRanks) {
+      const y = yFor(r);
+      grid += `<line x1="${PADL}" y1="${y}" x2="${W - PADR}" y2="${y}" stroke="rgba(255,255,255,0.06)" stroke-width="1"/>`;
+      grid += `<text x="${PADL - 8}" y="${y + 4}" fill="rgba(255,255,255,0.45)" font-size="11" text-anchor="end">${r}</text>`;
+    }
+    // X-axis year labels
+    let yearLabels = "";
+    for (const p of points) {
+      const x = xFor(p.year);
+      yearLabels += `<text x="${x}" y="${H - PADB + 18}" fill="rgba(255,255,255,0.55)" font-size="11" text-anchor="middle">'${String(p.year).slice(-2)}</text>`;
+    }
+    // Connect points
+    let line = "";
+    if (points.length > 1) {
+      const d = points.map((p, i) => `${i === 0 ? "M" : "L"} ${xFor(p.year).toFixed(1)} ${yFor(p.rank).toFixed(1)}`).join(" ");
+      line = `<path d="${d}" fill="none" stroke="var(--accent)" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>`;
+    }
+    // Points
+    let dots = "";
+    for (const p of points) {
+      const cx = xFor(p.year);
+      const cy = yFor(p.rank);
+      const isGold = p.rank === 1;
+      const isPodium = p.rank <= 3;
+      const fill = isGold ? "#FFD700" : isPodium ? "#C0C0C0" : "var(--accent)";
+      dots += `<circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="${isGold ? 6 : 5}" fill="${fill}" stroke="var(--bg-card)" stroke-width="2"/>`;
+      dots += `<text x="${cx.toFixed(1)}" y="${(cy - 10).toFixed(1)}" fill="var(--text-bright)" font-size="11" font-weight="700" text-anchor="middle">${p.rank}</text>`;
+    }
+    chart = `
+      <div style="overflow-x:auto">
+        <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet" style="width:100%;height:auto;display:block;min-width:320px">
+          ${grid}
+          ${line}
+          ${dots}
+          ${yearLabels}
+          <text x="${PADL - 28}" y="${PADT + 12}" fill="rgba(255,255,255,0.55)" font-size="10" text-anchor="start" transform="rotate(-90 ${PADL - 28} ${PADT + 12})">Finish</text>
+        </svg>
+      </div>
+    `;
+  }
+
+  // Mini summary stats
+  const champs = points.filter(p => p.rank === 1).length;
+  const podiums = points.filter(p => p.rank <= 3).length;
+  const avgRank = points.length ? (points.reduce((s, p) => s + p.rank, 0) / points.length) : null;
+  const yearsList = points.map(p => `${p.year}: <strong style="color:var(--text-bright)">#${p.rank}</strong>`).join(" · ");
+
+  modal.innerHTML = `
+    <div style="max-width:640px;width:100%;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:18px;margin-top:20px">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px">
+        <h3 style="margin:0;color:var(--text-bright)">${escapeHtml(team.name)} — Finish History</h3>
+        <button onclick="document.getElementById('manager-history-modal').remove()" style="background:none;border:none;color:var(--text-dim);font-size:1.4rem;cursor:pointer;padding:0 4px;line-height:1">×</button>
+      </div>
+      ${points.length ? `
+        <div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:12px;font-size:0.82rem;color:var(--text-dim)">
+          <span><strong style="color:#FFD700">${champs}</strong> championship${champs === 1 ? "" : "s"}</span>
+          <span><strong style="color:var(--text-bright)">${podiums}</strong> podium${podiums === 1 ? "" : "s"}</span>
+          <span>Avg finish: <strong style="color:var(--text-bright)">${avgRank.toFixed(1)}</strong></span>
+          <span>Seasons: <strong style="color:var(--text-bright)">${points.length}</strong></span>
+        </div>
+      ` : ""}
+      ${chart}
+      ${points.length ? `<div style="margin-top:12px;font-size:0.78rem;color:var(--text-dim);line-height:1.6">${yearsList}</div>` : ""}
     </div>
   `;
   document.body.appendChild(modal);
