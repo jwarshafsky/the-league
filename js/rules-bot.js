@@ -121,24 +121,24 @@
     `;
     document.body.appendChild(root);
 
-    // Use pointerdown instead of click so the toggle fires immediately on tap
-    // (avoids iOS's occasional "click never fires" / 300ms-delay quirk in PWA
-    // mode). Also bind click as a fallback for non-pointer environments.
-    // Debounced to swallow duplicate fires within 250ms.
-    let _lastToggle = 0;
-    const _toggleClickHandler = (next) => (e) => {
-      if (e) { e.preventDefault?.(); e.stopPropagation?.(); }
-      const now = Date.now();
-      if (now - _lastToggle < 250) return;
-      _lastToggle = now;
-      _toggle(next === undefined ? !_open : next);
-    };
+    // ONE handler per button, bound to pointerup. Pointer Events are
+    // available in every browser we care about; binding click in addition
+    // caused intermittent double-fires (open → immediately close).
+    // pointerup fires AFTER the user lifts their finger so a tap that
+    // started on the FAB but slid off won't trigger.
     const fabEl = document.getElementById("rules-bot-fab");
     const closeEl = document.getElementById("rules-bot-close");
-    fabEl.addEventListener("pointerdown", _toggleClickHandler(undefined));
-    fabEl.addEventListener("click", _toggleClickHandler(undefined));
-    closeEl.addEventListener("pointerdown", _toggleClickHandler(false));
-    closeEl.addEventListener("click", _toggleClickHandler(false));
+    const _onTap = (next) => (e) => {
+      if (e) { e.preventDefault?.(); e.stopPropagation?.(); }
+      _toggle(next === undefined ? !_open : next);
+    };
+    if (window.PointerEvent) {
+      fabEl.addEventListener("pointerup", _onTap(undefined));
+      closeEl.addEventListener("pointerup", _onTap(false));
+    } else {
+      fabEl.addEventListener("click", _onTap(undefined));
+      closeEl.addEventListener("click", _onTap(false));
+    }
 
     // iOS keyboard handling: pin the panel above the soft keyboard while the
     // input is focused. Listens to visualViewport (which IS reliable on iOS)
