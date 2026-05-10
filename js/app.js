@@ -4974,10 +4974,10 @@ function renderLoginScreen(message = "") {
       ${messageHtml}
       <div id="login-code-block" style="display:none;margin-top:14px;padding-top:14px;border-top:1px solid var(--border)">
         <div style="color:var(--text-dim);font-size:0.78rem;margin-bottom:6px">
-          Email link not working? Enter the 6-digit code from the same email.
+          Email link not working? Enter the numeric code from the same email.
         </div>
         <div style="display:flex;gap:8px">
-          <input type="text" id="login-code" inputmode="numeric" maxlength="6" placeholder="123456" autocomplete="one-time-code"
+          <input type="text" id="login-code" inputmode="numeric" maxlength="8" pattern="[0-9]*" placeholder="Code" autocomplete="one-time-code"
             style="flex:1;background:var(--bg);color:var(--text);border:1px solid var(--border);padding:10px;border-radius:6px;font-size:1.05rem;letter-spacing:0.2em;text-align:center">
           <button id="login-code-btn" class="trade-btn trade-btn-submit" onclick="submitEmailCode()">Verify</button>
         </div>
@@ -5010,7 +5010,7 @@ async function submitMagicLink() {
     msg.style.background = "rgba(34,197,94,0.12)";
     msg.style.color = "var(--green)";
     msg.innerHTML =
-      "Check your email. Click the link <em>or</em> enter the 6-digit code below.";
+      "Check your email. Click the link <em>or</em> enter the numeric code below.";
     btn.textContent = "Resend";
     btn.disabled = false;
     // Reveal the code-entry form.
