@@ -257,6 +257,9 @@ body {
   border-bottom-color: var(--accent);
 }
 
+/* Draft views: vertical pick list is mobile-only; matrix is desktop. */
+.draft-list-mobile { display: none; }
+
 /* Main content */
 .main-content { padding: 16px; max-width: 900px; margin: 0 auto; }
 
@@ -554,6 +557,34 @@ body {
     font-size: 16px !important;
   }
 
+  /* Minors-draft: swap the wide matrix for a one-pick-per-row vertical list. */
+  .draft-board-desktop { display: none; }
+  .draft-list-mobile { display: flex; flex-direction: column; gap: 4px; margin: 6px 0 16px; }
+  .draft-pick-row {
+    display: grid;
+    grid-template-columns: 38px minmax(0, 80px) 1fr;
+    gap: 8px;
+    align-items: center;
+    padding: 8px 10px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 0.82rem;
+    line-height: 1.25;
+  }
+  .draft-pick-row.current { background: rgba(59,130,246,0.15); border-color: var(--accent); }
+  .draft-pick-row.made { background: rgba(34,197,94,0.06); }
+  .draft-pick-row.passed { background: rgba(249,115,22,0.08); }
+  .draft-pick-row .pick-id { font-weight: 700; color: var(--accent); font-size: 0.78rem; }
+  .draft-pick-row .pick-team { color: var(--text-bright); font-size: 0.75rem; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .draft-pick-row .pick-traded { color: var(--orange); font-size: 0.65rem; font-weight: 700; }
+  .draft-pick-row .pick-content { color: var(--text); display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .draft-pick-row .pick-player { font-weight: 600; }
+  .draft-pick-row .pick-notes { color: var(--text-dim); font-size: 0.68rem; }
+  .draft-pick-row .pick-status { color: var(--text-dim); font-style: italic; }
+  .draft-pick-row .pick-status.passed { color: var(--orange); font-style: normal; font-weight: 700; font-size: 0.72rem; }
+  .draft-pick-row .pick-status.current { color: var(--accent); }
+
   /* Tables: fit the viewport; let player names wrap so we don't need to
      scroll horizontally. Numeric / short cells stay nowrap. */
   .player-table {
@@ -575,6 +606,14 @@ body {
   .player-table td.stat-warning,
   .player-table td.stat-caution {
     white-space: nowrap;
+  }
+
+  /* Select Keepers tables: hide Source (col 2) and 2026 $ (col 3) on mobile
+     so the remaining columns (Player, 2027 $, Expiry, Rule 5, Keep, Block)
+     have room to breathe. */
+  .eligible-keepers-table tr > *:nth-child(2),
+  .eligible-keepers-table tr > *:nth-child(3) {
+    display: none;
   }
 
   /* Two-column inline grids (trade form, composer, thread detail's

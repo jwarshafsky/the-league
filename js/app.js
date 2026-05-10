@@ -736,17 +736,18 @@ function renderMajorsTable(players) {
   return `
     <table class="player-table">
       <thead>
-        <tr><th>Player</th><th>Price</th><th>Acquired</th><th>Contract</th><th>2027 Price</th></tr>
+        <tr><th>Player</th><th>Price</th><th>Acquired</th><th>Expiry</th><th>2027 Price</th></tr>
       </thead>
       <tbody>
         ${players.map(p => {
           const cs = getContractStatus(p, CURRENT_SEASON);
+          const expiry = CURRENT_SEASON + cs.yearsRemaining;
           return `
             <tr>
               <td><span class="player-name">${escapeHtml(p.name)}</span></td>
               <td class="player-price">$${p.price}</td>
               <td class="player-year">${p.yearAcquired}${p.fromMinors ? ' <span class="from-minors-tag">MiLB</span>' : ""}</td>
-              <td><span class="contract-tag contract-${escapeHtml(cs.status)}">${escapeHtml(cs.label)}</span></td>
+              <td><span class="contract-tag contract-${escapeHtml(cs.status)}">${expiry}</span></td>
               <td>${cs.canKeepNextYear ? `<span class="player-price">$${cs.nextYearPrice}</span>` : '<span style="color:var(--text-dim)">—</span>'}</td>
             </tr>
           `;
@@ -924,14 +925,14 @@ function updateKeeperCalc() {
       <h3>Can Keep for 2027 (${keepableNextYear.length} players)</h3>
       ${keepableNextYear.length ? `
         <table class="player-table">
-          <thead><tr><th>Player</th><th>2026 Price</th><th>2027 Price</th><th>Yrs Left</th></tr></thead>
+          <thead><tr><th>Player</th><th>2026 Price</th><th>2027 Price</th><th>Expiry</th></tr></thead>
           <tbody>
             ${keepableNextYear.map(p => `
               <tr>
                 <td><span class="player-name">${escapeHtml(p.name)}</span>${p.fromMinors ? '<span class="from-minors-tag">MiLB</span>' : ""}</td>
                 <td class="player-price">$${p.price}</td>
                 <td style="color:var(--yellow);font-weight:700">$${p.contract.nextYearPrice}</td>
-                <td><span class="contract-tag contract-${p.contract.yearsRemaining === 1 ? 'expiring' : 'mid'}">${p.contract.yearsRemaining} yr${p.contract.yearsRemaining > 1 ? 's' : ''}</span></td>
+                <td><span class="contract-tag contract-${p.contract.yearsRemaining === 1 ? 'expiring' : 'mid'}">${CURRENT_SEASON + p.contract.yearsRemaining}</span></td>
               </tr>
             `).join("")}
           </tbody>
@@ -2685,14 +2686,14 @@ function canEditTeam(teamId) {
 function renderEligibleTable(players, teamId, teamSelections) {
   const viewOnly = !canEditTeam(teamId) || (isKeeperLockoutActive() && !isCommissioner());
   return `
-    <table class="player-table">
+    <table class="player-table eligible-keepers-table">
       <thead>
         <tr>
           <th>Player</th>
           <th>Source</th>
           <th>2026 $</th>
           <th>2027 $</th>
-          <th>Contract</th>
+          <th>Expiry</th>
           <th style="text-align:center">Rule 5</th>
           <th style="text-align:center">Keep</th>
           <th style="text-align:center">On the Block</th>
@@ -2739,7 +2740,7 @@ function renderEligibleTable(players, teamId, teamSelections) {
               <td>${sourceBadge(p)}</td>
               <td>${priceCell}</td>
               <td>${nextPriceCell}</td>
-              <td><span class="contract-tag contract-${escapeHtml(p.contractStatus)}">${escapeHtml(p.contractLabel)}</span></td>
+              <td><span class="contract-tag contract-${escapeHtml(p.contractStatus)}">${p.yearsRemaining != null ? (CURRENT_SEASON + p.yearsRemaining) : escapeHtml(p.contractLabel)}</span></td>
               <td style="text-align:center">
                 <input type="checkbox" ${isRule5 ? 'checked' : ''} ${blockedAttr} onchange="toggleEligibleKeeper('${teamId}','${nameEsc}','rule5',this.checked)" style="width:18px;height:18px;cursor:${blockedCursor};accent-color:var(--accent)">
               </td>
@@ -2779,16 +2780,16 @@ function renderMinorsEligibleTable(minors, teamId, teamSelections) {
   if (!minors.length) return '<p style="color:var(--text-dim)">No minor league players</p>';
   const viewOnly = !canEditTeam(teamId) || (isKeeperLockoutActive() && !isCommissioner());
   return `
-    <table class="player-table">
+    <table class="player-table eligible-keepers-table">
       <thead>
         <tr>
           <th>Player</th>
           <th>Source</th>
           <th>2026 $</th>
           <th>2027 $</th>
-          <th>Contract</th>
+          <th>Expiry</th>
           <th style="text-align:center">Rule 5</th>
-          <th style="text-align:center">Keep*</th>
+          <th style="text-align:center">Keep</th>
           <th style="text-align:center">On the Block</th>
         </tr>
       </thead>
@@ -2813,7 +2814,7 @@ function renderMinorsEligibleTable(minors, teamId, teamSelections) {
           let contractLabel, contractStatusClass;
           if (ms.yearsRemaining !== null) {
             const yrs = ms.yearsRemaining;
-            contractLabel = yrs === 0 ? "Final yr" : `${yrs} yr${yrs === 1 ? "" : "s"} left`;
+            contractLabel = String(CURRENT_SEASON + yrs);
             contractStatusClass = yrs === 0 ? "final" : yrs === 1 ? "expiring" : "mid";
           } else {
             contractLabel = "Call-up + 3";
@@ -2852,7 +2853,7 @@ function renderMinorsEligibleTable(minors, teamId, teamSelections) {
         }).join("")}
       </tbody>
     </table>
-    <div style="font-size:0.72rem;color:var(--text-dim);margin-top:6px">* Pressing Keep auto-protects via Rule 5. Unchecking Rule 5 unkeeps.</div>
+    <div style="font-size:0.72rem;color:var(--text-dim);margin-top:6px">Pressing Keep auto-protects via Rule 5. Unchecking Rule 5 unkeeps.</div>
   `;
 }
 
@@ -3244,8 +3245,41 @@ function renderDraftBoard(draft) {
   draft.picks.forEach(p => { picksMap[`${p.round}p${p.pickInRound}`] = p; });
   const passedSet = new Set((draft.passed || []).map(p => `${p.round}p${p.pickInRound}`));
   const current = getCurrentPickInfo(draft);
+  const commishCanEdit = isCommissioner();
 
-  let html = `<div style="overflow-x:auto;-webkit-overflow-scrolling:touch">
+  // Mobile vertical layout — one row per pick, top to bottom (1.1, 1.2, 1.3, ...).
+  // CSS hides this on desktop and the matrix table on mobile.
+  let mobileHtml = '<div class="draft-list-mobile">';
+  for (let round = 1; round <= draft.rounds; round++) {
+    for (let pickInRound = 1; pickInRound <= teamsCount; pickInRound++) {
+      const ownerId = getPickOwner(draft, round, pickInRound);
+      const owner = LEAGUE_DATA.teams.find(t => t.id === ownerId);
+      const pick = picksMap[`${round}p${pickInRound}`];
+      const isPassed = passedSet.has(`${round}p${pickInRound}`);
+      const isCurrent = current && current.round === round && current.pickInRound === pickInRound;
+      const isTraded = ownerId !== getBaseOwner(draft, round, pickInRound);
+      let rowClass = "draft-pick-row";
+      if (isCurrent) rowClass += " current";
+      else if (pick) rowClass += " made";
+      else if (isPassed) rowClass += " passed";
+      const clickAttr = commishCanEdit ? `onclick="openPickEditor(${round},${pickInRound})" style="cursor:pointer"` : "";
+      const playerCell = pick
+        ? `<span class="pick-player">${escapeHtml(pick.player)}</span>${pick.notes ? `<span class="pick-notes">${escapeHtml(pick.notes)}</span>` : ""}`
+        : isCurrent
+          ? '<span class="pick-status current">On clock</span>'
+          : isPassed
+            ? '<span class="pick-status passed">PASSED</span>'
+            : '<span class="pick-status">—</span>';
+      mobileHtml += `<div class="${rowClass}" ${clickAttr}>
+        <span class="pick-id">${round}.${pickInRound}</span>
+        <span class="pick-team">${owner ? owner.name : ownerId}${isTraded ? ' <span class="pick-traded">(T)</span>' : ''}</span>
+        <span class="pick-content">${playerCell}</span>
+      </div>`;
+    }
+  }
+  mobileHtml += '</div>';
+
+  let html = mobileHtml + `<div class="draft-board-desktop" style="overflow-x:auto;-webkit-overflow-scrolling:touch">
     <table class="player-table" style="min-width:100%;font-size:0.78rem">
     <thead><tr>
       <th style="position:sticky;left:0;background:var(--bg);z-index:2;min-width:40px">Rd</th>`;
@@ -3265,7 +3299,6 @@ function renderDraftBoard(draft) {
       const isCurrent = current && current.round === round && current.pickInRound === pickInRound;
       const isTraded = ownerId !== getBaseOwner(draft, round, pickInRound);
 
-      const commishCanEdit = isCommissioner();
       let cellStyle = "padding:5px 6px;vertical-align:top";
       if (commishCanEdit) cellStyle += ";cursor:pointer";
       if (isCurrent) cellStyle += ";background:rgba(59,130,246,0.2);outline:2px solid var(--accent)";
