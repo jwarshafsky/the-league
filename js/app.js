@@ -5184,6 +5184,25 @@ function renderHeaderUser() {
     <button onclick="signOut()" style="background:rgba(0,0,0,0.25);border:1px solid rgba(255,255,255,0.2);color:white;padding:3px 8px;border-radius:4px;font-size:0.7rem;cursor:pointer">Sign Out</button>
   `;
 
+  // Mirror the same info into the bottom of the mobile drawer (CSS shows
+  // this only on small screens; the in-header copy is hidden there).
+  const drawerBar = document.getElementById("drawer-user-bar");
+  if (drawerBar) {
+    const drawerOnlineHtml = others.length
+      ? `<span class="user-online" title="Online: ${others.map(t => t.teamName).join(", ")}"><span class="dot"></span>${others.length} online</span>`
+      : `<span class="user-online" style="color:rgba(255,255,255,0.45)" title="No other owners online">no one else online</span>`;
+    drawerBar.innerHTML = `
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <span class="user-name">${escapeHtml(teamName)}</span>
+        ${realCommish ? (previewMode
+          ? '<span title="Click your name to switch back" onclick="toggleCommishView()" style="color:var(--text-dim);cursor:pointer">👁 Manager view</span>'
+          : '<span title="Click to switch to Manager view" onclick="toggleCommishView()" style="color:var(--yellow);cursor:pointer">★ Commish</span>') : ""}
+      </div>
+      ${drawerOnlineHtml}
+      <button class="signout" onclick="signOut()">Sign Out</button>
+    `;
+  }
+
   // Inbox unread badge — re-paint on every header update so it stays current
   // as proposals/messages flow in via realtime. The count covers BOTH new
   // pending proposals to you AND new messages from someone else, with a
