@@ -152,18 +152,29 @@
         // keyboard animates in/out.
         panel.style.transition = "bottom 0.18s ease, height 0.18s ease";
 
+        // Track whether we've actually overridden the panel's positioning so
+        // we don't clobber the original inline styles when there's no
+        // keyboard to lift the panel above. Clearing `panel.style.bottom`
+        // when we never set it would erase the original `bottom: calc(...)`
+        // and the panel would fall to top:auto / bottom:auto = 0,0.
+        let _bottomBackup = null;
+        let _heightBackup = null;
         const apply = () => {
           try {
             const vv = window.visualViewport;
             const kbH = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
             if (kbH > 50) {
-              // Sit just above the keyboard. Cap height so the panel always
-              // fits inside the visible (above-keyboard) region.
+              if (_bottomBackup === null) {
+                _bottomBackup = panel.style.bottom;
+                _heightBackup = panel.style.height;
+              }
               panel.style.bottom = (kbH + 8) + "px";
               panel.style.height = Math.min(560, vv.height - 16) + "px";
-            } else {
-              panel.style.bottom = "";
-              panel.style.height = "";
+            } else if (_bottomBackup !== null) {
+              panel.style.bottom = _bottomBackup;
+              panel.style.height = _heightBackup;
+              _bottomBackup = null;
+              _heightBackup = null;
             }
           } catch (e) { console.warn("[rules-bot] kb apply failed:", e); }
         };
@@ -191,8 +202,13 @@
         });
         inputEl.addEventListener("blur", () => {
           unbind();
-          panel.style.bottom = "";
-          panel.style.height = "";
+          // Only restore originals if we actually overrode them.
+          if (_bottomBackup !== null) {
+            panel.style.bottom = _bottomBackup;
+            panel.style.height = _heightBackup;
+            _bottomBackup = null;
+            _heightBackup = null;
+          }
         });
       }
     } catch (e) { console.warn("[rules-bot] keyboard handler setup failed:", e); }
