@@ -75,7 +75,8 @@
                width:54px;height:54px;border-radius:50%;border:none;
                background:linear-gradient(135deg,var(--accent),#1e3a5f);
                color:#fff;font-size:1.5rem;cursor:pointer;
-               box-shadow:0 4px 14px rgba(0,0,0,0.35);display:none">💬</button>
+               box-shadow:0 4px 14px rgba(0,0,0,0.35);display:none;
+               touch-action:manipulation;-webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none">💬</button>
 
       <div id="rules-bot-panel"
         style="position:fixed;bottom:calc(84px + env(safe-area-inset-bottom, 0px));right:calc(20px + env(safe-area-inset-right, 0px));z-index:991;
@@ -120,22 +121,24 @@
     `;
     document.body.appendChild(root);
 
-    // Debounce toggle clicks. Symptom of "panel flashes open then closes"
-    // is two click/touch events firing within milliseconds (synthetic click
-    // after touchend, double-fire on some Chrome builds, etc.). 250ms is
-    // tight enough that intentional double-clicks still work, loose enough
-    // to swallow ghost-clicks.
+    // Use pointerdown instead of click so the toggle fires immediately on tap
+    // (avoids iOS's occasional "click never fires" / 300ms-delay quirk in PWA
+    // mode). Also bind click as a fallback for non-pointer environments.
+    // Debounced to swallow duplicate fires within 250ms.
     let _lastToggle = 0;
     const _toggleClickHandler = (next) => (e) => {
-      e.preventDefault();
-      e.stopPropagation();
+      if (e) { e.preventDefault?.(); e.stopPropagation?.(); }
       const now = Date.now();
       if (now - _lastToggle < 250) return;
       _lastToggle = now;
       _toggle(next === undefined ? !_open : next);
     };
-    document.getElementById("rules-bot-fab").addEventListener("click", _toggleClickHandler(undefined));
-    document.getElementById("rules-bot-close").addEventListener("click", _toggleClickHandler(false));
+    const fabEl = document.getElementById("rules-bot-fab");
+    const closeEl = document.getElementById("rules-bot-close");
+    fabEl.addEventListener("pointerdown", _toggleClickHandler(undefined));
+    fabEl.addEventListener("click", _toggleClickHandler(undefined));
+    closeEl.addEventListener("pointerdown", _toggleClickHandler(false));
+    closeEl.addEventListener("click", _toggleClickHandler(false));
 
     // iOS keyboard handling: pin the panel above the soft keyboard while the
     // input is focused. Listens to visualViewport (which IS reliable on iOS)
