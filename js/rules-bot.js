@@ -106,7 +106,7 @@
             placeholder="Ask CommishAI…"
             style="flex:1;background:var(--bg-card);color:var(--text);
                    border:1px solid var(--border);border-radius:8px;
-                   padding:8px 10px;font-size:0.88rem">
+                   padding:8px 10px;font-size:16px">
           <button type="submit" id="rules-bot-send"
             style="background:var(--accent);color:#fff;border:none;
                    padding:8px 14px;border-radius:8px;font-weight:600;

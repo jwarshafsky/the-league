@@ -69,6 +69,100 @@ body {
 .back-btn:hover { background: rgba(255,255,255,0.25); }
 .back-btn.visible { display: inline-flex; }
 
+/* Hamburger menu button — visible only on mobile */
+.menu-btn {
+  background: rgba(255,255,255,0.12);
+  border: none;
+  color: var(--text-bright);
+  font-size: 1.4rem;
+  line-height: 1;
+  padding: 4px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  display: none;
+}
+.menu-btn:hover { background: rgba(255,255,255,0.22); }
+
+/* Slide-out nav drawer (mobile) */
+.nav-drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.55);
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.18s ease, visibility 0.18s;
+  z-index: 200;
+}
+.nav-drawer-backdrop.open {
+  opacity: 1;
+  visibility: visible;
+}
+.nav-drawer {
+  position: fixed;
+  top: 0; bottom: 0; left: 0;
+  width: min(280px, 80vw);
+  background: var(--bg-card);
+  border-right: 1px solid var(--border);
+  box-shadow: 4px 0 20px rgba(0,0,0,0.45);
+  transform: translateX(-100%);
+  transition: transform 0.22s ease;
+  z-index: 201;
+  display: flex;
+  flex-direction: column;
+  /* Respect iOS safe area for notched devices */
+  padding-top: env(safe-area-inset-top, 0);
+  padding-bottom: env(safe-area-inset-bottom, 0);
+}
+.nav-drawer.open { transform: translateX(0); }
+.nav-drawer-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 18px;
+  background: linear-gradient(135deg, var(--accent-dim), #1e3a5f);
+  color: var(--text-bright);
+  font-weight: 700;
+  font-size: 1rem;
+  border-bottom: 1px solid var(--border);
+}
+.nav-drawer-close {
+  background: rgba(255,255,255,0.15);
+  border: none;
+  color: var(--text-bright);
+  font-size: 1.4rem;
+  line-height: 1;
+  width: 32px; height: 32px;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+}
+.nav-drawer-list {
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.nav-drawer-item {
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  padding: 16px 20px;
+  text-align: left;
+  font-size: 1rem;
+  font-weight: 500;
+  color: var(--text);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.nav-drawer-item:hover { background: rgba(255,255,255,0.04); }
+.nav-drawer-item.active {
+  color: var(--accent);
+  background: rgba(59,130,246,0.10);
+  font-weight: 700;
+  border-left: 4px solid var(--accent);
+  padding-left: 16px;
+}
+
 /* Nav tabs */
 .nav-tabs {
   display: flex;
@@ -378,7 +472,16 @@ body {
   .summary-value { font-size: 1.05rem; }
   .player-table { font-size: 0.78rem; }
   .player-table td, .player-table th { padding: 6px 4px; }
-  .nav-tab { padding: 10px 12px; font-size: 0.78rem; }
+  /* Mobile: hide the horizontal tab row, show the hamburger menu instead. */
+  .nav-tabs { display: none; }
+  .menu-btn { display: inline-flex; align-items: center; justify-content: center; }
+
+  /* iOS Safari auto-zooms when a focused input has font-size < 16px. Force
+     all interactive form fields to ≥16px on mobile so the page never shifts
+     under the user when they tap a field. */
+  input, textarea, select {
+    font-size: 16px !important;
+  }
 
   /* Tables: scroll horizontally rather than squish or overflow the page. */
   .player-table {

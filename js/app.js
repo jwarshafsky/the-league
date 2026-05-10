@@ -3738,9 +3738,9 @@ function switchTab(tab) {
   // Reset the asset-price memo so any view that renders trade assets
   // picks up fresh prices (after a callup, FA pickup, override, etc.).
   if (typeof _invalidatePriceMap === "function") _invalidatePriceMap();
-  document.querySelectorAll(".nav-tab").forEach(t => t.classList.remove("active"));
-  const tabEl = document.querySelector(`[data-tab="${tab}"]`);
-  if (tabEl) tabEl.classList.add("active");
+  // Sync active state on both the desktop tab row and the mobile drawer items.
+  document.querySelectorAll(".nav-tab, .nav-drawer-item").forEach(t => t.classList.remove("active"));
+  document.querySelectorAll(`[data-tab="${tab}"]`).forEach(el => el.classList.add("active"));
 
   const content = document.getElementById("main-content");
   const backBtn = document.getElementById("back-btn");
@@ -4902,6 +4902,23 @@ function undoRule5Pick() {
   }
   switchTab("rule5");
 }
+
+// Mobile slide-out nav drawer. Pass force=true|false to set state, or omit to toggle.
+function toggleNavDrawer(force) {
+  const drawer = document.getElementById("nav-drawer");
+  const backdrop = document.getElementById("nav-drawer-backdrop");
+  const btn = document.getElementById("menu-btn");
+  if (!drawer || !backdrop) return;
+  const willOpen = typeof force === "boolean" ? force : !drawer.classList.contains("open");
+  drawer.classList.toggle("open", willOpen);
+  backdrop.classList.toggle("open", willOpen);
+  drawer.setAttribute("aria-hidden", willOpen ? "false" : "true");
+  if (btn) btn.setAttribute("aria-expanded", willOpen ? "true" : "false");
+}
+// Esc closes the drawer.
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") toggleNavDrawer(false);
+});
 
 function goBack() {
   switchTab("eligible");
