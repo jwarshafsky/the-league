@@ -137,34 +137,57 @@
     document.getElementById("rules-bot-fab").addEventListener("click", _toggleClickHandler(undefined));
     document.getElementById("rules-bot-close").addEventListener("click", _toggleClickHandler(false));
 
-    // iOS keyboard handling: when the input is focused, the soft keyboard
-    // covers the bottom of the screen. Listen to visualViewport and push the
-    // panel up by the keyboard's height while typing. Guarded so failures
-    // here can't break the FAB / panel basics.
+    // iOS keyboard handling: pin the panel above the soft keyboard while the
+    // input is focused. Listens to visualViewport (which IS reliable on iOS)
+    // and computes the keyboard height as innerHeight - vv.height - vv.offsetTop.
+    // Guarded so a failure here can't take down the FAB / toggle basics.
     try {
       const inputEl = document.getElementById("rules-bot-input");
       const panel = document.getElementById("rules-bot-panel");
       if (inputEl && panel && window.visualViewport) {
+        // Smooth movement so the panel slides instead of jumping when the
+        // keyboard animates in/out.
+        panel.style.transition = "bottom 0.18s ease, height 0.18s ease";
+
         const apply = () => {
           try {
-            const overlap = Math.max(0, window.innerHeight - window.visualViewport.height);
-            if (overlap > 50) {
-              panel.style.bottom = (overlap + 12) + "px";
-              panel.style.height = "min(560px, " + (window.visualViewport.height - 24) + "px)";
+            const vv = window.visualViewport;
+            const kbH = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+            if (kbH > 50) {
+              // Sit just above the keyboard. Cap height so the panel always
+              // fits inside the visible (above-keyboard) region.
+              panel.style.bottom = (kbH + 8) + "px";
+              panel.style.height = Math.min(560, vv.height - 16) + "px";
             } else {
               panel.style.bottom = "";
               panel.style.height = "";
             }
           } catch (e) { console.warn("[rules-bot] kb apply failed:", e); }
         };
-        inputEl.addEventListener("focus", () => {
+
+        // Re-apply on every focus + every viewport change while focused.
+        let _bound = false;
+        const bind = () => {
+          if (_bound) return;
+          _bound = true;
           window.visualViewport.addEventListener("resize", apply);
           window.visualViewport.addEventListener("scroll", apply);
-          setTimeout(apply, 100);
-        });
-        inputEl.addEventListener("blur", () => {
+        };
+        const unbind = () => {
+          if (!_bound) return;
+          _bound = false;
           window.visualViewport.removeEventListener("resize", apply);
           window.visualViewport.removeEventListener("scroll", apply);
+        };
+
+        inputEl.addEventListener("focus", () => {
+          bind();
+          // Run apply a few times during the keyboard animation; iOS doesn't
+          // always fire the resize event in time on the very first focus.
+          [50, 200, 500].forEach(t => setTimeout(apply, t));
+        });
+        inputEl.addEventListener("blur", () => {
+          unbind();
           panel.style.bottom = "";
           panel.style.height = "";
         });
