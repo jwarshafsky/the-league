@@ -616,6 +616,10 @@ body {
     display: none;
   }
 
+  /* Status badges (e.g. "2027 Must Call Up", "Called up") that crowd the
+     player-name cell on phone screens. Still rendered on desktop. */
+  .hide-on-mobile { display: none !important; }
+
   /* Two-column inline grids (trade form, composer, thread detail's
      "You get / You give") stack vertically. The attribute selector matches
      the literal substring used in the rendered inline styles. */

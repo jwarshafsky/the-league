@@ -280,6 +280,7 @@ function renderKeepersView() {
 
 function updateKeepersView() {
   const teamId = document.getElementById("keepers-team-select").value;
+  if (typeof _lastTeamSel !== "undefined") _lastTeamSel.keepers = teamId;
   const container = document.getElementById("keepers-content");
   if (!teamId) { container.innerHTML = ""; return; }
 
@@ -353,14 +354,13 @@ function renderMinorsKeepersTable(minors) {
         ${sorted.map(p => {
           const ms = getMinorLeagueContractStatus(p, CURRENT_SEASON);
           let statClass = "";
-          if ((p.statType === "AB" && p.careerStat >= 300) || (p.statType === "IP" && p.careerStat >= 75)) statClass = "stat-warning";
-          else if ((p.statType === "AB" && p.careerStat >= 200) || (p.statType === "IP" && p.careerStat >= 50)) statClass = "stat-caution";
+          if ((p.statType === "AB" && p.careerStat >= 200) || (p.statType === "IP" && p.careerStat >= 50)) statClass = "stat-warning";
           // Once a player is in the callups bucket, the "Must Call Up"
           // eligibility warning no longer applies — they've already been
           // called up. Show a "Called up" badge instead.
           const statusBadge = p._calledUp
-            ? ` <span style="color:var(--purple);font-size:0.7rem;font-weight:600">Called up</span>`
-            : (ms.eligibilityWarning ? ` <span style="color:var(--orange);font-size:0.7rem;font-weight:600">${escapeHtml(ms.eligibilityWarning)}</span>` : "");
+            ? ` <span class="hide-on-mobile" style="color:var(--purple);font-size:0.7rem;font-weight:600">Called up</span>`
+            : (ms.eligibilityWarning ? ` <span class="hide-on-mobile" style="color:var(--orange);font-size:0.7rem;font-weight:600">${escapeHtml(ms.eligibilityWarning)}</span>` : "");
           return `
             <tr>
               <td><span class="player-name">${escapeHtml(p.name)}</span>${statusBadge}</td>
@@ -401,6 +401,7 @@ function renderRostersView() {
 
 function updateRostersView() {
   const teamId = document.getElementById("rosters-team-select").value;
+  if (typeof _lastTeamSel !== "undefined") _lastTeamSel.rosters = teamId;
   const container = document.getElementById("rosters-content");
   if (!teamId) { container.innerHTML = ""; return; }
 
@@ -714,8 +715,7 @@ function renderMinorsCompactTable(team) {
       <tbody>
         ${allPlayers.map(p => {
           let statClass = "";
-          if ((p.statType === "AB" && p.careerStat >= 300) || (p.statType === "IP" && p.careerStat >= 75)) statClass = "stat-warning";
-          else if ((p.statType === "AB" && p.careerStat >= 200) || (p.statType === "IP" && p.careerStat >= 50)) statClass = "stat-caution";
+          if ((p.statType === "AB" && p.careerStat >= 200) || (p.statType === "IP" && p.careerStat >= 50)) statClass = "stat-warning";
           return `<tr>
             <td><span class="player-name">${escapeHtml(p.name)}</span></td>
             <td class="player-year">${p.yearAcquired}</td>
@@ -773,8 +773,7 @@ function renderCallupsTable(players, teamId) {
           const ms = getMinorLeagueContractStatus(p, CURRENT_SEASON);
           const statDisplay = `${p.careerStat}`;
           let statClass = "";
-          if ((p.statType === "AB" && p.careerStat >= 300) || (p.statType === "IP" && p.careerStat >= 75)) statClass = "stat-warning";
-          else if ((p.statType === "AB" && p.careerStat >= 200) || (p.statType === "IP" && p.careerStat >= 50)) statClass = "stat-caution";
+          if ((p.statType === "AB" && p.careerStat >= 200) || (p.statType === "IP" && p.careerStat >= 50)) statClass = "stat-warning";
           const belowThreshold = (p.statType === "AB" && p.careerStat < 200) || (p.statType === "IP" && p.careerStat < 50);
           const onEspnRoster = typeof isPlayerDroppedFromEspn === "function" ? !isPlayerDroppedFromEspn(p.name) : true;
           const actionCell = showSendDown ? `
@@ -834,8 +833,7 @@ function renderMinorsTable(players, teamId) {
           const ms = getMinorLeagueContractStatus(p, CURRENT_SEASON);
           const statDisplay = `${p.careerStat}`;
           let statClass = "";
-          if ((p.statType === "AB" && p.careerStat >= 300) || (p.statType === "IP" && p.careerStat >= 75)) statClass = "stat-warning";
-          else if ((p.statType === "AB" && p.careerStat >= 200) || (p.statType === "IP" && p.careerStat >= 50)) statClass = "stat-caution";
+          if ((p.statType === "AB" && p.careerStat >= 200) || (p.statType === "IP" && p.careerStat >= 50)) statClass = "stat-warning";
           const actionCell = showCallUp ? `
             <td style="text-align:right">
               <button class="trade-btn" onclick="callUpMinorPlayer('${escapeJsString(p.name)}','${escapeJsString(teamId)}')"
@@ -850,7 +848,7 @@ function renderMinorsTable(players, teamId) {
               <td>${
                 p._teamStatus === "dropped" ? '<span style="color:var(--orange);font-size:0.8rem">Dropped</span>' :
                 p._teamStatus === "traded"  ? '<span style="color:var(--accent);font-size:0.8rem">Traded</span>' :
-                ms.eligibilityWarning ? `<span style="color:var(--orange);font-size:0.8rem">${ms.eligibilityWarning}</span>` :
+                ms.eligibilityWarning ? `<span class="hide-on-mobile" style="color:var(--orange);font-size:0.8rem">${ms.eligibilityWarning}</span>` :
                 '<span style="color:var(--green);font-size:0.8rem">Active</span>'
               }</td>
               ${actionCell}
@@ -1185,7 +1183,19 @@ function openThreadDetail(threadId) {
   modal.onclick = e => { if (e.target === modal) closeThreadDetail(); };
   modal.innerHTML = renderThreadDetailHTML(thread);
   document.body.appendChild(modal);
-  setTimeout(() => document.getElementById("thread-msg-input")?.focus(), 0);
+  // Don't auto-focus on touch devices — pops the keyboard immediately and
+  // the modal scrolls in unexpected ways. Mouse users still get focus.
+  if (window.matchMedia?.("(pointer: fine)").matches) {
+    setTimeout(() => document.getElementById("thread-msg-input")?.focus(), 0);
+  }
+  // When the input gets focused (keyboard appears), scroll the input bar
+  // into the visible area inside the modal so it sits above the keyboard.
+  const inputEl = document.getElementById("thread-msg-input");
+  if (inputEl) {
+    inputEl.addEventListener("focus", () => {
+      setTimeout(() => inputEl.scrollIntoView({ block: "center", behavior: "smooth" }), 200);
+    });
+  }
 }
 
 function closeThreadDetail() {
@@ -1294,7 +1304,10 @@ async function sendThreadMessage(threadId) {
     if (thread) {
       const modal = document.getElementById("thread-detail-modal");
       if (modal) modal.innerHTML = renderThreadDetailHTML(thread);
-      setTimeout(() => document.getElementById("thread-msg-input")?.focus(), 0);
+      // Re-focus only on devices with a fine pointer; touch users keep their keyboard up.
+      if (window.matchMedia?.("(pointer: fine)").matches) {
+        setTimeout(() => document.getElementById("thread-msg-input")?.focus(), 0);
+      }
     }
   } catch (e) {
     alert("Couldn't send message: " + (e.message || e));
@@ -2537,6 +2550,7 @@ function clearCommishOverride(playerName) {
 
 function updateEligibleKeepersView() {
   const teamId = document.getElementById("eligible-team-select").value;
+  if (typeof _lastTeamSel !== "undefined") _lastTeamSel.eligible = teamId;
   const container = document.getElementById("eligible-keepers-content");
   if (!teamId) { container.innerHTML = ""; return; }
 
@@ -2800,8 +2814,7 @@ function renderMinorsEligibleTable(minors, teamId, teamSelections) {
           const isRule5 = sel.rule5 || false;
           const isTradeBlock = sel.tradeBlock || false;
           let statClass = "";
-          if ((p.statType === "AB" && p.careerStat >= 300) || (p.statType === "IP" && p.careerStat >= 75)) statClass = "stat-warning";
-          else if ((p.statType === "AB" && p.careerStat >= 200) || (p.statType === "IP" && p.careerStat >= 50)) statClass = "stat-caution";
+          if ((p.statType === "AB" && p.careerStat >= 200) || (p.statType === "IP" && p.careerStat >= 50)) statClass = "stat-warning";
           const rowBg = isMinorKeeper ? 'background:rgba(34,197,94,0.08)'
             : isRule5 ? 'background:rgba(59,130,246,0.08)'
             : isTradeBlock ? 'background:rgba(249,115,22,0.08)'
@@ -2832,7 +2845,7 @@ function renderMinorsEligibleTable(minors, teamId, teamSelections) {
                 ${p.sendDownCount ? ` <span style="color:var(--red);font-size:0.65rem;font-weight:700">$${p.sendDownCount * 10} fee</span>` : ''}
                 <div style="font-size:0.7rem;color:var(--text-dim);margin-top:2px">
                   <span class="${statClass}">${p.careerStat} ${p.statType}</span>
-                  ${ms.eligibilityWarning ? ` <span style="color:var(--orange);font-weight:700;margin-left:4px">${escapeHtml(ms.eligibilityWarning)}</span>` : ''}
+                  ${ms.eligibilityWarning ? ` <span class="hide-on-mobile" style="color:var(--orange);font-weight:700;margin-left:4px">${escapeHtml(ms.eligibilityWarning)}</span>` : ''}
                 </div>
               </td>
               <td>${sourceTag}</td>
@@ -3764,6 +3777,9 @@ function removeTradedPick(key) {
 // --- Navigation ---
 
 let currentView = "eligible";
+// Remembers the last team picked in each per-team-selector view so that
+// re-renders (realtime echoes, etc.) don't reset the dropdown to "All Teams".
+const _lastTeamSel = { eligible: null, keepers: null, rosters: null };
 
 function switchTab(tab) {
   // Re-derive each team's current minors/callups from the static anchor +
@@ -3791,19 +3807,19 @@ function switchTab(tab) {
     case "eligible":
       currentView = "eligible";
       content.innerHTML = renderEligibleKeepersView();
-      document.getElementById("eligible-team-select").value = "all";
+      document.getElementById("eligible-team-select").value = _lastTeamSel.eligible || "all";
       updateEligibleKeepersView();
       break;
     case "keepers":
       currentView = "keepers";
       content.innerHTML = renderKeepersView();
-      document.getElementById("keepers-team-select").value = "all";
+      document.getElementById("keepers-team-select").value = _lastTeamSel.keepers || "all";
       updateKeepersView();
       break;
     case "rosters":
       currentView = "rosters";
       content.innerHTML = renderRostersView();
-      document.getElementById("rosters-team-select").value = "all";
+      document.getElementById("rosters-team-select").value = _lastTeamSel.rosters || "all";
       updateRostersView();
       break;
     case "trades":
