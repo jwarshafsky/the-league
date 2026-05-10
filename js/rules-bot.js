@@ -71,16 +71,16 @@
     root.id = "rules-bot-root";
     root.innerHTML = `
       <button id="rules-bot-fab" title="Ask CommishAI"
-        style="position:fixed;bottom:20px;right:20px;z-index:990;
+        style="position:fixed;bottom:calc(20px + env(safe-area-inset-bottom, 0px));right:calc(20px + env(safe-area-inset-right, 0px));z-index:990;
                width:54px;height:54px;border-radius:50%;border:none;
                background:linear-gradient(135deg,var(--accent),#1e3a5f);
                color:#fff;font-size:1.5rem;cursor:pointer;
                box-shadow:0 4px 14px rgba(0,0,0,0.35);display:none">💬</button>
 
       <div id="rules-bot-panel"
-        style="position:fixed;bottom:84px;right:20px;z-index:991;
+        style="position:fixed;bottom:calc(84px + env(safe-area-inset-bottom, 0px));right:calc(20px + env(safe-area-inset-right, 0px));z-index:991;
                width:min(340px,calc(100vw - 32px));
-               height:min(560px,calc(100vh - 120px));
+               height:min(560px,calc(100vh - 120px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)));
                background:var(--bg-card);border:1px solid var(--border);
                border-radius:14px;box-shadow:0 10px 40px rgba(0,0,0,0.45);
                display:none;flex-direction:column;overflow:hidden">

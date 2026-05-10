@@ -34,7 +34,10 @@ body {
 /* Header */
 .app-header {
   background: linear-gradient(135deg, var(--accent-dim), #1e3a5f);
-  padding: 16px 20px;
+  /* Top padding adds the iOS notch/status-bar inset on PWA so the title
+     doesn't sit underneath "8:15 ⏷ ⏵ 75%". On non-notch devices the env()
+     value is 0 and we get the same 16px we always had. */
+  padding: calc(16px + env(safe-area-inset-top, 0px)) calc(20px + env(safe-area-inset-right, 0px)) 16px calc(20px + env(safe-area-inset-left, 0px));
   display: flex;
   align-items: center;
   gap: 12px;
