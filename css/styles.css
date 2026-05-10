@@ -103,7 +103,7 @@ body {
 .nav-drawer {
   position: fixed;
   top: 0; bottom: 0; left: 0;
-  width: min(280px, 80vw);
+  width: min(260px, 80vw);
   background: var(--bg-card);
   border-right: 1px solid var(--border);
   box-shadow: 4px 0 20px rgba(0,0,0,0.45);
@@ -121,49 +121,70 @@ body {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 16px 18px;
+  padding: 12px 14px;
   background: linear-gradient(135deg, var(--accent-dim), #1e3a5f);
   color: var(--text-bright);
   font-weight: 700;
-  font-size: 1rem;
+  font-size: 0.95rem;
   border-bottom: 1px solid var(--border);
+  letter-spacing: 0.02em;
+}
+.nav-drawer-header .brand {
+  display: flex; align-items: center; gap: 8px;
+}
+.nav-drawer-header .brand img {
+  width: 24px; height: 24px;
+  border-radius: 5px;
+  display: block;
 }
 .nav-drawer-close {
-  background: rgba(255,255,255,0.15);
+  background: rgba(255,255,255,0.12);
   border: none;
   color: var(--text-bright);
-  font-size: 1.4rem;
+  font-size: 1.2rem;
   line-height: 1;
-  width: 32px; height: 32px;
+  width: 28px; height: 28px;
   border-radius: 50%;
   cursor: pointer;
   display: flex; align-items: center; justify-content: center;
 }
+.nav-drawer-close:hover { background: rgba(255,255,255,0.22); }
 .nav-drawer-list {
   display: flex;
   flex-direction: column;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
+  padding: 4px 0;
 }
 .nav-drawer-item {
   background: none;
   border: none;
-  border-bottom: 1px solid var(--border);
-  padding: 16px 20px;
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+  padding: 11px 16px;
   text-align: left;
-  font-size: 1rem;
+  font-size: 0.92rem;
   font-weight: 500;
   color: var(--text);
   cursor: pointer;
-  transition: background 0.15s;
+  position: relative;
+  transition: background 0.15s, color 0.15s;
 }
+.nav-drawer-item:last-child { border-bottom: none; }
 .nav-drawer-item:hover { background: rgba(255,255,255,0.04); }
 .nav-drawer-item.active {
   color: var(--accent);
   background: rgba(59,130,246,0.10);
   font-weight: 700;
-  border-left: 4px solid var(--accent);
-  padding-left: 16px;
+}
+/* Right-side accent bar — doesn't shift the text on active like a left
+   border would. */
+.nav-drawer-item.active::after {
+  content: "";
+  position: absolute;
+  right: 0; top: 6px; bottom: 6px;
+  width: 3px;
+  background: var(--accent);
+  border-radius: 2px 0 0 2px;
 }
 /* User bar pinned to the bottom of the drawer — visible only on mobile */
 .nav-drawer-footer {
