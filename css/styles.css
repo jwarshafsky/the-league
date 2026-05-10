@@ -537,7 +537,8 @@ body {
   .summary-bar { padding: 10px; }
   .summary-value { font-size: 1.05rem; }
   .player-table { font-size: 0.78rem; }
-  .player-table td, .player-table th { padding: 6px 4px; }
+  .player-table td, .player-table th { padding: 4px 5px; }
+  .player-table { font-size: 0.74rem; }
   /* Mobile: hide the horizontal tab row, show the hamburger menu instead. */
   .nav-tabs { display: none; }
   .menu-btn { display: inline-flex; align-items: center; justify-content: center; }
@@ -553,13 +554,27 @@ body {
     font-size: 16px !important;
   }
 
-  /* Tables: scroll horizontally rather than squish or overflow the page. */
+  /* Tables: fit the viewport; let player names wrap so we don't need to
+     scroll horizontally. Numeric / short cells stay nowrap. */
   .player-table {
-    display: block;
-    overflow-x: auto;
-    white-space: nowrap;
-    -webkit-overflow-scrolling: touch;
     width: 100%;
+    table-layout: fixed;
+    border-collapse: collapse;
+    word-wrap: break-word;
+  }
+  .player-table th, .player-table td {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .player-table .player-name {
+    white-space: normal;
+    word-break: break-word;
+  }
+  /* Numeric / short columns stay tight on a single line. */
+  .player-table .player-year,
+  .player-table td.stat-warning,
+  .player-table td.stat-caution {
+    white-space: nowrap;
   }
 
   /* Two-column inline grids (trade form, composer, thread detail's

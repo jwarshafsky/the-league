@@ -122,6 +122,38 @@
 
     document.getElementById("rules-bot-fab").addEventListener("click", () => _toggle(!_open));
     document.getElementById("rules-bot-close").addEventListener("click", () => _toggle(false));
+
+    // iOS keyboard handling: when the input is focused, the soft keyboard
+    // covers the bottom of the screen. Without this, the chat input gets
+    // hidden under the keyboard. Listen to visualViewport and push the panel
+    // up by the keyboard's height while typing.
+    const inputEl = document.getElementById("rules-bot-input");
+    const panel = document.getElementById("rules-bot-panel");
+    let kbAdjust = null;
+    if (inputEl && panel && window.visualViewport) {
+      const apply = () => {
+        const overlap = Math.max(0, window.innerHeight - window.visualViewport.height);
+        if (overlap > 50) {
+          panel.style.bottom = (overlap + 12) + "px";
+          panel.style.height = "min(560px, " + (window.visualViewport.height - 24) + "px)";
+        } else {
+          panel.style.bottom = "";
+          panel.style.height = "";
+        }
+      };
+      kbAdjust = apply;
+      inputEl.addEventListener("focus", () => {
+        window.visualViewport.addEventListener("resize", apply);
+        window.visualViewport.addEventListener("scroll", apply);
+        setTimeout(apply, 100); // give keyboard time to animate in
+      });
+      inputEl.addEventListener("blur", () => {
+        window.visualViewport.removeEventListener("resize", apply);
+        window.visualViewport.removeEventListener("scroll", apply);
+        panel.style.bottom = "";
+        panel.style.height = "";
+      });
+    }
     document.getElementById("rules-bot-clear").addEventListener("click", () => {
       if (!confirm("Clear conversation?")) return;
       _clearHistory();

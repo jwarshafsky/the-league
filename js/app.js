@@ -347,7 +347,7 @@ function renderMinorsKeepersTable(minors) {
   return `
     <table class="player-table">
       <thead>
-        <tr><th>Player</th><th>Drafted</th><th>Career</th><th>Contract</th></tr>
+        <tr><th>Player</th><th>Drafted</th><th>AB/IP</th><th>Expiry</th></tr>
       </thead>
       <tbody>
         ${sorted.map(p => {
@@ -365,8 +365,8 @@ function renderMinorsKeepersTable(minors) {
             <tr>
               <td><span class="player-name">${escapeHtml(p.name)}</span>${statusBadge}</td>
               <td class="player-year">${p.yearAcquired}</td>
-              <td class="${statClass}">${p.careerStat} ${p.statType}</td>
-              <td><span style="color:var(--text-dim);font-size:0.8rem">${ms.contractNote}${ms.yearsRemaining !== null ? ` (${ms.yearsRemaining} yrs)` : ""}</span>${p.sendDownCount ? ` <span style="color:var(--red);font-size:0.7rem;font-weight:600">($${p.sendDownCount * 10} send down fee)</span>` : ""}</td>
+              <td class="${statClass}">${p.careerStat}</td>
+              <td><span style="color:var(--text-dim);font-size:0.8rem">${ms.yearsRemaining !== null ? (CURRENT_SEASON + ms.yearsRemaining) : ms.contractNote}</span>${p.sendDownCount ? ` <span style="color:var(--red);font-size:0.7rem;font-weight:600">($${p.sendDownCount * 10} send down fee)</span>` : ""}</td>
             </tr>
           `;
         }).join("")}
@@ -710,7 +710,7 @@ function renderMinorsCompactTable(team) {
   if (!allPlayers.length) return "<p style='color:var(--text-dim)'>No minor league players</p>";
   return `
     <table class="player-table">
-      <thead><tr><th>Player</th><th>Drafted</th><th>Career</th></tr></thead>
+      <thead><tr><th>Player</th><th>Drafted</th><th>AB/IP</th></tr></thead>
       <tbody>
         ${allPlayers.map(p => {
           let statClass = "";
@@ -770,7 +770,7 @@ function renderCallupsTable(players, teamId) {
       <tbody>
         ${players.map(p => {
           const ms = getMinorLeagueContractStatus(p, CURRENT_SEASON);
-          const statDisplay = `${p.careerStat} ${p.statType}`;
+          const statDisplay = `${p.careerStat}`;
           let statClass = "";
           if ((p.statType === "AB" && p.careerStat >= 300) || (p.statType === "IP" && p.careerStat >= 75)) statClass = "stat-warning";
           else if ((p.statType === "AB" && p.careerStat >= 200) || (p.statType === "IP" && p.careerStat >= 50)) statClass = "stat-caution";
@@ -831,7 +831,7 @@ function renderMinorsTable(players, teamId) {
       <tbody>
         ${players.map(p => {
           const ms = getMinorLeagueContractStatus(p, CURRENT_SEASON);
-          const statDisplay = `${p.careerStat} ${p.statType}`;
+          const statDisplay = `${p.careerStat}`;
           let statClass = "";
           if ((p.statType === "AB" && p.careerStat >= 300) || (p.statType === "IP" && p.careerStat >= 75)) statClass = "stat-warning";
           else if ((p.statType === "AB" && p.careerStat >= 200) || (p.statType === "IP" && p.careerStat >= 50)) statClass = "stat-caution";
@@ -2712,9 +2712,7 @@ function renderEligibleTable(players, teamId, teamSelections) {
               : (p.contractType === 'callup'
                   ? `<button onclick="promptCallupPrice('${escapeJsString(p.name)}',${teamId ? `'${escapeJsString(teamId)}'` : 'null'})" style="background:none;border:1px dashed var(--border);color:var(--yellow);font-size:0.72rem;padding:2px 8px;border-radius:4px;cursor:pointer">Set price</button>`
                   : '<span style="color:var(--text-dim)">—</span>');
-          const injuryTag = p.injuryStatus && p.injuryStatus !== 'ACTIVE' && p.injuryStatus !== 'NORMAL'
-            ? ` <span style="font-size:0.62rem;color:var(--red);text-transform:uppercase">${escapeHtml(p.injuryStatus)}</span>`
-            : '';
+          const injuryTag = '';  // IL status removed — was eating row space
           const rowBg = p.workaround && p.workaround.needsConfirmation
             ? 'background:rgba(249,115,22,0.12)'
             : (isKeeper ? 'background:rgba(34,197,94,0.08)'
@@ -3231,7 +3229,10 @@ function showDraftBoard() {
   container.innerHTML = html;
 
   const input = document.getElementById("draft-player-name");
-  if (input) input.focus();
+  // Auto-focus only on devices with a fine pointer (mouse). On touch devices,
+  // focusing pops the keyboard + autocomplete dropdown immediately on view
+  // load, which is jarring.
+  if (input && window.matchMedia?.("(pointer: fine)").matches) input.focus();
   if (input) input.addEventListener("keydown", e => {
     if (e.key === "Enter") { e.preventDefault(); makeDraftPick(); }
   });
