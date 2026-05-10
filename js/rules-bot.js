@@ -120,16 +120,22 @@
     `;
     document.body.appendChild(root);
 
-    document.getElementById("rules-bot-fab").addEventListener("click", (e) => {
+    // Debounce toggle clicks. Symptom of "panel flashes open then closes"
+    // is two click/touch events firing within milliseconds (synthetic click
+    // after touchend, double-fire on some Chrome builds, etc.). 250ms is
+    // tight enough that intentional double-clicks still work, loose enough
+    // to swallow ghost-clicks.
+    let _lastToggle = 0;
+    const _toggleClickHandler = (next) => (e) => {
       e.preventDefault();
       e.stopPropagation();
-      _toggle(!_open);
-    });
-    document.getElementById("rules-bot-close").addEventListener("click", (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      _toggle(false);
-    });
+      const now = Date.now();
+      if (now - _lastToggle < 250) return;
+      _lastToggle = now;
+      _toggle(next === undefined ? !_open : next);
+    };
+    document.getElementById("rules-bot-fab").addEventListener("click", _toggleClickHandler(undefined));
+    document.getElementById("rules-bot-close").addEventListener("click", _toggleClickHandler(false));
 
     // iOS keyboard handling: when the input is focused, the soft keyboard
     // covers the bottom of the screen. Listen to visualViewport and push the
