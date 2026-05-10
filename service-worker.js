@@ -11,7 +11,7 @@
 // Bump CACHE_VERSION when changing the SW logic itself (not for app code —
 // that's handled by ?v=N at the script tags).
 
-const CACHE_VERSION = "the-league-v3";
+const CACHE_VERSION = "the-league-v4";
 const STATIC_ASSETS = [
   "./",
   "./index.html",
