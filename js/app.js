@@ -4108,14 +4108,28 @@ const HISTORICAL_ABBREV_OVERRIDES = {
   "#416": "dave",   // David Warshafsky, 2018 (The Yanger Bombs)
   "KFP":  "sam",    // Samuel Rotbart, 2017 (Team Kung Froe Panda)
   "ES":   "sam",    // Samuel Rotbart, 2018 (Team Eaton Sanoas)
-  "JRAM": "dave",   // David Warshafsky, 2019
+  "JRAM": "dave",   // David Warshafsky, 2019 (also stored in some seasons as "JRam")
   "HADR": "matt",   // Matt Rotbart, 2021–2023
   "SDJ":  "sam",    // Samuel Rotbart, 2021–2023
 };
 
+// Case-insensitive lookups. The history snapshot has mixed-case abbrevs
+// like "JRam" that wouldn't match an upper-case-only key map.
+const _historicalAbbrevByUpper = (() => {
+  const out = {};
+  for (const [k, v] of Object.entries(HISTORICAL_ABBREV_OVERRIDES)) out[k.toUpperCase()] = v;
+  return out;
+})();
+const _espnAbbrevByUpper = (() => {
+  const out = {};
+  for (const [k, v] of Object.entries(ESPN_ABBREV_TO_LOCAL)) out[k.toUpperCase()] = v;
+  return out;
+})();
+
 const _trophyAbbrevWarned = new Set();
 function trophyTeamLocalId(team) {
-  return HISTORICAL_ABBREV_OVERRIDES[team.abbrev] || ESPN_ABBREV_TO_LOCAL[team.abbrev] || null;
+  const u = (team.abbrev || "").toUpperCase();
+  return _historicalAbbrevByUpper[u] || _espnAbbrevByUpper[u] || null;
 }
 function trophyTeamLabel(team) {
   const localId = trophyTeamLocalId(team);
