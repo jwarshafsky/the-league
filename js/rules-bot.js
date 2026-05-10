@@ -120,8 +120,16 @@
     `;
     document.body.appendChild(root);
 
-    document.getElementById("rules-bot-fab").addEventListener("click", () => _toggle(!_open));
-    document.getElementById("rules-bot-close").addEventListener("click", () => _toggle(false));
+    document.getElementById("rules-bot-fab").addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      _toggle(!_open);
+    });
+    document.getElementById("rules-bot-close").addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      _toggle(false);
+    });
 
     // iOS keyboard handling: when the input is focused, the soft keyboard
     // covers the bottom of the screen. Listen to visualViewport and push the
@@ -178,10 +186,12 @@
     if (!panel || !fab) return;
     panel.style.display = _open ? "flex" : "none";
     fab.textContent = _open ? "×" : "💬";
-    if (_open) {
-      _renderLog();
-      setTimeout(() => document.getElementById("rules-bot-input")?.focus(), 50);
-    }
+    if (_open) _renderLog();
+    // Note: deliberately NOT auto-focusing the input on open — on iOS PWA
+    // that triggers the soft keyboard immediately, which combined with our
+    // visualViewport listener was causing the panel to resize/reposition
+    // before the user had a chance to read the greeting. The user taps the
+    // input themselves when they're ready to type.
   }
 
   function _renderLog() {
