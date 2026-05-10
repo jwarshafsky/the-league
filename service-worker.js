@@ -11,7 +11,7 @@
 // Bump CACHE_VERSION when changing the SW logic itself (not for app code —
 // that's handled by ?v=N at the script tags).
 
-const CACHE_VERSION = "the-league-v4";
+const CACHE_VERSION = "the-league-v5";
 const STATIC_ASSETS = [
   "./",
   "./index.html",
@@ -42,7 +42,14 @@ self.addEventListener("install", (event) => {
       )
     )
   );
-  self.skipWaiting();
+  // Note: we do NOT call skipWaiting() here. The page will postMessage
+  // {type:'SKIP_WAITING'} once it's safe (see message handler below) so the
+  // controllerchange / reload sequence is deterministic.
+});
+
+// Page asks us to take over: do it. Triggers controllerchange in clients.
+self.addEventListener("message", (event) => {
+  if (event.data && event.data.type === "SKIP_WAITING") self.skipWaiting();
 });
 
 self.addEventListener("activate", (event) => {
