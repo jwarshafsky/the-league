@@ -828,7 +828,7 @@ function renderMinorsTable(players, teamId) {
   const headerActionCol = showCallUp ? "<th></th>" : "";
   return `
     <table class="player-table">
-      <thead><tr><th>Player</th><th>Drafted</th><th>Career Stats</th><th>Yrs Left</th><th>Status</th>${headerActionCol}</tr></thead>
+      <thead><tr><th>Player</th><th>Drafted</th><th>Career Stats</th><th>Expiry</th><th>Status</th>${headerActionCol}</tr></thead>
       <tbody>
         ${players.map(p => {
           const ms = getMinorLeagueContractStatus(p, CURRENT_SEASON);
@@ -845,7 +845,7 @@ function renderMinorsTable(players, teamId) {
               <td><span class="player-name">${escapeHtml(p.name)}</span>${p.sendDownCount ? ` <span style="color:var(--red);font-size:0.65rem;font-weight:700">$${p.sendDownCount * 10} fee</span>` : ''}</td>
               <td class="player-year">${p.yearAcquired}</td>
               <td class="${statClass}">${statDisplay}</td>
-              <td><span style="color:var(--text-dim);font-size:0.8rem">${ms.yearsRemaining !== null ? ms.yearsRemaining : '—'}</span></td>
+              <td><span style="color:var(--text-dim);font-size:0.8rem">${ms.yearsRemaining !== null ? (CURRENT_SEASON + ms.yearsRemaining) : (ms.contractNote || '—')}</span></td>
               <td>${
                 p._teamStatus === "dropped" ? '<span style="color:var(--orange);font-size:0.8rem">Dropped</span>' :
                 p._teamStatus === "traded"  ? '<span style="color:var(--accent);font-size:0.8rem">Traded</span>' :
@@ -980,11 +980,15 @@ function saveTrades(trades) {
 
 function renderTradesView() {
   const trades = getTrades();
+  const commish = isCommissioner();
+  const newTradeBtn = commish
+    ? `<button class="trade-btn" onclick="showTradeForm()">New Trade</button>`
+    : `<div style="color:var(--text-dim);font-size:0.82rem;font-style:italic">Managers: use Trade Inbox to propose trades. Only commissioners record final trades directly here.</div>`;
   return `
     <div style="display:flex;flex-wrap:wrap;gap:16px;align-items:flex-start">
       <div style="flex:1 1 320px;min-width:280px">
-        <div style="display:flex;gap:10px;margin-bottom:16px">
-          <button class="trade-btn" onclick="showTradeForm()">New Trade</button>
+        <div style="display:flex;gap:10px;margin-bottom:16px;align-items:center">
+          ${newTradeBtn}
         </div>
         <div id="trade-form-container"></div>
         <div class="section-header">Trade Log <span class="section-count">${trades.length}</span></div>
@@ -1547,6 +1551,13 @@ function renderTradeAssets(assets) {
 }
 
 function showTradeForm(team1Id, team2Id) {
+  // _formMode null = the direct "New Trade" entry in the Trade Log, which
+  // records a final trade and is commissioner-only. Proposal and edit flows
+  // set _formMode before calling this and have their own permission gating.
+  if (_formMode === null && !isCommissioner()) {
+    alert("Only the commissioner records final trades. Use the Trade Inbox to propose a trade to another manager.");
+    return;
+  }
   // Fresh form = fresh asset state
   tradeAssets.t1 = [];
   tradeAssets.t2 = [];
@@ -3211,13 +3222,17 @@ function getCurrentPickInfo(draft) {
 }
 
 function renderDraftView() {
-  const resetBtn = isCommissioner()
+  const commish = isCommissioner();
+  const setupBtn = commish
+    ? `<button class="trade-btn trade-btn-cancel" id="dv-btn-setup" onclick="showDraftOrderSetup()">Order / Traded Picks</button>`
+    : "";
+  const resetBtn = commish
     ? `<button class="trade-btn trade-btn-cancel" onclick="resetDraftConfirm()" style="margin-left:auto">Reset</button>`
     : "";
   return `
     <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap">
       <button class="trade-btn" id="dv-btn-board" onclick="showDraftBoard()">Draft Board</button>
-      <button class="trade-btn trade-btn-cancel" id="dv-btn-setup" onclick="showDraftOrderSetup()">Order / Traded Picks</button>
+      ${setupBtn}
       ${resetBtn}
     </div>
     <div id="prospect-status" style="font-size:0.75rem;color:var(--text-dim);margin-bottom:14px"></div>
@@ -3884,6 +3899,11 @@ function undoLastPick() {
 }
 
 function showDraftOrderSetup() {
+  if (!isCommissioner()) {
+    alert("Only the commissioner can change the order or record traded picks.");
+    showDraftBoard();
+    return;
+  }
   setDraftButtonActive("setup");
   const draft = getDraft();
   const container = document.getElementById("draft-content");
@@ -4068,9 +4088,9 @@ function switchTab(tab) {
   // Draft grid needs more horizontal room than other views.
   content.classList.toggle("wide", tab === "draft");
 
-  // Stop the draft clock ticker when leaving the draft tab — showDraftBoard
-  // restarts it on entry.
-  if (tab !== "draft" && typeof _stopDraftClockTicker === "function") _stopDraftClockTicker();
+  // The same interval handle is shared between the Minors Draft and Rule 5
+  // clocks (only one is active at a time). Stop it when leaving either tab.
+  if (tab !== "draft" && tab !== "rule5" && typeof _stopDraftClockTicker === "function") _stopDraftClockTicker();
 
   backBtn.classList.remove("visible");
 
@@ -4119,6 +4139,7 @@ function switchTab(tab) {
     case "rule5":
       currentView = "rule5";
       content.innerHTML = renderRule5View();
+      _startRule5ClockTicker();
       break;
     case "trophy-room":
       currentView = "trophy-room";
@@ -4323,6 +4344,14 @@ function describeActivity(a) {
       const fromHtml = fromTeam ? ` from <strong>${escapeHtml(fromTeam)}</strong>` : "";
       return `${target} Rule 5–picked ${player}${fromHtml} <span style="color:var(--text-dim)">(R${escapeHtml(p.round)}.${escapeHtml(p.idx)})</span>`;
     }
+    case "rule5_pick_auto_skipped":
+      return `${target}'s Rule 5 pick was auto-skipped (clock expired) at <span style="color:var(--text-dim)">R${escapeHtml(p.round)}.${escapeHtml(p.idx)}</span>`;
+    case "rule5_clock_started":
+      return `${actor} started the Rule 5 clock`;
+    case "rule5_clock_paused":
+      return `${actor} paused the Rule 5 clock`;
+    case "rule5_clock_resumed":
+      return `${actor} resumed the Rule 5 clock`;
     case "commish_override":
       return `${actor} overrode ${player}'s contract <span style="color:var(--text-dim)">(${(p.fields || []).map(f => escapeHtml(f)).join(", ")})</span>`;
     case "constitution_edited":
@@ -5133,27 +5162,32 @@ function renderRule5View() {
   } else {
     const team = LEAGUE_DATA.teams.find(t => t.id === cur.teamId);
     const sortedRemaining = [...remaining].sort((a, b) => lastName(a.name).localeCompare(lastName(b.name)));
-    onClockHtml = `
-      <div class="keeper-projection" style="background:rgba(59,130,246,0.1);border-color:var(--accent);margin-bottom:14px">
-        <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px;margin-bottom:8px">
-          <h3 style="margin:0">On the Clock: <span style="color:var(--accent)">${team ? team.name : cur.teamId}</span></h3>
-          <span style="color:var(--text-dim);font-size:0.82rem">Round ${cur.round} · Pick ${cur.idx + 1}</span>
-        </div>
-        ${commish ? `
+    const myTeam = (typeof currentOwner !== "undefined" && currentOwner) ? currentOwner.team_id : null;
+    const onTheClock = cur.teamId === myTeam;
+    const canPick = commish || onTheClock;
+    const pickerBlock = canPick ? `
           <select id="rule5-pick-select" class="trade-select" style="margin-top:8px">
             <option value="">Select player to pick...</option>
             ${sortedRemaining.map(p => {
-              const yrs = p.yearsRemaining != null ? `, ${p.yearsRemaining}yr` : '';
+              const yrs = p.yearsRemaining != null ? `, exp ${CURRENT_SEASON + p.yearsRemaining}` : '';
               const price = p.nextYearPrice != null ? `, $${p.nextYearPrice}` : '';
               return `<option value="${escapeHtml(p.name)}">${escapeHtml(p.name)} (${escapeHtml(p.originTeamName)}${yrs}${price})</option>`;
             }).join("")}
           </select>
           <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
             <button class="trade-btn trade-btn-submit" onclick="(() => { const v = document.getElementById('rule5-pick-select').value; if (!v) { alert('Choose a player'); return; } makeRule5Pick(v); })()">Pick</button>
-            <button class="trade-btn trade-btn-cancel" onclick="passRule5Pick()">Pass</button>
-            ${state.picks.length ? `<button class="trade-btn trade-btn-cancel" style="margin-left:auto" onclick="undoRule5Pick()">Undo Last</button>` : ''}
+            ${commish ? `<button class="trade-btn trade-btn-cancel" onclick="passRule5Pick()">Pass</button>` : ""}
+            ${commish && state.picks.length ? `<button class="trade-btn trade-btn-cancel" style="margin-left:auto" onclick="undoRule5Pick()">Undo Last</button>` : ""}
           </div>
-        ` : `<div style="color:var(--text-dim);font-size:0.85rem;font-style:italic;margin-top:8px">Only the commissioner can record picks.</div>`}
+        ` : `<div style="color:var(--text-dim);font-size:0.85rem;font-style:italic;margin-top:8px">Waiting on ${team ? escapeHtml(team.name) : escapeHtml(cur.teamId)} to make their pick.</div>`;
+    onClockHtml = `
+      <div class="keeper-projection" style="background:rgba(59,130,246,0.1);border-color:var(--accent);margin-bottom:14px">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px;margin-bottom:8px">
+          <h3 style="margin:0">On the Clock: <span style="color:var(--accent)">${team ? team.name : cur.teamId}</span></h3>
+          <span style="color:var(--text-dim);font-size:0.82rem">Round ${cur.round} · Pick ${cur.idx + 1}</span>
+        </div>
+        ${renderRule5ClockBlock(state, commish)}
+        ${pickerBlock}
       </div>
     `;
   }
@@ -5204,14 +5238,14 @@ function renderRule5View() {
     <div class="section-header">Available Players <span class="section-count">${remaining.length}</span></div>
     <table class="player-table">
       <thead>
-        <tr><th>Player</th><th>Origin</th><th>Yrs Left</th><th>2027 $</th></tr>
+        <tr><th>Player</th><th>Origin</th><th>Expiry</th><th>2027 $</th></tr>
       </thead>
       <tbody>
         ${[...remaining].sort((a, b) => lastName(a.name).localeCompare(lastName(b.name))).map(p => `
           <tr>
             <td><span class="player-name">${escapeHtml(p.name)}</span></td>
             <td><span class="team-link" style="color:var(--accent)">${p.originTeamName}</span></td>
-            <td>${p.yearsRemaining != null ? `<span class="contract-tag contract-${p.yearsRemaining === 0 ? 'final' : p.yearsRemaining === 1 ? 'expiring' : 'mid'}">${p.yearsRemaining} yr${p.yearsRemaining === 1 ? '' : 's'}</span>` : '<span style="color:var(--text-dim)">—</span>'}</td>
+            <td>${p.yearsRemaining != null ? `<span class="contract-tag contract-${p.yearsRemaining === 0 ? 'final' : p.yearsRemaining === 1 ? 'expiring' : 'mid'}">${CURRENT_SEASON + p.yearsRemaining}</span>` : '<span style="color:var(--text-dim)">—</span>'}</td>
             <td>${
               p.type === "minor"
                 ? '<span class="from-minors-tag" style="background:rgba(34,197,94,0.2);color:var(--green)">MiLB</span>'
@@ -5288,6 +5322,11 @@ function makeRule5Pick(playerName) {
   const state = getRule5State();
   const cur = getRule5CurrentPick(state);
   if (!cur) return;
+  const myTeam = (typeof currentOwner !== "undefined" && currentOwner) ? currentOwner.team_id : null;
+  if (cur.teamId !== myTeam && !isCommissioner()) {
+    alert("Only the team on the clock (or a commissioner) can submit this pick.");
+    return;
+  }
   const poolEntry = state.pool.find(p => p.name === playerName);
   if (!poolEntry) { alert("Player not in pool"); return; }
   const pickedAlready = state.picks.some(p => p.playerName === playerName);
@@ -5307,6 +5346,7 @@ function makeRule5Pick(playerName) {
     timestamp: Date.now(),
     tradeId: null,
   });
+  _resetRule5Clock(state);
   saveRule5State(state);
 
   const trade = {
@@ -5349,7 +5389,12 @@ function makeRule5Pick(playerName) {
   switchTab("rule5");
 }
 
-function passRule5Pick() {
+function passRule5Pick(opts) {
+  const auto = !!(opts && opts.auto);
+  if (!auto && !isCommissioner()) {
+    alert("Only the commissioner can pass a Rule 5 pick.");
+    return;
+  }
   const state = getRule5State();
   const cur = getRule5CurrentPick(state);
   if (!cur) return;
@@ -5359,9 +5404,125 @@ function passRule5Pick() {
     teamId: cur.teamId,
     pass: true,
     timestamp: Date.now(),
+    auto: auto || undefined,
   });
+  _resetRule5Clock(state);
   saveRule5State(state);
+  if (auto && typeof logActivityAsync === "function") {
+    logActivityAsync("rule5_pick_auto_skipped", {
+      round: cur.round, idx: cur.idx + 1,
+    }, { targetTeamId: cur.teamId });
+  }
   switchTab("rule5");
+}
+
+// --- Rule 5 clock (mirrors the Minors Draft clock) ---
+let _rule5AutoPassAttemptedAt = null;
+
+function _resetRule5Clock(state) {
+  if (!state.clock) state.clock = {};
+  state.clock.startedAt = new Date().toISOString();
+  state.clock.paused = false;
+  state.clock.pausedAt = null;
+}
+
+function startRule5Clock() {
+  if (!isCommissioner()) { alert("Commissioners only."); return; }
+  const state = getRule5State();
+  if (!state) return;
+  _resetRule5Clock(state);
+  saveRule5State(state);
+  if (typeof logActivityAsync === "function") logActivityAsync("rule5_clock_started", {});
+  switchTab("rule5");
+}
+
+function pauseRule5Clock() {
+  if (!isCommissioner()) { alert("Commissioners only."); return; }
+  const state = getRule5State();
+  if (!state || !state.clock || !state.clock.startedAt || state.clock.paused) return;
+  state.clock.paused = true;
+  state.clock.pausedAt = new Date().toISOString();
+  saveRule5State(state);
+  if (typeof logActivityAsync === "function") logActivityAsync("rule5_clock_paused", {});
+  switchTab("rule5");
+}
+
+function resumeRule5Clock() {
+  if (!isCommissioner()) { alert("Commissioners only."); return; }
+  const state = getRule5State();
+  if (!state || !state.clock || !state.clock.paused || !state.clock.pausedAt) return;
+  const pausedAtMs = new Date(state.clock.pausedAt).getTime();
+  const nowMs = Date.now();
+  const pauseActiveMs = activeDraftElapsedMs(pausedAtMs, nowMs);
+  const startedAtMs = new Date(state.clock.startedAt).getTime();
+  state.clock.startedAt = new Date(startedAtMs + pauseActiveMs).toISOString();
+  state.clock.paused = false;
+  state.clock.pausedAt = null;
+  saveRule5State(state);
+  if (typeof logActivityAsync === "function") logActivityAsync("rule5_clock_resumed", {});
+  switchTab("rule5");
+}
+
+function renderRule5ClockBlock(state, isCommish) {
+  const cs = computeDraftClockState({ clock: state.clock }, Date.now());
+  let controls = "";
+  if (isCommish) {
+    if (!cs.started) controls = `<button class="trade-btn" onclick="startRule5Clock()" style="font-size:0.78rem;padding:5px 10px">Start Clock</button>`;
+    else if (cs.paused) controls = `<button class="trade-btn" onclick="resumeRule5Clock()" style="font-size:0.78rem;padding:5px 10px">Resume</button>`;
+    else controls = `<button class="trade-btn trade-btn-cancel" onclick="pauseRule5Clock()" style="font-size:0.78rem;padding:5px 10px">Pause</button>`;
+  }
+  if (!cs.started) {
+    return `
+      <div style="margin-top:10px;padding:10px 12px;background:var(--bg);border:1px solid var(--border);border-radius:6px;display:flex;flex-wrap:wrap;align-items:center;gap:10px">
+        <span id="rule5-clock-time" style="color:var(--text-dim);font-size:0.88rem">Clock not started</span>
+        <span style="color:var(--text-dim);font-size:0.72rem;flex:1;min-width:140px">4 hour pick clock, pauses overnight (midnight–8 AM ET)</span>
+        ${controls}
+      </div>`;
+  }
+  return `
+    <div style="margin-top:10px;padding:10px 12px;background:var(--bg);border:1px solid var(--border);border-radius:6px;display:flex;flex-wrap:wrap;align-items:center;gap:10px">
+      <span id="rule5-clock-time" style="font-size:1rem;font-weight:700;min-width:160px">${formatDraftClockText(cs)}</span>
+      <span id="rule5-clock-status" style="color:var(--text-dim);font-size:0.72rem;flex:1;min-width:120px">${draftClockStatusText(cs)}</span>
+      ${controls}
+    </div>`;
+}
+
+function _startRule5ClockTicker() {
+  if (_draftClockInterval) { clearInterval(_draftClockInterval); _draftClockInterval = null; }
+  if (typeof currentView !== "undefined" && currentView !== "rule5") return;
+  _draftClockInterval = setInterval(_tickRule5Clock, 1000);
+}
+
+function _tickRule5Clock() {
+  const timeEl = document.getElementById("rule5-clock-time");
+  const statusEl = document.getElementById("rule5-clock-status");
+  if (!timeEl) { _stopDraftClockTicker(); return; }
+  const state = getRule5State();
+  if (!state) { _stopDraftClockTicker(); return; }
+  const cur = getRule5CurrentPick(state);
+  if (!cur) { _stopDraftClockTicker(); return; }
+  const cs = computeDraftClockState({ clock: state.clock }, Date.now());
+  timeEl.textContent = formatDraftClockText(cs);
+  if (statusEl) statusEl.textContent = draftClockStatusText(cs);
+  if (cs.expired) timeEl.style.color = "var(--red)";
+  else if (cs.remainingMs < 30 * 60 * 1000) timeEl.style.color = "var(--orange)";
+  else timeEl.style.color = "var(--text-bright)";
+
+  if (cs.expired) _maybeAutoPassExpiredRule5Pick();
+}
+
+function _maybeAutoPassExpiredRule5Pick() {
+  if (!isCommissioner()) return;
+  const now = Date.now();
+  if (_rule5AutoPassAttemptedAt && (now - _rule5AutoPassAttemptedAt) < 5000) return;
+  const state = getRule5State();
+  if (!state) return;
+  const cur = getRule5CurrentPick(state);
+  if (!cur) return;
+  const cs = computeDraftClockState({ clock: state.clock }, now);
+  if (!cs.started || !cs.expired || cs.paused) return;
+  _rule5AutoPassAttemptedAt = now;
+  passRule5Pick({ auto: true });
 }
 
 function undoRule5Pick() {
