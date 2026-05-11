@@ -1087,28 +1087,59 @@ function saveTrades(trades) {
   localStorage.setItem("flm_trades", JSON.stringify(trades));
 }
 
-function renderTradesView() {
+function renderTradeLogView() {
   const trades = getTrades();
   const commish = isCommissioner();
   const newTradeBtn = commish
     ? `<button class="trade-btn" onclick="showTradeForm()">New Trade</button>`
     : `<div style="color:var(--text-dim);font-size:0.82rem;font-style:italic">Managers: use Trade Inbox to propose trades. Only commissioners record final trades directly here.</div>`;
   return `
-    <div style="display:flex;flex-wrap:wrap;gap:16px;align-items:flex-start">
-      <div style="flex:1 1 320px;min-width:280px">
-        <div style="display:flex;gap:10px;margin-bottom:16px;align-items:center">
-          ${newTradeBtn}
-        </div>
-        <div id="trade-form-container"></div>
-        <div class="section-header">Trade Log <span class="section-count">${trades.length}</span></div>
-        <div id="trade-log">
-          ${trades.length ? trades.slice().reverse().map((t, i) => renderTradeCard(t, trades.length - 1 - i)).join("") : '<p style="color:var(--text-dim)">No trades recorded yet.</p>'}
-        </div>
-      </div>
-      <div style="flex:0 1 220px;min-width:200px">
-        ${renderDraftDollarsPanel()}
-      </div>
+    <div style="display:flex;gap:10px;margin-bottom:16px;align-items:center">
+      ${newTradeBtn}
     </div>
+    <div id="trade-form-container"></div>
+    <div class="section-header">Trade Log <span class="section-count">${trades.length}</span></div>
+    <div id="trade-log">
+      ${trades.length ? trades.slice().reverse().map((t, i) => renderTradeCard(t, trades.length - 1 - i)).join("") : '<p style="color:var(--text-dim)">No trades recorded yet.</p>'}
+    </div>
+  `;
+}
+
+// Combined Trades tab with sub-tabs: Block / Inbox / Log. Sub-tab choice is
+// kept in module-level state so navigating away and back lands on the same
+// view.
+let _tradesSubTab = "inbox";
+function setTradesSubTab(name) {
+  _tradesSubTab = name;
+  renderTradesShell();
+}
+// Convenience for places that used to switchTab("trade-inbox") etc.
+function goToTrades(sub) {
+  _tradesSubTab = sub || _tradesSubTab;
+  if (typeof switchTab === "function") switchTab("trades");
+}
+function renderTradesShell() {
+  const content = document.getElementById("trades-tab-content");
+  if (!content) return;
+  document.querySelectorAll(".trades-subnav-btn").forEach(b => {
+    b.classList.toggle("active", b.dataset.sub === _tradesSubTab);
+  });
+  if (_tradesSubTab === "block") content.innerHTML = renderTradeBlockView();
+  else if (_tradesSubTab === "log") content.innerHTML = renderTradeLogView();
+  else content.innerHTML = renderTradeInboxView();
+}
+function renderTradesContainer() {
+  const u = (typeof dbGetUnreadCounts === "function") ? dbGetUnreadCounts() : { total: 0 };
+  const unreadBadge = u.total > 0
+    ? ` <span style="color:var(--red);font-weight:800;margin-left:2px">(${u.total})</span>`
+    : "";
+  return `
+    <div class="trades-subnav" style="display:flex;gap:6px;margin-bottom:14px;border-bottom:1px solid var(--border);padding-bottom:0">
+      <button class="trades-subnav-btn" data-sub="block" onclick="setTradesSubTab('block')" style="background:none;border:none;border-bottom:3px solid transparent;color:var(--text-dim);padding:8px 14px;cursor:pointer;font-size:0.88rem;font-weight:600">Trade Block</button>
+      <button class="trades-subnav-btn" data-sub="inbox" onclick="setTradesSubTab('inbox')" style="background:none;border:none;border-bottom:3px solid transparent;color:var(--text-dim);padding:8px 14px;cursor:pointer;font-size:0.88rem;font-weight:600">Trade Inbox${unreadBadge}</button>
+      <button class="trades-subnav-btn" data-sub="log" onclick="setTradesSubTab('log')" style="background:none;border:none;border-bottom:3px solid transparent;color:var(--text-dim);padding:8px 14px;cursor:pointer;font-size:0.88rem;font-weight:600">Trade Log</button>
+    </div>
+    <div id="trades-tab-content"></div>
   `;
 }
 
@@ -1289,9 +1320,9 @@ function renderThreadCard(thread) {
 function openThreadDetail(threadId) {
   if (typeof dbMarkThreadRead === "function") dbMarkThreadRead(threadId);
   if (typeof renderHeaderUser === "function") renderHeaderUser();
-  if (typeof currentView !== "undefined" && currentView === "trade-inbox") {
+  if (typeof currentView !== "undefined" && currentView === "trades" && _tradesSubTab === "inbox") {
     // Re-render in background so the unread badge clears immediately.
-    document.getElementById("main-content").innerHTML = renderTradeInboxView();
+    renderTradesShell();
   }
   const thread = (typeof dbGetThreads === "function" ? dbGetThreads() : []).find(t => t.threadId === threadId);
   if (!thread) return;
@@ -1451,7 +1482,7 @@ async function acceptThreadProposal(proposalId) {
       }, { targetTeamId: proposal.from_team_id });
     }
     closeThreadDetail();
-    if (typeof switchTab === "function") switchTab("trade-inbox");
+    if (typeof goToTrades === "function") goToTrades("inbox");
   } catch (e) {
     alert("Couldn't accept: " + (e.message || e));
   }
@@ -1462,7 +1493,7 @@ async function rejectThreadProposal(proposalId) {
   try {
     await setProposalStatusAsync(proposalId, "rejected");
     closeThreadDetail();
-    if (typeof switchTab === "function") switchTab("trade-inbox");
+    if (typeof goToTrades === "function") goToTrades("inbox");
   } catch (e) { alert("Couldn't reject: " + (e.message || e)); }
 }
 
@@ -1471,7 +1502,7 @@ async function withdrawThreadProposal(proposalId) {
   try {
     await setProposalStatusAsync(proposalId, "withdrawn");
     closeThreadDetail();
-    if (typeof switchTab === "function") switchTab("trade-inbox");
+    if (typeof goToTrades === "function") goToTrades("inbox");
   } catch (e) { alert("Couldn't withdraw: " + (e.message || e)); }
 }
 
@@ -1559,7 +1590,7 @@ async function submitProposal() {
     }
     tradeAssets.t1 = []; tradeAssets.t2 = [];
     closeProposalComposer();
-    if (typeof switchTab === "function") switchTab("trade-inbox");
+    if (typeof goToTrades === "function") goToTrades("inbox");
   } catch (e) {
     alert("Couldn't send proposal: " + (e.message || e));
   }
@@ -1595,6 +1626,141 @@ function getDraftDollarBalances() {
     }
   }
   return balances;
+}
+
+// --- Financials tab ---
+//
+// Sections: Draft Dollars (moved from old Trade Log right rail), Luxury Tax
+// (placeholder), League & Call Up Fees (new). Fees are computed from
+// roster_moves: $10 per demote ("send down") + a flat $300 league fee.
+// Paid status lives in league_state.fees_paid; commissioner-only writes.
+
+const LEAGUE_FEE = 300;
+const SEND_DOWN_FEE = 10;
+
+function getSendDownsByTeam() {
+  const moves = (typeof dbGetRosterMoves === "function") ? dbGetRosterMoves() : [];
+  const byTeam = {};
+  for (const m of moves) {
+    if (m && m.kind === "demote" && m.team_id) {
+      if (!byTeam[m.team_id]) byTeam[m.team_id] = [];
+      byTeam[m.team_id].push(m);
+    }
+  }
+  return byTeam;
+}
+
+function renderFinancialsView() {
+  const commish = isCommissioner();
+  const paidMap = (typeof dbGetFeesPaid === "function") ? dbGetFeesPaid() : {};
+  const sendDownsByTeam = getSendDownsByTeam();
+
+  const feeRows = LEAGUE_DATA.teams.map(team => {
+    const sd = sendDownsByTeam[team.id] || [];
+    const callupFees = sd.length * SEND_DOWN_FEE;
+    const totalDue = LEAGUE_FEE + callupFees;
+    const paid = paidMap[team.id] || {};
+    const allPaid = !!paid.league && (callupFees === 0 || !!paid.callup);
+    const sdSummary = sd.length
+      ? sd.map(m => `<div style="font-size:0.72rem;color:var(--text-dim)">${escapeHtml(m.player_name)} — ${m.at ? new Date(m.at).toLocaleDateString() : ""}</div>`).join("")
+      : '<div style="font-size:0.72rem;color:var(--text-dim);font-style:italic">No send-downs</div>';
+    const leaguePaidCtl = commish
+      ? `<input type="checkbox" ${paid.league ? "checked" : ""} onchange="toggleFeePaid('${escapeJsString(team.id)}','league',this.checked)" style="width:16px;height:16px;cursor:pointer;accent-color:var(--green)">`
+      : (paid.league
+          ? '<span style="color:var(--green);font-size:0.78rem;font-weight:700">PAID</span>'
+          : '<span style="color:var(--red);font-size:0.78rem;font-weight:700">unpaid</span>');
+    const callupPaidCtl = callupFees === 0
+      ? '<span style="color:var(--text-dim);font-size:0.74rem">—</span>'
+      : commish
+        ? `<input type="checkbox" ${paid.callup ? "checked" : ""} onchange="toggleFeePaid('${escapeJsString(team.id)}','callup',this.checked)" style="width:16px;height:16px;cursor:pointer;accent-color:var(--green)">`
+        : (paid.callup
+            ? '<span style="color:var(--green);font-size:0.78rem;font-weight:700">PAID</span>'
+            : '<span style="color:var(--red);font-size:0.78rem;font-weight:700">unpaid</span>');
+    return `
+      <tr style="${allPaid ? 'opacity:0.5' : ''}">
+        <td style="font-weight:700;color:var(--text-bright);vertical-align:top">${escapeHtml(team.name)}</td>
+        <td style="text-align:right;vertical-align:top">$${LEAGUE_FEE}</td>
+        <td style="text-align:center;vertical-align:top">${leaguePaidCtl}</td>
+        <td style="vertical-align:top">
+          <div style="display:flex;justify-content:space-between;gap:8px;align-items:baseline">
+            <span style="color:var(--text);font-size:0.84rem">${sd.length} send-down${sd.length === 1 ? "" : "s"}</span>
+            <span style="color:var(--text-bright);font-weight:600">$${callupFees}</span>
+          </div>
+          ${sdSummary}
+        </td>
+        <td style="text-align:center;vertical-align:top">${callupPaidCtl}</td>
+        <td style="text-align:right;font-weight:700;color:var(--text-bright);vertical-align:top">$${totalDue}</td>
+      </tr>
+    `;
+  }).join("");
+
+  const totalLeague = LEAGUE_DATA.teams.length * LEAGUE_FEE;
+  const totalCallup = LEAGUE_DATA.teams.reduce((s, t) => s + ((sendDownsByTeam[t.id] || []).length * SEND_DOWN_FEE), 0);
+
+  return `
+    <h2 style="color:var(--text-bright);margin-bottom:6px">Financials</h2>
+    <div style="color:var(--text-dim);font-size:0.82rem;margin-bottom:18px">League finances at a glance.</div>
+
+    <div class="keeper-projection" style="margin-bottom:14px">
+      <h3 style="margin-top:0">Draft Dollars</h3>
+      ${renderDraftDollarsPanel()}
+    </div>
+
+    <div class="keeper-projection" style="margin-bottom:14px">
+      <h3 style="margin-top:0">Luxury Tax</h3>
+      <div style="color:var(--text-dim);font-size:0.84rem;font-style:italic">Coming soon.</div>
+    </div>
+
+    <div class="keeper-projection" style="margin-bottom:14px">
+      <h3 style="margin-top:0">League &amp; Call Up Fees</h3>
+      <div style="color:var(--text-dim);font-size:0.82rem;margin-bottom:10px">
+        League fee is $${LEAGUE_FEE} per team. Each send-down costs $${SEND_DOWN_FEE}.
+        ${commish ? "Check the box to mark a team as paid." : "Only the commissioner can mark fees paid."}
+      </div>
+      <table class="player-table" style="font-size:0.85rem">
+        <thead>
+          <tr>
+            <th>Team</th>
+            <th style="text-align:right">League Fee</th>
+            <th style="text-align:center;width:70px">Paid?</th>
+            <th>Send-downs / Call-up Fees</th>
+            <th style="text-align:center;width:70px">Paid?</th>
+            <th style="text-align:right">Total Due</th>
+          </tr>
+        </thead>
+        <tbody>${feeRows}</tbody>
+        <tfoot>
+          <tr>
+            <td style="font-weight:700;color:var(--text-bright);border-top:2px solid var(--border)">Totals</td>
+            <td style="text-align:right;font-weight:700;border-top:2px solid var(--border)">$${totalLeague}</td>
+            <td style="border-top:2px solid var(--border)"></td>
+            <td style="text-align:right;font-weight:700;border-top:2px solid var(--border)">$${totalCallup}</td>
+            <td style="border-top:2px solid var(--border)"></td>
+            <td style="text-align:right;font-weight:700;color:var(--text-bright);border-top:2px solid var(--border)">$${totalLeague + totalCallup}</td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  `;
+}
+
+async function toggleFeePaid(teamId, kind, checked) {
+  if (!isCommissioner()) { alert("Commissioners only."); return; }
+  const cur = (typeof dbGetFeesPaid === "function") ? dbGetFeesPaid() : {};
+  const teamPaid = { ...(cur[teamId] || {}) };
+  teamPaid[kind] = !!checked;
+  const next = { ...cur, [teamId]: teamPaid };
+  try {
+    await saveFeesPaidAsync(next);
+    if (typeof logActivityAsync === "function") {
+      logActivityAsync(checked ? "fee_marked_paid" : "fee_marked_unpaid", {
+        team_id: teamId, kind,
+      }, { targetTeamId: teamId });
+    }
+    if (currentView === "financials") switchTab("financials");
+  } catch (e) {
+    alert("Couldn't save: " + (e.message || e));
+  }
 }
 
 function renderDraftDollarsPanel() {
@@ -1954,7 +2120,7 @@ function submitTrade() {
             notes: trade.notes,
           }, { targetTeamId: trade.team2 });
         }
-        switchTab("trades");
+        goToTrades("log");
       })
       .catch(err => alert("Trade save failed: " + err.message));
   } else {
@@ -1963,7 +2129,7 @@ function submitTrade() {
     saveTrades(trades);
     tradeAssets.t1 = [];
     tradeAssets.t2 = [];
-    switchTab("trades");
+    goToTrades("log");
   }
 }
 
@@ -2026,7 +2192,7 @@ async function submitTradeEdit() {
     }
     tradeAssets.t1 = []; tradeAssets.t2 = [];
     _formMode = null;
-    switchTab("trades");
+    goToTrades("log");
   } catch (e) {
     alert("Couldn't save edits: " + (e.message || e));
   }
@@ -2045,13 +2211,13 @@ function deleteTrade(index) {
             team1: target.team1, team2: target.team2,
           }, { targetTeamId: target.team2 });
         }
-        switchTab("trades");
+        goToTrades("log");
       })
       .catch(err => alert("Delete failed: " + err.message));
   } else {
     trades.splice(index, 1);
     saveTrades(trades);
-    switchTab("trades");
+    goToTrades("log");
   }
 }
 
@@ -4245,15 +4411,12 @@ function switchTab(tab) {
       break;
     case "trades":
       currentView = "trades";
-      content.innerHTML = renderTradesView();
+      content.innerHTML = renderTradesContainer();
+      renderTradesShell();
       break;
-    case "trade-block":
-      currentView = "trade-block";
-      content.innerHTML = renderTradeBlockView();
-      break;
-    case "trade-inbox":
-      currentView = "trade-inbox";
-      content.innerHTML = renderTradeInboxView();
+    case "financials":
+      currentView = "financials";
+      content.innerHTML = renderFinancialsView();
       break;
     case "draft":
       currentView = "draft";
@@ -4753,6 +4916,10 @@ function describeActivity(a) {
       return `${actor} took a league snapshot${p.label ? `: <strong>${escapeHtml(p.label)}</strong>` : ""}`;
     case "snapshot_restored":
       return `${actor} restored the league to snapshot <strong>${escapeHtml(p.label || "")}</strong>`;
+    case "fee_marked_paid":
+      return `${actor} marked ${target}'s ${escapeHtml(p.kind === "callup" ? "call-up" : "league")} fee as paid`;
+    case "fee_marked_unpaid":
+      return `${actor} marked ${target}'s ${escapeHtml(p.kind === "callup" ? "call-up" : "league")} fee as unpaid`;
     case "commish_override":
       return `${actor} overrode ${player}'s contract <span style="color:var(--text-dim)">(${(p.fields || []).map(f => escapeHtml(f)).join(", ")})</span>`;
     case "constitution_edited":
@@ -6279,10 +6446,10 @@ function renderHeaderUser() {
   const badgeHtml = u.total > 0
     ? ` <span title="${escapeHtml(`${u.proposals} new proposal${u.proposals === 1 ? "" : "s"}, ${u.messages} new message${u.messages === 1 ? "" : "s"}`)}" style="color:var(--red);font-weight:800;margin-left:2px">(${u.total})</span>`
     : "";
-  const inboxNav = document.getElementById("nav-trade-inbox");
-  if (inboxNav) inboxNav.innerHTML = "Trade Inbox" + badgeHtml;
-  const drawerInbox = document.getElementById("drawer-trade-inbox");
-  if (drawerInbox) drawerInbox.innerHTML = "Trade Inbox" + badgeHtml;
+  const tradesNav = document.getElementById("nav-trades");
+  if (tradesNav) tradesNav.innerHTML = "Trades" + badgeHtml;
+  const drawerTrades = document.getElementById("drawer-trades");
+  if (drawerTrades) drawerTrades.innerHTML = "Trades" + badgeHtml;
 }
 
 // Re-render the header bar whenever someone joins or leaves.

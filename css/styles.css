@@ -653,6 +653,13 @@ body {
   }
 }
 
+/* Sub-tab buttons (e.g. inside Trades) */
+.trades-subnav-btn.active {
+  color: var(--accent) !important;
+  border-bottom-color: var(--accent) !important;
+}
+.trades-subnav-btn:hover { color: var(--text); }
+
 /* View transitions */
 .view { display: none; }
 .view.active { display: block; }

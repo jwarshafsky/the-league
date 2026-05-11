@@ -21,6 +21,7 @@ const _cache = {
   rosterMoves: [],     // [{ kind: "callup" | "demote", player_name, team_id, year?, at }]
   constitution: null,  // string (markdown) | null — commish-editable league rules
   settings: {},        // { currentSeason?, enforceRule5RosterSpot?, enforceMinorsRosterSpot? }
+  feesPaid: {},        // { teamId: { league: bool, callup: bool } }
 };
 // Cross-conversation read state for the trade inbox: { threadId: lastReadAt }.
 // Anything in the thread newer than lastReadAt counts as unread (covers BOTH
@@ -120,6 +121,7 @@ async function _fetchAll() {
   _cache.keeperDeadline = null;
   _cache.constitution = null;
   _cache.settings = {};
+  _cache.feesPaid = {};
   // NOTE: do NOT reset _cache.rosterMoves here — it's already populated above
   // from the dedicated roster_moves table. A leftover reset from when this
   // data lived in league_state was the cause of a bug where send-downs
@@ -132,6 +134,7 @@ async function _fetchAll() {
     else if (r.key === "keeper_deadline") _cache.keeperDeadline = r.state;
     else if (r.key === "constitution") _cache.constitution = (r.state && r.state.markdown) || null;
     else if (r.key === "settings") _cache.settings = r.state || {};
+    else if (r.key === "fees_paid") _cache.feesPaid = r.state || {};
   }
 
   _cache.callup = {};
@@ -297,8 +300,8 @@ function _subscribeToChanges() {
         const userIsTyping = ae && (ae.tagName === "INPUT" || ae.tagName === "TEXTAREA" || ae.tagName === "SELECT" || ae.isContentEditable);
         if (typeof renderHeaderUser === "function") renderHeaderUser();
         if (userIsTyping) return;
-        if (typeof switchTab === "function" && typeof currentView !== "undefined") {
-          if (currentView === "trade-inbox" || currentView === "trade-block") switchTab(currentView);
+        if (typeof currentView !== "undefined" && currentView === "trades" && typeof renderTradesShell === "function") {
+          renderTradesShell();
         }
       })
       .on("postgres_changes", { event: "*", schema: "public", table: "roster_moves" }, async () => {
@@ -315,8 +318,8 @@ function _subscribeToChanges() {
         const ae = document.activeElement;
         const userIsTyping = ae && (ae.tagName === "INPUT" || ae.tagName === "TEXTAREA" || ae.tagName === "SELECT" || ae.isContentEditable);
         if (userIsTyping) return;
-        if (typeof currentView !== "undefined" && currentView === "trade-inbox" && typeof switchTab === "function") {
-          switchTab("trade-inbox");
+        if (typeof currentView !== "undefined" && currentView === "trades" && typeof renderTradesShell === "function") {
+          renderTradesShell();
         }
       })
       // Watch the current user's owners row so promotion/demotion to/from
@@ -439,6 +442,7 @@ function dbGetCallupOverrides() { return _clone(_cache.callup); }
 function dbGetCommishOverrides() { return _clone(_cache.commishOverrides); }
 function dbGetWorkaroundOverrides() { return _clone(_cache.workaroundOverrides); }
 function dbGetSettings() { return _clone(_cache.settings || {}); }
+function dbGetFeesPaid() { return _clone(_cache.feesPaid || {}); }
 function dbGetActivity() { return _cache.activity; }            // read-only
 function dbGetProposals() { return _cache.proposals; }          // read-only
 function dbGetMessages() { return _cache.messages; }            // read-only
@@ -655,6 +659,7 @@ async function saveCommishOverridesAsync(map)   { return _saveLeagueStateAsync("
 async function saveWorkaroundOverridesAsync(m)  { return _saveLeagueStateAsync("workaround_overrides", m, "workaroundOverrides"); }
 async function saveKeeperDeadlineAsync(state)   { return _saveLeagueStateAsync("keeper_deadline", state, "keeperDeadline"); }
 async function saveSettingsAsync(s)             { return _saveLeagueStateAsync("settings", s, "settings"); }
+async function saveFeesPaidAsync(m)             { return _saveLeagueStateAsync("fees_paid", m, "feesPaid"); }
 async function saveConstitutionAsync(markdown) {
   const prev = _cache.constitution;
   _cache.constitution = markdown;
