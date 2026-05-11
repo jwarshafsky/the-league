@@ -8,6 +8,41 @@
 let CURRENT_SEASON = 2026;
 const DEFAULT_SEASON = 2026;
 
+// data.js holds keeper prices baselined to 2026. When the commissioner sets
+// the current season ahead (e.g., 2027), every keeper's contract bumps $2
+// per year per the rules. We apply that bump in-memory so the rest of the
+// codebase keeps reading `player.price` and gets the correct current-season
+// value. The tracked shift makes the operation idempotent across re-runs
+// and reversible if the year is set backward.
+const DATA_JS_BASE_SEASON = 2026;
+let _currentlyAppliedPriceShift = 0;
+
+function _applyPriceShiftToData() {
+  if (typeof LEAGUE_DATA === "undefined") return;
+  const wantShift = CURRENT_SEASON - DATA_JS_BASE_SEASON;
+  const delta = wantShift - _currentlyAppliedPriceShift;
+  if (delta === 0) return;
+  const dollarsDelta = delta * 2;
+  for (const team of LEAGUE_DATA.teams) {
+    for (const p of (team.majors || [])) {
+      if (typeof p.price === "number") p.price += dollarsDelta;
+    }
+    for (const p of (team.callups || [])) {
+      if (typeof p.price === "number") p.price += dollarsDelta;
+    }
+  }
+  // Also adjust the captured snapshot so applyRosterAdjustments resets
+  // callups to shifted values, not data.js originals.
+  if (typeof _originalRosterSnapshot !== "undefined") {
+    for (const snap of _originalRosterSnapshot.values()) {
+      for (const p of (snap.callups || [])) {
+        if (typeof p.price === "number") p.price += dollarsDelta;
+      }
+    }
+  }
+  _currentlyAppliedPriceShift = wantShift;
+}
+
 // Roster caps (league constitution).
 const ML_ROSTER_MAX = 25;
 const MIL_ROSTER_MAX = 10;
@@ -24,6 +59,17 @@ function _applySettingsFromCache() {
   } else {
     CURRENT_SEASON = DEFAULT_SEASON;
   }
+  _applyPriceShiftToData();
+  _updateSeasonInNav();
+}
+
+// Update the "2026 Keepers" nav button (and drawer item) to reflect the
+// current season. The HTML hardcodes "2026 Keepers" — refresh it on each
+// settings load so it tracks the commissioner's Set Year.
+function _updateSeasonInNav() {
+  document.querySelectorAll('[data-tab="keepers"]').forEach(el => {
+    el.textContent = `${CURRENT_SEASON} Keepers`;
+  });
 }
 
 function isRule5RosterEnforcementEnabled() {
@@ -790,7 +836,7 @@ function renderMajorsTable(players) {
   return `
     <table class="player-table">
       <thead>
-        <tr><th>Player</th><th>Price</th><th>Acquired</th><th>Expiry</th><th>2027 Price</th></tr>
+        <tr><th>Player</th><th>Price</th><th>Acquired</th><th>Expiry</th><th>${CURRENT_SEASON + 1} Price</th></tr>
       </thead>
       <tbody>
         ${players.map(p => {
@@ -972,12 +1018,13 @@ function updateKeeperCalc() {
     .map(p => ({ ...p, contract: getContractStatus(p, CURRENT_SEASON) }))
     .filter(p => !p.contract.canKeepNextYear);
 
+  const NEXT_SEASON = CURRENT_SEASON + 1;
   container.innerHTML = `
     <div class="keeper-projection">
-      <h3>Can Keep for 2027 (${keepableNextYear.length} players)</h3>
+      <h3>Can Keep for ${NEXT_SEASON} (${keepableNextYear.length} players)</h3>
       ${keepableNextYear.length ? `
         <table class="player-table">
-          <thead><tr><th>Player</th><th>2026 Price</th><th>2027 Price</th><th>Expiry</th></tr></thead>
+          <thead><tr><th>Player</th><th>${CURRENT_SEASON} Price</th><th>${NEXT_SEASON} Price</th><th>Expiry</th></tr></thead>
           <tbody>
             ${keepableNextYear.map(p => `
               <tr>
@@ -990,7 +1037,7 @@ function updateKeeperCalc() {
           </tbody>
         </table>
         <div style="margin-top:10px;padding:10px;background:var(--bg);border-radius:6px">
-          <span style="color:var(--text-dim);font-size:0.82rem">Projected 2027 keeper cost (all eligible):</span>
+          <span style="color:var(--text-dim);font-size:0.82rem">Projected ${NEXT_SEASON} keeper cost (all eligible):</span>
           <span style="color:var(--yellow);font-weight:800;font-size:1.05rem"> $${keepableNextYear.reduce((s, p) => s + p.contract.nextYearPrice, 0)}</span>
           <span style="color:var(--text-dim);font-size:0.82rem"> / Draft budget:</span>
           <span style="color:var(--accent);font-weight:800;font-size:1.05rem"> $${260 - keepableNextYear.reduce((s, p) => s + p.contract.nextYearPrice, 0)}</span>
@@ -999,9 +1046,9 @@ function updateKeeperCalc() {
     </div>
     ${notKeepable.length ? `
       <div class="keeper-projection">
-        <h3 style="color:var(--red)">Cannot Keep for 2027 (${notKeepable.length} players)</h3>
+        <h3 style="color:var(--red)">Cannot Keep for ${NEXT_SEASON} (${notKeepable.length} players)</h3>
         <table class="player-table">
-          <thead><tr><th>Player</th><th>2026 Price</th><th>Reason</th></tr></thead>
+          <thead><tr><th>Player</th><th>${CURRENT_SEASON} Price</th><th>Reason</th></tr></thead>
           <tbody>
             ${notKeepable.map(p => `
               <tr>
@@ -2567,9 +2614,9 @@ function openCommishEditor(playerName) {
       <h3 style="margin:0 0 12px;color:var(--text-bright)">Edit ${escapeHtml(playerName)}</h3>
       <p style="color:var(--text-dim);font-size:0.78rem;margin:0 0 14px">Override any field below. Leave blank to keep the default.</p>
       <label style="display:block;margin-bottom:10px">
-        <div style="color:var(--text-dim);font-size:0.8rem">2027 price ($)</div>
+        <div style="color:var(--text-dim);font-size:0.8rem">${CURRENT_SEASON + 1} price ($)</div>
         <input type="number" id="ce-nextprice" value="${escapeHtml(o.nextYearPrice ?? "")}" placeholder="${escapeHtml(baseline?.nextYearPrice ?? "")}" style="width:100%;background:var(--bg);color:var(--text);border:1px solid var(--border);padding:8px;border-radius:6px">
-        ${baseline ? baseLine("2027 price", baseline.nextYearPrice) : ""}
+        ${baseline ? baseLine(`${CURRENT_SEASON + 1} price`, baseline.nextYearPrice) : ""}
       </label>
       <label style="display:flex;align-items:center;gap:8px;margin-bottom:10px;color:var(--text)">
         <input type="checkbox" id="ce-cankeep" ${(o.canKeepNextYear ?? baseline?.canKeepNextYear) ? "checked" : ""} style="width:16px;height:16px">
@@ -2776,8 +2823,8 @@ function renderEligibleTable(players, teamId, teamSelections) {
         <tr>
           <th>Player</th>
           <th>Source</th>
-          <th>2026 $</th>
-          <th>2027 $</th>
+          <th>${CURRENT_SEASON} $</th>
+          <th>${CURRENT_SEASON + 1} $</th>
           <th>Expiry</th>
           <th style="text-align:center">Rule 5</th>
           <th style="text-align:center">Keep</th>
@@ -2870,8 +2917,8 @@ function renderMinorsEligibleTable(minors, teamId, teamSelections) {
         <tr>
           <th>Player</th>
           <th>Source</th>
-          <th>2026 $</th>
-          <th>2027 $</th>
+          <th>${CURRENT_SEASON} $</th>
+          <th>${CURRENT_SEASON + 1} $</th>
           <th>Expiry</th>
           <th style="text-align:center">Rule 5</th>
           <th style="text-align:center">Keep</th>
@@ -5486,7 +5533,7 @@ function renderRule5View() {
     <div class="section-header">Available Players <span class="section-count">${remaining.length}</span></div>
     <table class="player-table">
       <thead>
-        <tr><th>Player</th><th>Origin</th><th>Expiry</th><th>2027 $</th></tr>
+        <tr><th>Player</th><th>Origin</th><th>Expiry</th><th>${CURRENT_SEASON + 1} $</th></tr>
       </thead>
       <tbody>
         ${[...remaining].sort((a, b) => lastName(a.name).localeCompare(lastName(b.name))).map(p => `
