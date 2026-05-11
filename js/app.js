@@ -2605,6 +2605,13 @@ function resolveCostBasis(playerName, currentTeamLocalId) {
 function getEligiblePlayers(team) {
   const players = [];
   const snap = getEspnSnapshot();
+  // Keeper-Price Exceptions: commissioner-set overrides for the "true" salary
+  // when ESPN's displayed price has been manually inflated/deflated to fake
+  // a draft-dollars trade. The override replaces basis.price before any
+  // contract math runs, so yearsRemaining / nextYearPrice / luxury tax all
+  // use the true salary downstream.
+  const priceExceptions = (typeof dbGetKeeperPriceExceptions === "function")
+    ? dbGetKeeperPriceExceptions() : {};
 
   // 1. Major league players currently on this team's ESPN roster
   if (snap) {
@@ -2612,6 +2619,9 @@ function getEligiblePlayers(team) {
     if (espnTeam) {
       espnTeam.roster.forEach(r => {
         const basis = resolveCostBasis(r.name, team.id);
+        if (priceExceptions[r.name] != null && typeof basis.price === "number") {
+          basis.price = Number(priceExceptions[r.name]);
+        }
 
         // For FA-add: contract starts in CURRENT_SEASON+1, so "yearsKept"=0 next year
         const fakePlayer = {
@@ -2697,6 +2707,7 @@ function getEligiblePlayers(team) {
           canKeepNextYear: cs.canKeepNextYear,
           yearsRemaining: cs.yearsRemaining,
           workaround: basis.workaround || null,
+          priceExceptionApplied: priceExceptions[r.name] != null,
         });
       });
     }
@@ -4582,6 +4593,14 @@ function renderSettingsView() {
       </div>
 
       <div class="keeper-projection" style="margin-bottom:14px">
+        <h3 style="margin-top:0">Keeper Price Exceptions</h3>
+        <div style="color:var(--text-dim);font-size:0.84rem;margin-bottom:10px">
+          ESPN doesn't let us trade draft dollars, so the workaround is to bump a keeper's ESPN price up or down to absorb the swing. Enter the player's <em>true</em> salary here and the app will use that everywhere instead of the inflated ESPN value — Keepers tab, Eligible Keepers, Luxury Tax, and all contract math (years remaining, next-year price, etc.).
+        </div>
+        ${renderKeeperPriceExceptionsEditor()}
+      </div>
+
+      <div class="keeper-projection" style="margin-bottom:14px">
         <h3 style="margin-top:0">Exports</h3>
         <div style="color:var(--text-dim);font-size:0.84rem;margin-bottom:10px">
           Download a snapshot of every team's roster with contract details (year acquired, salary, expiry, source).
@@ -4602,6 +4621,107 @@ function renderSettingsView() {
       </div>
     </div>
   `;
+}
+
+function renderKeeperPriceExceptionsEditor() {
+  const ex = (typeof dbGetKeeperPriceExceptions === "function") ? dbGetKeeperPriceExceptions() : {};
+  const entries = Object.keys(ex).sort((a, b) => lastName(a).localeCompare(lastName(b)));
+  // Build a datalist of all players currently on any ESPN roster so the
+  // commissioner can autocomplete names instead of typing them exactly.
+  const allNames = new Set();
+  for (const team of LEAGUE_DATA.teams) {
+    for (const p of getEligiblePlayers(team)) allNames.add(p.name);
+  }
+  const optionsHtml = [...allNames].sort().map(n => `<option value="${escapeHtml(n)}"></option>`).join("");
+  const rowsHtml = entries.length
+    ? entries.map(name => {
+        // Find the team holding this player so the commish can see whose roster it affects.
+        let teamName = "—";
+        let espnPrice = null;
+        for (const team of LEAGUE_DATA.teams) {
+          const p = getEligiblePlayers(team).find(x => x.name === name);
+          if (p) { teamName = team.name; espnPrice = p.price; break; }
+        }
+        return `
+          <tr>
+            <td style="padding:6px 8px;color:var(--text-bright)">${escapeHtml(name)}</td>
+            <td style="padding:6px 8px;color:var(--text-dim);font-size:0.82rem">${escapeHtml(teamName)}</td>
+            <td style="padding:6px 8px;text-align:right;color:var(--text)">$${escapeHtml(String(ex[name]))}</td>
+            <td style="padding:6px 8px;text-align:right">
+              <button class="trade-btn trade-btn-cancel" onclick="removeKeeperPriceException('${escapeJsString(name)}')" style="font-size:0.74rem;padding:3px 8px">Remove</button>
+            </td>
+          </tr>
+        `;
+      }).join("")
+    : `<tr><td colspan="4" style="padding:10px;color:var(--text-dim);font-style:italic;text-align:center">No exceptions set. ESPN-displayed prices are used as-is.</td></tr>`;
+  return `
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-bottom:12px">
+      <label style="flex:1;min-width:200px">
+        <div style="color:var(--text-dim);font-size:0.78rem;margin-bottom:3px">Player</div>
+        <input type="text" id="settings-kpe-name" list="settings-kpe-player-list" placeholder="Type a name…" style="width:100%;background:var(--bg);color:var(--text);border:1px solid var(--border);padding:8px 10px;border-radius:6px;font-size:0.9rem">
+        <datalist id="settings-kpe-player-list">${optionsHtml}</datalist>
+      </label>
+      <label style="width:120px">
+        <div style="color:var(--text-dim);font-size:0.78rem;margin-bottom:3px">True salary ($)</div>
+        <input type="number" id="settings-kpe-price" min="1" placeholder="e.g. 10" style="width:100%;background:var(--bg);color:var(--text);border:1px solid var(--border);padding:8px 10px;border-radius:6px;font-size:0.9rem">
+      </label>
+      <button class="trade-btn trade-btn-submit" onclick="submitKeeperPriceException()" style="font-size:0.85rem;height:36px">Add / Update</button>
+    </div>
+    <table class="player-table" style="width:100%;max-width:600px;font-size:0.85rem">
+      <thead>
+        <tr>
+          <th>Player</th>
+          <th>Team</th>
+          <th style="text-align:right">True $</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>${rowsHtml}</tbody>
+    </table>
+  `;
+}
+
+async function submitKeeperPriceException() {
+  if (!isCommissioner()) return;
+  const nameEl = document.getElementById("settings-kpe-name");
+  const priceEl = document.getElementById("settings-kpe-price");
+  const name = (nameEl?.value || "").trim();
+  const priceRaw = (priceEl?.value || "").trim();
+  if (!name) { alert("Enter a player name."); nameEl?.focus(); return; }
+  const price = parseInt(priceRaw, 10);
+  if (!Number.isFinite(price) || price < 1) { alert("Enter a valid salary (≥ 1)."); priceEl?.focus(); return; }
+  const cur = (typeof dbGetKeeperPriceExceptions === "function") ? dbGetKeeperPriceExceptions() : {};
+  const next = { ...cur, [name]: price };
+  try {
+    await saveKeeperPriceExceptionsAsync(next);
+    if (typeof logActivityAsync === "function") {
+      logActivityAsync("keeper_price_exception_set", { player_name: name, price });
+    }
+    if (nameEl) nameEl.value = "";
+    if (priceEl) priceEl.value = "";
+    if (currentView === "settings") switchTab("settings");
+    showToast(`Set ${name} to $${price}`);
+  } catch (e) {
+    alert("Couldn't save: " + (e.message || e));
+  }
+}
+
+async function removeKeeperPriceException(name) {
+  if (!isCommissioner()) return;
+  if (!confirm(`Remove keeper-price exception for ${name}? The ESPN-displayed price will be used.`)) return;
+  const cur = (typeof dbGetKeeperPriceExceptions === "function") ? dbGetKeeperPriceExceptions() : {};
+  const next = { ...cur };
+  delete next[name];
+  try {
+    await saveKeeperPriceExceptionsAsync(next);
+    if (typeof logActivityAsync === "function") {
+      logActivityAsync("keeper_price_exception_removed", { player_name: name });
+    }
+    if (currentView === "settings") switchTab("settings");
+    showToast(`Removed ${name} exception`);
+  } catch (e) {
+    alert("Couldn't save: " + (e.message || e));
+  }
 }
 
 async function submitTakeSnapshot() {
@@ -5007,6 +5127,10 @@ function describeActivity(a) {
       return `${actor} marked ${target}'s ${escapeHtml(p.kind === "callup" ? "call-up" : "league")} fee as paid`;
     case "fee_marked_unpaid":
       return `${actor} marked ${target}'s ${escapeHtml(p.kind === "callup" ? "call-up" : "league")} fee as unpaid`;
+    case "keeper_price_exception_set":
+      return `${actor} set ${player}'s true salary to <strong>$${escapeHtml(p.price)}</strong>`;
+    case "keeper_price_exception_removed":
+      return `${actor} removed the keeper-price exception for ${player}`;
     case "commish_override":
       return `${actor} overrode ${player}'s contract <span style="color:var(--text-dim)">(${(p.fields || []).map(f => escapeHtml(f)).join(", ")})</span>`;
     case "constitution_edited":
