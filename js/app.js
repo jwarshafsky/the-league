@@ -1173,7 +1173,7 @@ function renderTradeBlockView() {
         const priceMap = Object.fromEntries(eligible.map(p => [p.name, p.price]));
         const isMyTeam = t.id === myTeamId;
         const action = isMyTeam
-          ? `<button class="trade-btn trade-btn-cancel" onclick="switchTab('eligible')" style="font-size:0.78rem;padding:6px 14px;margin-top:12px">Edit my trade block</button>`
+          ? `<button class="trade-btn trade-btn-cancel" onclick="editMyTradeBlock()" style="font-size:0.78rem;padding:6px 14px;margin-top:12px">Edit my trade block</button>`
           : (myTeamId
               ? `<button class="trade-btn" onclick="proposeTradeWith('${escapeJsString(t.id)}')" style="font-size:0.78rem;padding:6px 14px;margin-top:12px">Propose Trade</button>`
               : "");
@@ -1199,6 +1199,16 @@ function renderTradeBlockView() {
       }).join("")}
     </div>
   `;
+}
+
+// Land on the manager's own team in Eligible Keepers (not the "All Teams"
+// summary, which is what a fresh switchTab("eligible") would show).
+function editMyTradeBlock() {
+  const myTeamId = (typeof currentOwner !== "undefined" && currentOwner) ? currentOwner.team_id : null;
+  if (myTeamId && typeof _lastTeamSel !== "undefined") {
+    _lastTeamSel.eligible = myTeamId;
+  }
+  if (typeof switchTab === "function") switchTab("eligible");
 }
 
 function proposeTradeWith(otherTeamId) {
@@ -1657,40 +1667,79 @@ function getTeamLuxurySalary(team) {
 
 function renderLuxuryTaxTable() {
   const rows = LEAGUE_DATA.teams.map(team => {
-    const salary = getTeamLuxurySalary(team);
+    const players = (typeof getEligiblePlayers === "function") ? getEligiblePlayers(team) : [];
+    const breakdown = players.map(p => {
+      const isFa = p.contractType === "fa";
+      const isCallup = p.contractType === "callup";
+      const counted = (isFa || isCallup) ? 1 : (typeof p.price === "number" ? p.price : 0);
+      return { name: p.name, type: p.contractType, price: p.price, counted };
+    });
+    const salary = breakdown.reduce((s, b) => s + b.counted, 0);
     const over = salary > LUXURY_TAX_CAP;
     const remaining = over ? 0 : (LUXURY_TAX_CAP - salary);
     const surplus = over ? (salary - LUXURY_TAX_CAP) : 0;
-    return { team, salary, remaining, surplus, over };
+    return { team, salary, remaining, surplus, over, breakdown };
   });
   // Highest salary first so over-cap teams jump out.
   rows.sort((a, b) => b.salary - a.salary);
   return `
-    <div style="max-width:600px;overflow-x:auto">
+    <div style="max-width:760px">
       <table class="player-table" style="font-size:0.88rem;width:100%;table-layout:fixed">
         <colgroup>
-          <col style="width:130px">
+          <col style="width:140px">
+          <col style="width:80px">
+          <col style="width:100px">
           <col style="width:90px">
-          <col style="width:120px">
-          <col style="width:110px">
+          <col style="width:90px">
         </colgroup>
         <thead>
           <tr>
             <th>Team</th>
+            <th style="text-align:right">Players</th>
             <th style="text-align:right">Salary</th>
             <th style="text-align:right">Remaining</th>
             <th style="text-align:right">Surplus</th>
           </tr>
         </thead>
         <tbody>
-          ${rows.map(r => `
-            <tr>
-              <td style="font-weight:700;color:var(--text-bright);padding:8px 10px">${escapeHtml(r.team.name)}</td>
-              <td style="text-align:right;padding:8px 6px;color:${r.over ? 'var(--red)' : 'var(--text)'};font-weight:${r.over ? '700' : '400'}">$${r.salary}</td>
-              <td style="text-align:right;padding:8px 6px;color:${r.remaining > 0 ? 'var(--green)' : 'var(--text-dim)'}">${r.remaining > 0 ? `$${r.remaining}` : '—'}</td>
-              <td style="text-align:right;padding:8px 10px;color:${r.surplus > 0 ? 'var(--red)' : 'var(--text-dim)'};font-weight:${r.surplus > 0 ? '700' : '400'}">${r.surplus > 0 ? `$${r.surplus}` : '—'}</td>
-            </tr>
-          `).join("")}
+          ${rows.map(r => {
+            const breakdownRows = r.breakdown
+              .slice()
+              .sort((a, b) => b.counted - a.counted)
+              .map(b => {
+                const note = b.type === "fa" ? "FA" : b.type === "callup" ? "call-up" : "auction";
+                const noteHtml = `<span style="color:var(--text-dim);font-size:0.72rem">${escapeHtml(note)}</span>`;
+                const rawHtml = (b.type === "fa" || b.type === "callup") && b.price !== b.counted && b.price != null
+                  ? `<span style="color:var(--text-dim);font-size:0.72rem">($${b.price} → )</span>`
+                  : "";
+                return `<tr>
+                  <td style="padding:3px 8px;color:var(--text)">${escapeHtml(b.name)}</td>
+                  <td style="padding:3px 8px">${noteHtml}</td>
+                  <td style="padding:3px 8px;text-align:right;color:var(--text-bright);font-weight:600">${rawHtml} $${b.counted}</td>
+                </tr>`;
+              }).join("");
+            return `
+              <tr>
+                <td style="padding:8px 10px">
+                  <details>
+                    <summary style="cursor:pointer;list-style:none">
+                      <span style="font-weight:700;color:var(--text-bright)">${escapeHtml(r.team.name)}</span>
+                      <span style="color:var(--text-dim);font-size:0.7rem;margin-left:6px">▶ show players</span>
+                    </summary>
+                    <div style="margin-top:6px;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:4px 0">
+                      <table style="width:100%;border-collapse:collapse;font-size:0.78rem">
+                        <tbody>${breakdownRows}</tbody>
+                      </table>
+                    </div>
+                  </details>
+                </td>
+                <td style="text-align:right;padding:8px 6px;color:var(--text-dim)">${r.breakdown.length}</td>
+                <td style="text-align:right;padding:8px 6px;color:${r.over ? 'var(--red)' : 'var(--text)'};font-weight:${r.over ? '700' : '400'}">$${r.salary}</td>
+                <td style="text-align:right;padding:8px 6px;color:${r.remaining > 0 ? 'var(--green)' : 'var(--text-dim)'}">${r.remaining > 0 ? `$${r.remaining}` : '—'}</td>
+                <td style="text-align:right;padding:8px 10px;color:${r.surplus > 0 ? 'var(--red)' : 'var(--text-dim)'};font-weight:${r.surplus > 0 ? '700' : '400'}">${r.surplus > 0 ? `$${r.surplus}` : '—'}</td>
+              </tr>
+            `;
+          }).join("")}
         </tbody>
       </table>
     </div>
