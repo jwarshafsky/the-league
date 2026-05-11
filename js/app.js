@@ -846,7 +846,7 @@ function renderMajorsTable(players) {
   return `
     <table class="player-table">
       <thead>
-        <tr><th>Player</th><th>Price</th><th>Acquired</th><th>Expiry</th><th>${CURRENT_SEASON + 1} Price</th></tr>
+        <tr><th>Player</th><th>${CURRENT_SEASON} $</th><th>Acquired</th><th>Expiry</th></tr>
       </thead>
       <tbody>
         ${players.map(p => {
@@ -858,7 +858,6 @@ function renderMajorsTable(players) {
               <td class="player-price">$${p.price}</td>
               <td class="player-year">${p.yearAcquired}${p.fromMinors ? ' <span class="from-minors-tag">MiLB</span>' : ""}</td>
               <td><span class="contract-tag contract-${escapeHtml(cs.status)}">${expiry}</span></td>
-              <td>${cs.canKeepNextYear ? `<span class="player-price">$${cs.nextYearPrice}</span>` : '<span style="color:var(--text-dim)">—</span>'}</td>
             </tr>
           `;
         }).join("")}
