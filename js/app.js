@@ -79,6 +79,36 @@ function isMinorsRosterEnforcementEnabled() {
   return !!getLeagueSettings().enforceMinorsRosterSpot;
 }
 
+// Default display order for "list every team" UIs: prior-year final
+// standings (best to worst) from HISTORY_SNAPSHOT. Falls back to the
+// data.js order if no prior-year standings are available. Used by
+// dropdowns, the Draft Dollars panel, the Fees and Trade Block grids,
+// etc. — anywhere a team list is shown without a domain-specific sort.
+function getDisplayOrderedTeams() {
+  if (typeof LEAGUE_DATA === "undefined") return [];
+  let standings = null;
+  if (typeof HISTORY_SNAPSHOT !== "undefined" && HISTORY_SNAPSHOT?.seasons?.length) {
+    // Most recent completed season available; ideally CURRENT_SEASON - 1 but
+    // any season works as a fallback so the order is stable.
+    const target = (typeof CURRENT_SEASON === "number") ? CURRENT_SEASON - 1 : null;
+    const exact = target ? HISTORY_SNAPSHOT.seasons.find(s => s.year === target) : null;
+    standings = exact?.standings || HISTORY_SNAPSHOT.seasons[0]?.standings || null;
+  }
+  if (!standings) return LEAGUE_DATA.teams.slice();
+  const rankByLocal = {};
+  for (const row of standings) {
+    const localId = (typeof trophyTeamLocalId === "function")
+      ? trophyTeamLocalId({ abbrev: row.abbrev, espnId: row.espnId })
+      : null;
+    if (localId && rankByLocal[localId] == null) rankByLocal[localId] = row.rank;
+  }
+  return [...LEAGUE_DATA.teams].sort((a, b) => {
+    const ra = rankByLocal[a.id] ?? 999;
+    const rb = rankByLocal[b.id] ?? 999;
+    return ra - rb;
+  });
+}
+
 // Count current ML roster slots used by a team (majors + callups). After
 // applyRosterAdjustments, these arrays already reflect Rule 5 picks (which
 // are recorded as trades) and call-ups.
@@ -370,7 +400,7 @@ function renderKeepersView() {
       <select id="keepers-team-select" onchange="updateKeepersView()">
         <option value="">Select a team...</option>
         <option value="all">All Teams</option>
-        ${LEAGUE_DATA.teams.map(t => `<option value="${t.id}">${t.name}</option>`).join("")}
+        ${getDisplayOrderedTeams().map(t => `<option value="${t.id}">${t.name}</option>`).join("")}
       </select>
     </div>
     <div id="keepers-content"></div>
@@ -405,7 +435,7 @@ function updateKeepersView() {
   }
 
   if (teamId === "all") {
-    container.innerHTML = LEAGUE_DATA.teams.map(team => {
+    container.innerHTML = getDisplayOrderedTeams().map(team => {
       const majors = teamMajorsForKeepersTab(team);
       const milKeepers = teamMilForKeepersTab(team);
       return `
@@ -501,7 +531,7 @@ function renderRostersView() {
       <select id="rosters-team-select" onchange="updateRostersView()">
         <option value="">Select a team...</option>
         <option value="all">All Teams</option>
-        ${LEAGUE_DATA.teams.map(t => `<option value="${t.id}">${t.name}</option>`).join("")}
+        ${getDisplayOrderedTeams().map(t => `<option value="${t.id}">${t.name}</option>`).join("")}
       </select>
     </div>
     <div id="rosters-content"></div>
@@ -515,7 +545,7 @@ function updateRostersView() {
   if (!teamId) { container.innerHTML = ""; return; }
 
   if (teamId === "all") {
-    container.innerHTML = LEAGUE_DATA.teams.map(team => {
+    container.innerHTML = getDisplayOrderedTeams().map(team => {
       const liveCount = getCurrentMinors(team).length;
       return `
       <div style="margin-bottom:24px">
@@ -1004,7 +1034,7 @@ function renderKeeperCalculator() {
     <div class="calc-team-selector">
       <select id="calc-team-select" onchange="updateKeeperCalc()">
         <option value="">Select a team...</option>
-        ${LEAGUE_DATA.teams.map(t => `<option value="${t.id}">${t.name}</option>`).join("")}
+        ${getDisplayOrderedTeams().map(t => `<option value="${t.id}">${t.name}</option>`).join("")}
       </select>
     </div>
     <div id="calc-results"></div>
@@ -1154,7 +1184,7 @@ function renderTradeBlockView() {
   // Always include the manager's own team in the grid (even with no blocked
   // players) so they have a clear path to edit their trade block.
   if (myTeamId && !byTeam[myTeamId]) byTeam[myTeamId] = [];
-  const orderedTeams = LEAGUE_DATA.teams.filter(t => byTeam[t.id]);
+  const orderedTeams = getDisplayOrderedTeams().filter(t => byTeam[t.id]);
   if (!orderedTeams.length) {
     return `
       <div style="max-width:540px;margin:40px auto;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:24px;text-align:center;color:var(--text-dim);font-size:0.9rem">
@@ -1763,7 +1793,7 @@ function renderFinancialsView() {
   const paidMap = (typeof dbGetFeesPaid === "function") ? dbGetFeesPaid() : {};
   const sendDownsByTeam = getSendDownsByTeam();
 
-  const feeRows = LEAGUE_DATA.teams.map(team => {
+  const feeRows = getDisplayOrderedTeams().map(team => {
     const sd = sendDownsByTeam[team.id] || [];
     const callupFees = sd.length * SEND_DOWN_FEE;
     const paid = paidMap[team.id] || {};
@@ -1948,7 +1978,7 @@ async function toggleFeePaid(teamId, kind, checked) {
 
 function renderDraftDollarsPanel() {
   const balances = getDraftDollarBalances();
-  const rows = LEAGUE_DATA.teams.map(t => ({ ...t, balance: balances[t.id] ?? 260 }));
+  const rows = getDisplayOrderedTeams().map(t => ({ ...t, balance: balances[t.id] ?? 260 }));
   // Grid of compact tiles — keeps the panel from stretching across the
   // wider Financials viewport while still listing every team.
   return `
@@ -2891,7 +2921,7 @@ function renderEligibleKeepersView() {
       <select id="eligible-team-select" onchange="updateEligibleKeepersView()">
         <option value="">Select a team...</option>
         <option value="all">All Teams Summary</option>
-        ${LEAGUE_DATA.teams.map(t => `<option value="${t.id}">${t.name}</option>`).join("")}
+        ${getDisplayOrderedTeams().map(t => `<option value="${t.id}">${t.name}</option>`).join("")}
       </select>
     </div>
     <div id="eligible-keepers-content"></div>
@@ -3433,7 +3463,7 @@ function renderAllTeamsEligibleSummary(container) {
   const selections = getEligibleKeeperSelections();
 
   const dollarBalances = getDraftDollarBalances();
-  container.innerHTML = LEAGUE_DATA.teams.map(team => {
+  container.innerHTML = getDisplayOrderedTeams().map(team => {
     const players = getEligiblePlayers(team);
     const teamSel = selections[team.id] || {};
     // Only count players who CAN actually be kept next year.
