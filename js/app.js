@@ -1637,6 +1637,65 @@ function getDraftDollarBalances() {
 
 const LEAGUE_FEE = 300;
 const SEND_DOWN_FEE = 10;
+const LUXURY_TAX_CAP = 350;
+
+// Compute a team's total salary for luxury-tax purposes.
+// Rules: keepers and auction picks count at their stored price; free agents
+// and call-ups count at $1. Reads the current ESPN-reconciled roster.
+function getTeamLuxurySalary(team) {
+  const players = (typeof getEligiblePlayers === "function") ? getEligiblePlayers(team) : [];
+  let total = 0;
+  for (const p of players) {
+    if (p.contractType === "fa" || p.contractType === "callup") {
+      total += 1;
+    } else if (typeof p.price === "number") {
+      total += p.price;
+    }
+  }
+  return total;
+}
+
+function renderLuxuryTaxTable() {
+  const rows = LEAGUE_DATA.teams.map(team => {
+    const salary = getTeamLuxurySalary(team);
+    const over = salary > LUXURY_TAX_CAP;
+    const remaining = over ? 0 : (LUXURY_TAX_CAP - salary);
+    const surplus = over ? (salary - LUXURY_TAX_CAP) : 0;
+    return { team, salary, remaining, surplus, over };
+  });
+  // Highest salary first so over-cap teams jump out.
+  rows.sort((a, b) => b.salary - a.salary);
+  return `
+    <div style="max-width:600px;overflow-x:auto">
+      <table class="player-table" style="font-size:0.88rem;width:100%;table-layout:fixed">
+        <colgroup>
+          <col style="width:130px">
+          <col style="width:90px">
+          <col style="width:120px">
+          <col style="width:110px">
+        </colgroup>
+        <thead>
+          <tr>
+            <th>Team</th>
+            <th style="text-align:right">Salary</th>
+            <th style="text-align:right">Remaining</th>
+            <th style="text-align:right">Surplus</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows.map(r => `
+            <tr>
+              <td style="font-weight:700;color:var(--text-bright);padding:8px 10px">${escapeHtml(r.team.name)}</td>
+              <td style="text-align:right;padding:8px 6px;color:${r.over ? 'var(--red)' : 'var(--text)'};font-weight:${r.over ? '700' : '400'}">$${r.salary}</td>
+              <td style="text-align:right;padding:8px 6px;color:${r.remaining > 0 ? 'var(--green)' : 'var(--text-dim)'}">${r.remaining > 0 ? `$${r.remaining}` : '—'}</td>
+              <td style="text-align:right;padding:8px 10px;color:${r.surplus > 0 ? 'var(--red)' : 'var(--text-dim)'};font-weight:${r.surplus > 0 ? '700' : '400'}">${r.surplus > 0 ? `$${r.surplus}` : '—'}</td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
 
 function getSendDownsByTeam() {
   const moves = (typeof dbGetRosterMoves === "function") ? dbGetRosterMoves() : [];
@@ -1720,7 +1779,10 @@ function renderFinancialsView() {
 
     <div class="keeper-projection" style="margin-bottom:14px">
       <h3 style="margin-top:0">Luxury Tax</h3>
-      <div style="color:var(--text-dim);font-size:0.84rem;font-style:italic">Coming soon.</div>
+      <div style="color:var(--text-dim);font-size:0.82rem;margin-bottom:10px">
+        Cap is $${LUXURY_TAX_CAP}. Keepers and auction picks count at their price; free agents and call-ups count at $1. Numbers reflect the current ESPN roster.
+      </div>
+      ${renderLuxuryTaxTable()}
     </div>
 
     <div class="keeper-projection" style="margin-bottom:14px">
