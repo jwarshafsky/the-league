@@ -383,23 +383,39 @@ function updateKeepersView() {
   const container = document.getElementById("keepers-content");
   if (!teamId) { container.innerHTML = ""; return; }
 
+  // After the commissioner advances the season past the data.js baseline
+  // (e.g., 2026 → 2027), the locked-in keepers for the new season are the
+  // players that were Keep-checked in Select Keepers. Pre-advance, this tab
+  // shows the static rosters as-is.
+  const sel = (typeof dbGetKeeperSelections === "function") ? dbGetKeeperSelections() : {};
+  const isPostAdvance = CURRENT_SEASON > DATA_JS_BASE_SEASON;
+  function teamMajorsForKeepersTab(team) {
+    if (!isPostAdvance) return team.majors;
+    const flags = sel[team.id] || {};
+    return team.majors.filter(p => flags[p.name]?.keeper === true);
+  }
+  function teamMilForKeepersTab(team) {
+    const merged = [
+      ...(team.minors || []).map(p => ({ ...p, _calledUp: false })),
+      ...(team.callups || []).map(p => ({ ...p, _calledUp: true })),
+    ].filter(p => (p.yearAcquired ?? 0) < CURRENT_SEASON);
+    if (!isPostAdvance) return merged;
+    const flags = sel[team.id] || {};
+    return merged.filter(p => flags[p.name]?.minorKeeper === true || flags[p.name]?.keeper === true);
+  }
+
   if (teamId === "all") {
     container.innerHTML = LEAGUE_DATA.teams.map(team => {
-      // 2026 keepers = players acquired BEFORE 2026 (kept going into the season).
-      // Players with yearAcquired === CURRENT_SEASON were drafted IN 2026 (auction
-      // or minor draft) and aren't keepers. Tag callups so the table can mark them.
-      const milKeepers = [
-        ...(team.minors || []).map(p => ({ ...p, _calledUp: false })),
-        ...(team.callups || []).map(p => ({ ...p, _calledUp: true })),
-      ].filter(p => (p.yearAcquired ?? 0) < CURRENT_SEASON);
+      const majors = teamMajorsForKeepersTab(team);
+      const milKeepers = teamMilForKeepersTab(team);
       return `
       <div style="margin-bottom:24px">
         <h3 style="color:var(--text-bright);margin-bottom:8px;cursor:pointer" onclick="document.getElementById('keepers-team-select').value='${team.id}';updateKeepersView()">
           ${team.name} <span style="color:var(--green);font-size:0.85rem">$${team.totalKeeperCost}</span>
           <span style="color:var(--text-dim);font-size:0.85rem">/ Draft: $${team.draftBudget}</span>
         </h3>
-        <div class="section-header">${CURRENT_SEASON} Major League Keepers <span class="section-count">${team.majors.length}/8</span></div>
-        ${renderMajorsTable(team.majors)}
+        <div class="section-header">${CURRENT_SEASON} Major League Keepers <span class="section-count">${majors.length}/8</span></div>
+        ${renderMajorsTable(majors)}
         <div class="section-header">${CURRENT_SEASON} Minor League Keepers <span class="section-count">${milKeepers.length}/10</span></div>
         ${renderMinorsKeepersTable(milKeepers)}
       </div>
@@ -410,6 +426,8 @@ function updateKeepersView() {
 
   const team = LEAGUE_DATA.teams.find(t => t.id === teamId);
   if (!team) return;
+  const majors = teamMajorsForKeepersTab(team);
+  const milKeepers = teamMilForKeepersTab(team);
 
   container.innerHTML = `
     <div class="summary-bar">
@@ -426,18 +444,10 @@ function updateKeepersView() {
         <div class="summary-label">Total Money</div>
       </div>
     </div>
-    ${(() => {
-      const milKeepers = [
-        ...(team.minors || []).map(p => ({ ...p, _calledUp: false })),
-        ...(team.callups || []).map(p => ({ ...p, _calledUp: true })),
-      ].filter(p => (p.yearAcquired ?? 0) < CURRENT_SEASON);
-      return `
-    <div class="section-header">${CURRENT_SEASON} Major League Keepers <span class="section-count">${team.majors.length}/8</span></div>
-    ${renderMajorsTable(team.majors)}
+    <div class="section-header">${CURRENT_SEASON} Major League Keepers <span class="section-count">${majors.length}/8</span></div>
+    ${renderMajorsTable(majors)}
     <div class="section-header">${CURRENT_SEASON} Minor League Keepers <span class="section-count">${milKeepers.length}/10</span></div>
     ${renderMinorsKeepersTable(milKeepers)}
-      `;
-    })()}
   `;
 }
 
@@ -4277,6 +4287,9 @@ function switchTab(tab) {
         break;
       }
       content.innerHTML = renderSettingsView();
+      // Snapshots come from a fresh DB query (not the regular cache) — load
+      // them after the container is in the DOM.
+      if (typeof _refreshSnapshotList === "function") _refreshSnapshotList();
       break;
   }
 }
@@ -4326,8 +4339,94 @@ function renderSettingsView() {
         </div>
         <button class="trade-btn" onclick="exportContractsCsv()" style="font-size:0.85rem">Export contracts (.csv)</button>
       </div>
+
+      <div class="keeper-projection" style="margin-bottom:14px">
+        <h3 style="margin-top:0">Rollback League State</h3>
+        <div style="color:var(--text-dim);font-size:0.84rem;margin-bottom:10px">
+          Take a snapshot of the entire league (trades, keeper selections, draft state, settings, etc.) so you can experiment — set the year, mess with rosters — and restore later if needed. A safety snapshot is taken automatically before any restore.
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+          <input type="text" id="settings-snapshot-label" placeholder="Optional label (e.g. 'before year advance test')" style="flex:1;min-width:240px;background:var(--bg);color:var(--text);border:1px solid var(--border);padding:8px 10px;border-radius:6px;font-size:0.9rem">
+          <button class="trade-btn trade-btn-submit" onclick="submitTakeSnapshot()" style="font-size:0.85rem">Take Snapshot</button>
+        </div>
+        <div id="settings-snapshot-list" style="font-size:0.85rem;color:var(--text-dim)">Loading snapshots…</div>
+      </div>
     </div>
   `;
+}
+
+async function submitTakeSnapshot() {
+  if (!isCommissioner()) return;
+  const labelEl = document.getElementById("settings-snapshot-label");
+  const label = (labelEl?.value || "").trim();
+  const btn = event?.target;
+  if (btn) { btn.disabled = true; btn.textContent = "Taking…"; }
+  try {
+    await takeLeagueSnapshotAsync(label);
+    if (labelEl) labelEl.value = "";
+    if (typeof logActivityAsync === "function") logActivityAsync("snapshot_taken", { label });
+    await _refreshSnapshotList();
+    showToast("Snapshot saved");
+  } catch (e) {
+    alert("Couldn't take snapshot: " + (e.message || e));
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = "Take Snapshot"; }
+  }
+}
+
+async function _refreshSnapshotList() {
+  const container = document.getElementById("settings-snapshot-list");
+  if (!container) return;
+  try {
+    const snaps = await listLeagueSnapshotsAsync();
+    if (!snaps.length) {
+      container.innerHTML = `<div style="color:var(--text-dim);font-style:italic">No snapshots yet.</div>`;
+      return;
+    }
+    container.innerHTML = snaps.map(s => {
+      const when = new Date(s.takenAt).toLocaleString();
+      const counts = s.counts;
+      return `
+        <div style="display:flex;align-items:center;gap:8px;padding:10px;background:var(--bg);border:1px solid var(--border);border-radius:6px;margin-bottom:6px;flex-wrap:wrap">
+          <div style="flex:1;min-width:200px">
+            <div style="color:var(--text-bright);font-weight:600;font-size:0.9rem">${escapeHtml(s.label)}</div>
+            <div style="color:var(--text-dim);font-size:0.74rem;margin-top:2px">${escapeHtml(when)} — ${counts.trades} trades, ${counts.keeperSel} keeper rows, ${counts.rosterMoves} roster moves, ${counts.leagueState} state rows</div>
+          </div>
+          <button class="trade-btn" onclick="submitRestoreSnapshot('${escapeJsString(s.key)}', '${escapeJsString(s.label)}')" style="font-size:0.78rem;padding:5px 10px">Restore</button>
+          <button class="trade-btn trade-btn-cancel" onclick="submitDeleteSnapshot('${escapeJsString(s.key)}', '${escapeJsString(s.label)}')" style="font-size:0.78rem;padding:5px 10px">Delete</button>
+        </div>
+      `;
+    }).join("");
+  } catch (e) {
+    container.innerHTML = `<div style="color:var(--red)">Couldn't load snapshots: ${escapeHtml(String(e.message || e))}</div>`;
+  }
+}
+
+async function submitRestoreSnapshot(key, label) {
+  if (!isCommissioner()) return;
+  if (!confirm(`Restore "${label}"? This wipes all current league data (trades, keepers, draft, settings) and replaces it with the snapshot. A safety snapshot of the current state will be saved first so you can undo this.`)) return;
+  try {
+    await restoreLeagueSnapshotAsync(key);
+    if (typeof logActivityAsync === "function") logActivityAsync("snapshot_restored", { key, label });
+    _applySettingsFromCache();
+    if (typeof applyRosterAdjustments === "function") applyRosterAdjustments();
+    if (typeof switchTab === "function") switchTab("settings");
+    showToast("Snapshot restored");
+  } catch (e) {
+    alert("Restore failed: " + (e.message || e));
+  }
+}
+
+async function submitDeleteSnapshot(key, label) {
+  if (!isCommissioner()) return;
+  if (!confirm(`Delete snapshot "${label}"? This can't be undone.`)) return;
+  try {
+    await deleteLeagueSnapshotAsync(key);
+    await _refreshSnapshotList();
+    showToast("Snapshot deleted");
+  } catch (e) {
+    alert("Delete failed: " + (e.message || e));
+  }
 }
 
 function exportContractsCsv() {
@@ -4647,6 +4746,14 @@ function describeActivity(a) {
       return `${actor} paused the Rule 5 clock`;
     case "rule5_clock_resumed":
       return `${actor} resumed the Rule 5 clock`;
+    case "season_set":
+      return `${actor} set the current season to <strong>${escapeHtml(p.to)}</strong> (was ${escapeHtml(p.from)})`;
+    case "settings_changed":
+      return `${actor} ${p.value ? "enabled" : "disabled"} <code>${escapeHtml(p.key)}</code>`;
+    case "snapshot_taken":
+      return `${actor} took a league snapshot${p.label ? `: <strong>${escapeHtml(p.label)}</strong>` : ""}`;
+    case "snapshot_restored":
+      return `${actor} restored the league to snapshot <strong>${escapeHtml(p.label || "")}</strong>`;
     case "commish_override":
       return `${actor} overrode ${player}'s contract <span style="color:var(--text-dim)">(${(p.fields || []).map(f => escapeHtml(f)).join(", ")})</span>`;
     case "constitution_edited":

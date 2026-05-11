@@ -673,6 +673,116 @@ async function saveConstitutionAsync(markdown) {
 }
 function dbGetKeeperDeadline() { return _cache.keeperDeadline; }
 function dbGetConstitution() { return _cache.constitution; }
+
+// --- League state snapshots (rollback) ---
+//
+// A snapshot is a single league_state row keyed `snapshot_<timestamp>` whose
+// `state` jsonb holds a full copy of every relevant table: trades,
+// keeper_selections, callup_overrides, roster_moves, and the rest of
+// league_state (excluding snapshot rows themselves). Restoring wipes the
+// current data and re-inserts from the snapshot. RLS already restricts
+// league_state writes to commissioners.
+
+async function listLeagueSnapshotsAsync() {
+  const { data, error } = await supabaseClient
+    .from("league_state")
+    .select("key, state, updated_at")
+    .like("key", "snapshot_%")
+    .order("key", { ascending: false });
+  if (error) throw error;
+  return (data || []).map(r => ({
+    key: r.key,
+    takenAt: r.state?.takenAt || r.updated_at,
+    label: r.state?.label || "(no label)",
+    counts: {
+      trades: r.state?.data?.trades?.length || 0,
+      keeperSel: r.state?.data?.keeperSel?.length || 0,
+      leagueState: r.state?.data?.leagueState?.length || 0,
+      callup: r.state?.data?.callup?.length || 0,
+      rosterMoves: r.state?.data?.rosterMoves?.length || 0,
+    },
+  }));
+}
+
+async function takeLeagueSnapshotAsync(label) {
+  const ts = Date.now();
+  const key = `snapshot_${ts}`;
+  const [trades, ks, ls, co, rm] = await Promise.all([
+    supabaseClient.from("trades").select("*"),
+    supabaseClient.from("keeper_selections").select("*"),
+    supabaseClient.from("league_state").select("*"),
+    supabaseClient.from("callup_overrides").select("*"),
+    supabaseClient.from("roster_moves").select("*"),
+  ]);
+  for (const r of [trades, ks, ls, co, rm]) {
+    if (r.error) throw r.error;
+  }
+  // Don't snapshot existing snapshot rows — keeps the snapshot self-contained
+  // and avoids exponential growth on repeat captures.
+  const leagueStateRows = (ls.data || []).filter(r => !String(r.key).startsWith("snapshot_"));
+  const snapshot = {
+    takenAt: new Date(ts).toISOString(),
+    label: label || `Snapshot ${new Date(ts).toLocaleString()}`,
+    data: {
+      trades: trades.data || [],
+      keeperSel: ks.data || [],
+      leagueState: leagueStateRows,
+      callup: co.data || [],
+      rosterMoves: rm.data || [],
+    },
+  };
+  const { error } = await supabaseClient.from("league_state").insert({ key, state: snapshot });
+  if (error) throw error;
+  return { key, snapshot };
+}
+
+async function deleteLeagueSnapshotAsync(key) {
+  if (!String(key).startsWith("snapshot_")) throw new Error("Not a snapshot key");
+  const { error } = await supabaseClient.from("league_state").delete().eq("key", key);
+  if (error) throw error;
+}
+
+async function restoreLeagueSnapshotAsync(key) {
+  // Pull the snapshot row directly so we have the freshest copy.
+  const { data: snapRow, error: getErr } = await supabaseClient
+    .from("league_state").select("*").eq("key", key).single();
+  if (getErr) throw getErr;
+  const snap = snapRow.state;
+  if (!snap || !snap.data) throw new Error("Snapshot has no data");
+
+  // Auto-safety snapshot of current state before destructive restore, so the
+  // commissioner can recover if they restore to the wrong point.
+  try {
+    await takeLeagueSnapshotAsync(`Auto-saved before restoring ${snap.label}`);
+  } catch (e) {
+    console.warn("auto-safety snapshot failed:", e);
+  }
+
+  // Wipe current data. Use a column predicate that matches all rows.
+  const wipes = await Promise.all([
+    supabaseClient.from("trades").delete().not("id", "is", null),
+    supabaseClient.from("keeper_selections").delete().not("team_id", "is", null),
+    supabaseClient.from("callup_overrides").delete().not("player_name", "is", null),
+    supabaseClient.from("roster_moves").delete().not("id", "is", null),
+    // Delete non-snapshot league_state rows only — snapshots themselves stay.
+    supabaseClient.from("league_state").delete().not("key", "like", "snapshot_%"),
+  ]);
+  for (const r of wipes) if (r.error) throw r.error;
+
+  // Re-insert snapshot data. Skip empty arrays.
+  const inserts = [];
+  if (snap.data.trades?.length)      inserts.push(supabaseClient.from("trades").insert(snap.data.trades));
+  if (snap.data.keeperSel?.length)   inserts.push(supabaseClient.from("keeper_selections").insert(snap.data.keeperSel));
+  if (snap.data.callup?.length)      inserts.push(supabaseClient.from("callup_overrides").insert(snap.data.callup));
+  if (snap.data.rosterMoves?.length) inserts.push(supabaseClient.from("roster_moves").insert(snap.data.rosterMoves));
+  if (snap.data.leagueState?.length) inserts.push(supabaseClient.from("league_state").insert(snap.data.leagueState));
+  const results = await Promise.all(inserts);
+  for (const r of results) if (r.error) throw r.error;
+
+  // Refresh the in-memory cache so the UI reflects the restore.
+  await _fetchAll();
+  return snap;
+}
 // Single-row append. RLS allows the write when team_id = my_team_id() OR
 // the user is a commissioner — that's enforced server-side.
 async function appendRosterMoveAsync({ kind, player_name, team_id }) {
