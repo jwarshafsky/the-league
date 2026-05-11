@@ -1767,10 +1767,12 @@ function renderFinancialsView() {
     const sd = sendDownsByTeam[team.id] || [];
     const callupFees = sd.length * SEND_DOWN_FEE;
     const paid = paidMap[team.id] || {};
+    const luxuryAmount = Number(paid.luxuryAmount || 0);
     const leagueOwed = paid.league ? 0 : LEAGUE_FEE;
     // If there are no callup fees, "paid" is irrelevant — owed is 0 either way.
     const callupOwed = (callupFees === 0 || paid.callup) ? 0 : callupFees;
-    const totalDue = leagueOwed + callupOwed;
+    const luxuryOwed = (luxuryAmount === 0 || paid.luxury) ? 0 : luxuryAmount;
+    const totalDue = leagueOwed + callupOwed + luxuryOwed;
     const allPaid = totalDue === 0;
     const sdSummary = sd.length
       ? sd.map(m => `<div style="font-size:0.72rem;color:var(--text-dim)">${escapeHtml(m.player_name)} — ${m.at ? new Date(m.at).toLocaleDateString() : ""}</div>`).join("")
@@ -1787,6 +1789,18 @@ function renderFinancialsView() {
         : (paid.callup
             ? '<span style="color:var(--green);font-size:0.78rem;font-weight:700">PAID</span>'
             : '<span style="color:var(--red);font-size:0.78rem;font-weight:700">unpaid</span>');
+    const luxuryAmountCtl = commish
+      ? `<input type="number" min="0" step="1" value="${luxuryAmount || ''}" placeholder="0"
+           onchange="setLuxuryFeeAmount('${escapeJsString(team.id)}', this.value)"
+           style="width:70px;background:var(--bg);color:var(--text);border:1px solid var(--border);padding:4px 6px;border-radius:4px;font-size:0.82rem;text-align:right">`
+      : `<span style="color:var(--text-bright);font-weight:600">$${luxuryAmount}</span>`;
+    const luxuryPaidCtl = luxuryAmount === 0
+      ? '<span style="color:var(--text-dim);font-size:0.74rem">—</span>'
+      : commish
+        ? `<input type="checkbox" ${paid.luxury ? "checked" : ""} onchange="toggleFeePaid('${escapeJsString(team.id)}','luxury',this.checked)" style="width:16px;height:16px;cursor:pointer;accent-color:var(--green)">`
+        : (paid.luxury
+            ? '<span style="color:var(--green);font-size:0.78rem;font-weight:700">PAID</span>'
+            : '<span style="color:var(--red);font-size:0.78rem;font-weight:700">unpaid</span>');
     return `
       <tr style="${allPaid ? 'opacity:0.55' : ''}">
         <td style="font-weight:700;color:var(--text-bright);vertical-align:top;padding:8px 10px">${escapeHtml(team.name)}</td>
@@ -1800,6 +1814,8 @@ function renderFinancialsView() {
           ${sdSummary}
         </td>
         <td style="text-align:center;vertical-align:top;padding:8px 6px">${callupPaidCtl}</td>
+        <td style="text-align:right;vertical-align:top;padding:8px 6px">${luxuryAmountCtl}</td>
+        <td style="text-align:center;vertical-align:top;padding:8px 6px">${luxuryPaidCtl}</td>
         <td style="text-align:right;font-weight:700;color:${totalDue === 0 ? 'var(--green)' : 'var(--text-bright)'};vertical-align:top;padding:8px 10px">$${totalDue}</td>
       </tr>
     `;
@@ -1808,13 +1824,19 @@ function renderFinancialsView() {
   // Totals reflect what's actually owed (paid amounts subtracted).
   const totalLeague = LEAGUE_DATA.teams.length * LEAGUE_FEE;
   const totalCallup = LEAGUE_DATA.teams.reduce((s, t) => s + ((sendDownsByTeam[t.id] || []).length * SEND_DOWN_FEE), 0);
+  const totalLuxury = LEAGUE_DATA.teams.reduce((s, t) => s + Number(paidMap[t.id]?.luxuryAmount || 0), 0);
   const owedLeague = LEAGUE_DATA.teams.reduce((s, t) => s + ((paidMap[t.id]?.league) ? 0 : LEAGUE_FEE), 0);
   const owedCallup = LEAGUE_DATA.teams.reduce((s, t) => {
     const f = (sendDownsByTeam[t.id] || []).length * SEND_DOWN_FEE;
     if (f === 0) return s;
     return s + ((paidMap[t.id]?.callup) ? 0 : f);
   }, 0);
-  const totalOwed = owedLeague + owedCallup;
+  const owedLuxury = LEAGUE_DATA.teams.reduce((s, t) => {
+    const amt = Number(paidMap[t.id]?.luxuryAmount || 0);
+    if (amt === 0) return s;
+    return s + ((paidMap[t.id]?.luxury) ? 0 : amt);
+  }, 0);
+  const totalOwed = owedLeague + owedCallup + owedLuxury;
 
   return `
     <h2 style="color:var(--text-bright);margin-bottom:6px">Financials</h2>
@@ -1835,20 +1857,22 @@ function renderFinancialsView() {
     </div>
 
     <div class="keeper-projection" style="margin-bottom:14px">
-      <h3 style="margin-top:0">League &amp; Call Up Fees</h3>
+      <h3 style="margin-top:0">Fees</h3>
       <div style="color:var(--text-dim);font-size:0.82rem;margin-bottom:10px">
-        League fee is $${LEAGUE_FEE} per team. Each send-down costs $${SEND_DOWN_FEE}.
-        ${commish ? "Check the box to mark a team as paid." : "Only the commissioner can mark fees paid."}
+        League fee is $${LEAGUE_FEE} per team. Each send-down costs $${SEND_DOWN_FEE}. Luxury tax is set manually by the commissioner per team.
+        ${commish ? " Edit any amount and check the box to mark a team as paid." : " Only the commissioner can edit amounts and mark fees paid."}
       </div>
-      <div style="max-width:760px;overflow-x:auto">
+      <div style="max-width:880px;overflow-x:auto">
         <table class="player-table" style="font-size:0.85rem;width:100%;table-layout:fixed">
           <colgroup>
             <col style="width:110px">
-            <col style="width:72px">
-            <col style="width:54px">
+            <col style="width:66px">
+            <col style="width:50px">
             <col>
-            <col style="width:54px">
-            <col style="width:82px">
+            <col style="width:50px">
+            <col style="width:74px">
+            <col style="width:50px">
+            <col style="width:78px">
           </colgroup>
           <thead>
             <tr>
@@ -1856,6 +1880,8 @@ function renderFinancialsView() {
               <th style="text-align:right">League</th>
               <th style="text-align:center">Paid?</th>
               <th>Send-downs</th>
+              <th style="text-align:center">Paid?</th>
+              <th style="text-align:right">Luxury</th>
               <th style="text-align:center">Paid?</th>
               <th style="text-align:right">Total Due</th>
             </tr>
@@ -1868,6 +1894,8 @@ function renderFinancialsView() {
               <td style="border-top:2px solid var(--border)"></td>
               <td style="text-align:right;color:var(--text-dim);border-top:2px solid var(--border);padding:8px 10px">$${totalCallup}</td>
               <td style="border-top:2px solid var(--border)"></td>
+              <td style="text-align:right;color:var(--text-dim);border-top:2px solid var(--border);padding:8px 6px">$${totalLuxury}</td>
+              <td style="border-top:2px solid var(--border)"></td>
               <td style="text-align:right;font-weight:700;color:${totalOwed === 0 ? 'var(--green)' : 'var(--text-bright)'};border-top:2px solid var(--border);padding:8px 10px">$${totalOwed}<div style="font-weight:400;color:var(--text-dim);font-size:0.7rem">owed</div></td>
             </tr>
           </tfoot>
@@ -1875,6 +1903,28 @@ function renderFinancialsView() {
       </div>
     </div>
   `;
+}
+
+async function setLuxuryFeeAmount(teamId, raw) {
+  if (!isCommissioner()) return;
+  const parsed = parseFloat(raw);
+  const amount = (Number.isFinite(parsed) && parsed >= 0) ? parsed : 0;
+  const cur = (typeof dbGetFeesPaid === "function") ? dbGetFeesPaid() : {};
+  const teamPaid = { ...(cur[teamId] || {}) };
+  teamPaid.luxuryAmount = amount;
+  // Setting/clearing the amount also clears the paid flag if there's nothing
+  // owed — otherwise the row would lock to "PAID" with $0 amount.
+  if (amount === 0) delete teamPaid.luxury;
+  const next = { ...cur, [teamId]: teamPaid };
+  try {
+    await saveFeesPaidAsync(next);
+    if (typeof logActivityAsync === "function") {
+      logActivityAsync("luxury_fee_set", { team_id: teamId, amount }, { targetTeamId: teamId });
+    }
+    if (currentView === "financials") switchTab("financials");
+  } catch (e) {
+    alert("Couldn't save: " + (e.message || e));
+  }
 }
 
 async function toggleFeePaid(teamId, kind, checked) {
@@ -5172,10 +5222,16 @@ function describeActivity(a) {
       return `${actor} took a league snapshot${p.label ? `: <strong>${escapeHtml(p.label)}</strong>` : ""}`;
     case "snapshot_restored":
       return `${actor} restored the league to snapshot <strong>${escapeHtml(p.label || "")}</strong>`;
-    case "fee_marked_paid":
-      return `${actor} marked ${target}'s ${escapeHtml(p.kind === "callup" ? "call-up" : "league")} fee as paid`;
-    case "fee_marked_unpaid":
-      return `${actor} marked ${target}'s ${escapeHtml(p.kind === "callup" ? "call-up" : "league")} fee as unpaid`;
+    case "fee_marked_paid": {
+      const kindLabel = p.kind === "callup" ? "call-up" : p.kind === "luxury" ? "luxury tax" : "league";
+      return `${actor} marked ${target}'s ${escapeHtml(kindLabel)} fee as paid`;
+    }
+    case "fee_marked_unpaid": {
+      const kindLabel = p.kind === "callup" ? "call-up" : p.kind === "luxury" ? "luxury tax" : "league";
+      return `${actor} marked ${target}'s ${escapeHtml(kindLabel)} fee as unpaid`;
+    }
+    case "luxury_fee_set":
+      return `${actor} set ${target}'s luxury tax fee to <strong>$${escapeHtml(p.amount)}</strong>`;
     case "keeper_price_exception_set":
       return `${actor} set ${player}'s true salary to <strong>$${escapeHtml(p.price)}</strong>`;
     case "keeper_price_exception_removed":
