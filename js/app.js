@@ -1658,9 +1658,12 @@ function renderFinancialsView() {
   const feeRows = LEAGUE_DATA.teams.map(team => {
     const sd = sendDownsByTeam[team.id] || [];
     const callupFees = sd.length * SEND_DOWN_FEE;
-    const totalDue = LEAGUE_FEE + callupFees;
     const paid = paidMap[team.id] || {};
-    const allPaid = !!paid.league && (callupFees === 0 || !!paid.callup);
+    const leagueOwed = paid.league ? 0 : LEAGUE_FEE;
+    // If there are no callup fees, "paid" is irrelevant — owed is 0 either way.
+    const callupOwed = (callupFees === 0 || paid.callup) ? 0 : callupFees;
+    const totalDue = leagueOwed + callupOwed;
+    const allPaid = totalDue === 0;
     const sdSummary = sd.length
       ? sd.map(m => `<div style="font-size:0.72rem;color:var(--text-dim)">${escapeHtml(m.player_name)} — ${m.at ? new Date(m.at).toLocaleDateString() : ""}</div>`).join("")
       : '<div style="font-size:0.72rem;color:var(--text-dim);font-style:italic">No send-downs</div>';
@@ -1677,25 +1680,33 @@ function renderFinancialsView() {
             ? '<span style="color:var(--green);font-size:0.78rem;font-weight:700">PAID</span>'
             : '<span style="color:var(--red);font-size:0.78rem;font-weight:700">unpaid</span>');
     return `
-      <tr style="${allPaid ? 'opacity:0.5' : ''}">
-        <td style="font-weight:700;color:var(--text-bright);vertical-align:top">${escapeHtml(team.name)}</td>
-        <td style="text-align:right;vertical-align:top">$${LEAGUE_FEE}</td>
-        <td style="text-align:center;vertical-align:top">${leaguePaidCtl}</td>
-        <td style="vertical-align:top">
+      <tr style="${allPaid ? 'opacity:0.55' : ''}">
+        <td style="font-weight:700;color:var(--text-bright);vertical-align:top;padding:8px 10px">${escapeHtml(team.name)}</td>
+        <td style="text-align:right;vertical-align:top;padding:8px 6px">$${LEAGUE_FEE}</td>
+        <td style="text-align:center;vertical-align:top;padding:8px 6px">${leaguePaidCtl}</td>
+        <td style="vertical-align:top;padding:8px 10px">
           <div style="display:flex;justify-content:space-between;gap:8px;align-items:baseline">
             <span style="color:var(--text);font-size:0.84rem">${sd.length} send-down${sd.length === 1 ? "" : "s"}</span>
             <span style="color:var(--text-bright);font-weight:600">$${callupFees}</span>
           </div>
           ${sdSummary}
         </td>
-        <td style="text-align:center;vertical-align:top">${callupPaidCtl}</td>
-        <td style="text-align:right;font-weight:700;color:var(--text-bright);vertical-align:top">$${totalDue}</td>
+        <td style="text-align:center;vertical-align:top;padding:8px 6px">${callupPaidCtl}</td>
+        <td style="text-align:right;font-weight:700;color:${totalDue === 0 ? 'var(--green)' : 'var(--text-bright)'};vertical-align:top;padding:8px 10px">$${totalDue}</td>
       </tr>
     `;
   }).join("");
 
+  // Totals reflect what's actually owed (paid amounts subtracted).
   const totalLeague = LEAGUE_DATA.teams.length * LEAGUE_FEE;
   const totalCallup = LEAGUE_DATA.teams.reduce((s, t) => s + ((sendDownsByTeam[t.id] || []).length * SEND_DOWN_FEE), 0);
+  const owedLeague = LEAGUE_DATA.teams.reduce((s, t) => s + ((paidMap[t.id]?.league) ? 0 : LEAGUE_FEE), 0);
+  const owedCallup = LEAGUE_DATA.teams.reduce((s, t) => {
+    const f = (sendDownsByTeam[t.id] || []).length * SEND_DOWN_FEE;
+    if (f === 0) return s;
+    return s + ((paidMap[t.id]?.callup) ? 0 : f);
+  }, 0);
+  const totalOwed = owedLeague + owedCallup;
 
   return `
     <h2 style="color:var(--text-bright);margin-bottom:6px">Financials</h2>
@@ -1718,29 +1729,39 @@ function renderFinancialsView() {
         League fee is $${LEAGUE_FEE} per team. Each send-down costs $${SEND_DOWN_FEE}.
         ${commish ? "Check the box to mark a team as paid." : "Only the commissioner can mark fees paid."}
       </div>
-      <table class="player-table" style="font-size:0.85rem">
-        <thead>
-          <tr>
-            <th>Team</th>
-            <th style="text-align:right">League Fee</th>
-            <th style="text-align:center;width:70px">Paid?</th>
-            <th>Send-downs / Call-up Fees</th>
-            <th style="text-align:center;width:70px">Paid?</th>
-            <th style="text-align:right">Total Due</th>
-          </tr>
-        </thead>
-        <tbody>${feeRows}</tbody>
-        <tfoot>
-          <tr>
-            <td style="font-weight:700;color:var(--text-bright);border-top:2px solid var(--border)">Totals</td>
-            <td style="text-align:right;font-weight:700;border-top:2px solid var(--border)">$${totalLeague}</td>
-            <td style="border-top:2px solid var(--border)"></td>
-            <td style="text-align:right;font-weight:700;border-top:2px solid var(--border)">$${totalCallup}</td>
-            <td style="border-top:2px solid var(--border)"></td>
-            <td style="text-align:right;font-weight:700;color:var(--text-bright);border-top:2px solid var(--border)">$${totalLeague + totalCallup}</td>
-          </tr>
-        </tfoot>
-      </table>
+      <div style="max-width:760px;overflow-x:auto">
+        <table class="player-table" style="font-size:0.85rem;width:100%;table-layout:fixed">
+          <colgroup>
+            <col style="width:110px">
+            <col style="width:72px">
+            <col style="width:54px">
+            <col>
+            <col style="width:54px">
+            <col style="width:82px">
+          </colgroup>
+          <thead>
+            <tr>
+              <th>Team</th>
+              <th style="text-align:right">League</th>
+              <th style="text-align:center">Paid?</th>
+              <th>Send-downs</th>
+              <th style="text-align:center">Paid?</th>
+              <th style="text-align:right">Total Due</th>
+            </tr>
+          </thead>
+          <tbody>${feeRows}</tbody>
+          <tfoot>
+            <tr>
+              <td style="font-weight:700;color:var(--text-bright);border-top:2px solid var(--border);padding:8px 10px">Totals</td>
+              <td style="text-align:right;color:var(--text-dim);border-top:2px solid var(--border);padding:8px 6px">$${totalLeague}</td>
+              <td style="border-top:2px solid var(--border)"></td>
+              <td style="text-align:right;color:var(--text-dim);border-top:2px solid var(--border);padding:8px 10px">$${totalCallup}</td>
+              <td style="border-top:2px solid var(--border)"></td>
+              <td style="text-align:right;font-weight:700;color:${totalOwed === 0 ? 'var(--green)' : 'var(--text-bright)'};border-top:2px solid var(--border);padding:8px 10px">$${totalOwed}<div style="font-weight:400;color:var(--text-dim);font-size:0.7rem">owed</div></td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
     </div>
   `;
 }
