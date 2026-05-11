@@ -258,17 +258,20 @@ function _subscribeToChanges() {
   // Listen for trades / keeper_selections / league_state changes from other
   // users and refresh the cache + UI. Skip the re-render if the user is mid-
   // typing in a form (we don't want to wipe their input on echo).
-  const refresh = async () => {
-    await _fetchAll();
-    const ae = document.activeElement;
-    const userIsTyping = ae && (ae.tagName === "INPUT" || ae.tagName === "TEXTAREA" || ae.tagName === "SELECT" || ae.isContentEditable);
-    if (userIsTyping) return;
-    if (typeof switchTab !== "function" || typeof currentView === "undefined") return;
-    // Skip refreshing the trades tab when the New Trade form is open — would wipe queued assets.
-    if (currentView === "trades" && document.getElementById("trade-form-container")?.children.length) return;
-    // Skip the open Pick Editor / Commish Editor modals.
-    if (document.getElementById("pick-editor-modal") || document.getElementById("commish-editor-modal")) return;
-    switchTab(currentView);
+  let _refreshTimer = null;
+  const refresh = () => {
+    if (_refreshTimer) return;
+    _refreshTimer = setTimeout(async () => {
+      _refreshTimer = null;
+      await _fetchAll();
+      const ae = document.activeElement;
+      const userIsTyping = ae && (ae.tagName === "INPUT" || ae.tagName === "TEXTAREA" || ae.tagName === "SELECT" || ae.isContentEditable);
+      if (userIsTyping) return;
+      if (typeof switchTab !== "function" || typeof currentView === "undefined") return;
+      if (currentView === "trades" && document.getElementById("trade-form-container")?.children.length) return;
+      if (document.getElementById("pick-editor-modal") || document.getElementById("commish-editor-modal")) return;
+      switchTab(currentView);
+    }, 150);
   };
   try {
     _realtimeChannel = supabaseClient.channel("league-data")

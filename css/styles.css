@@ -31,6 +31,15 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* Sticky wrapper keeps both header and nav-tabs pinned together at the top
+   on scroll. Hardcoding the nav-tabs top offset would break when the header
+   height changes (safe-area inset on PWA, title wrap on narrow viewports). */
+.header-stack {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+
 /* Header */
 .app-header {
   background: linear-gradient(135deg, var(--accent-dim), #1e3a5f);
@@ -41,9 +50,7 @@ body {
   display: flex;
   align-items: center;
   gap: 12px;
-  position: sticky;
-  top: 0;
-  z-index: 100;
+  position: relative;
   box-shadow: var(--shadow);
 }
 .app-header h1 {

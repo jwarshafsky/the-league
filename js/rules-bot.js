@@ -121,24 +121,26 @@
     `;
     document.body.appendChild(root);
 
-    // ONE handler per button, bound to pointerup. Pointer Events are
-    // available in every browser we care about; binding click in addition
-    // caused intermittent double-fires (open → immediately close).
-    // pointerup fires AFTER the user lifts their finger so a tap that
-    // started on the FAB but slid off won't trigger.
+    // One handler per button, bound to `click`. `click` fires once per user
+    // tap on every platform we care about (incl. iOS PWA), where `pointerup`
+    // was unreliable. Each button has its OWN debounce timestamp so opening
+    // and immediately closing (FAB then ×) isn't blocked. The 50ms guard
+    // only catches pathological browser-synthesized doubled events, well
+    // below the ~150ms minimum human tap rate.
     const fabEl = document.getElementById("rules-bot-fab");
     const closeEl = document.getElementById("rules-bot-close");
-    const _onTap = (next) => (e) => {
-      if (e) { e.preventDefault?.(); e.stopPropagation?.(); }
-      _toggle(next === undefined ? !_open : next);
+    const _onTap = (next) => {
+      let _last = 0;
+      return (e) => {
+        const now = Date.now();
+        if (now - _last < 50) return;
+        _last = now;
+        if (e) { e.preventDefault?.(); e.stopPropagation?.(); }
+        _toggle(next === undefined ? !_open : next);
+      };
     };
-    if (window.PointerEvent) {
-      fabEl.addEventListener("pointerup", _onTap(undefined));
-      closeEl.addEventListener("pointerup", _onTap(false));
-    } else {
-      fabEl.addEventListener("click", _onTap(undefined));
-      closeEl.addEventListener("click", _onTap(false));
-    }
+    fabEl.addEventListener("click", _onTap(undefined));
+    closeEl.addEventListener("click", _onTap(false));
 
     // iOS keyboard handling: pin the panel above the soft keyboard while the
     // input is focused. Listens to visualViewport (which IS reliable on iOS)
@@ -493,17 +495,20 @@
     }
   }
 
-  // Show / hide the FAB based on auth state. Polls every 2s.
-  // We deliberately do NOT auto-close the panel when not signed in — token
-  // refreshes briefly null currentOwner during the await on fetchOwnerRow,
-  // which was causing the panel to flicker shut. The FAB hide/show is enough.
+  function _syncFabVisibility() {
+    const fab = document.getElementById("rules-bot-fab");
+    if (!fab) return;
+    const signedIn = (typeof currentOwner !== "undefined" && !!currentOwner);
+    fab.style.display = signedIn ? "block" : "none";
+  }
+
+  // Show / hide the FAB based on auth state. Reacts immediately via
+  // onAuthChange callback; keeps a slow poll as safety net.
   function _watchAuth() {
-    setInterval(() => {
-      const fab = document.getElementById("rules-bot-fab");
-      if (!fab) return;
-      const signedIn = (typeof currentOwner !== "undefined" && !!currentOwner);
-      fab.style.display = signedIn ? "block" : "none";
-    }, 2000);
+    if (typeof onAuthChange === "function") {
+      onAuthChange(() => _syncFabVisibility());
+    }
+    setInterval(_syncFabVisibility, 4000);
   }
 
   function init() {

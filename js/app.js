@@ -5409,16 +5409,14 @@ function renderHeaderUser() {
   // as proposals/messages flow in via realtime. The count covers BOTH new
   // pending proposals to you AND new messages from someone else, with a
   // hover tooltip breaking down the two.
+  const u = (typeof dbGetUnreadCounts === "function") ? dbGetUnreadCounts() : { proposals: 0, messages: 0, total: 0 };
+  const badgeHtml = u.total > 0
+    ? ` <span title="${escapeHtml(`${u.proposals} new proposal${u.proposals === 1 ? "" : "s"}, ${u.messages} new message${u.messages === 1 ? "" : "s"}`)}" style="color:var(--red);font-weight:800;margin-left:2px">(${u.total})</span>`
+    : "";
   const inboxNav = document.getElementById("nav-trade-inbox");
-  if (inboxNav) {
-    const u = (typeof dbGetUnreadCounts === "function") ? dbGetUnreadCounts() : { proposals: 0, messages: 0, total: 0 };
-    if (u.total > 0) {
-      const tip = `${u.proposals} new proposal${u.proposals === 1 ? "" : "s"}, ${u.messages} new message${u.messages === 1 ? "" : "s"}`;
-      inboxNav.innerHTML = `Trade Inbox <span title="${escapeHtml(tip)}" style="color:var(--red);font-weight:800;margin-left:2px">(${u.total})</span>`;
-    } else {
-      inboxNav.innerHTML = "Trade Inbox";
-    }
-  }
+  if (inboxNav) inboxNav.innerHTML = "Trade Inbox" + badgeHtml;
+  const drawerInbox = document.getElementById("drawer-trade-inbox");
+  if (drawerInbox) drawerInbox.innerHTML = "Trade Inbox" + badgeHtml;
 }
 
 // Re-render the header bar whenever someone joins or leaves.
