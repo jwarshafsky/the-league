@@ -17,7 +17,7 @@
   <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
   <link rel="icon" type="image/png" sizes="512x512" href="icons/icon-512.png">
   <link rel="shortcut icon" href="favicon.ico">
-  <link rel="stylesheet" href="css/styles.css?v=120">
+  <link rel="stylesheet" href="css/styles.css?v=121">
 </head>
 <body>
   <div class="header-stack">
@@ -39,6 +39,7 @@
       <button class="nav-tab" data-tab="activity" onclick="switchTab('activity')">Activity</button>
       <button class="nav-tab" data-tab="trophy-room" onclick="switchTab('trophy-room')">League History</button>
       <button class="nav-tab" data-tab="rules" onclick="switchTab('rules')">League Rules</button>
+      <button class="nav-tab commish-only-tab" data-tab="settings" onclick="switchTab('settings')" style="display:none">Settings</button>
     </nav>
   </div>
 
@@ -63,6 +64,7 @@
       <button class="nav-drawer-item" data-tab="activity" onclick="switchTab('activity'); toggleNavDrawer(false)">Activity</button>
       <button class="nav-drawer-item" data-tab="trophy-room" onclick="switchTab('trophy-room'); toggleNavDrawer(false)">League History</button>
       <button class="nav-drawer-item" data-tab="rules" onclick="switchTab('rules'); toggleNavDrawer(false)">League Rules</button>
+      <button class="nav-drawer-item commish-only-tab" data-tab="settings" onclick="switchTab('settings'); toggleNavDrawer(false)" style="display:none">Settings</button>
     </nav>
     <div id="drawer-user-bar" class="nav-drawer-footer"></div>
   </aside>
@@ -72,15 +74,15 @@
   </main>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.74.0/dist/umd/supabase.min.js"></script>
-  <script src="js/supabase-client.js?v=120"></script>
-  <script src="js/db.js?v=120"></script>
-  <script src="js/data.js?v=120"></script>
-  <script src="js/player-stats-snapshot.js?v=120"></script>
-  <script src="js/espn-snapshot.js?v=120"></script>
-  <script src="js/history-snapshot.js?v=120"></script>
-  <script src="js/prospects.js?v=120"></script>
-  <script src="js/app.js?v=120"></script>
-  <script src="js/rules-bot.js?v=120"></script>
+  <script src="js/supabase-client.js?v=121"></script>
+  <script src="js/db.js?v=121"></script>
+  <script src="js/data.js?v=121"></script>
+  <script src="js/player-stats-snapshot.js?v=121"></script>
+  <script src="js/espn-snapshot.js?v=121"></script>
+  <script src="js/history-snapshot.js?v=121"></script>
+  <script src="js/prospects.js?v=121"></script>
+  <script src="js/app.js?v=121"></script>
+  <script src="js/rules-bot.js?v=121"></script>
   <script>
     // Register the PWA service worker + auto-update when a new version is
     // available. Network-first SW ensures fresh code online; this block makes

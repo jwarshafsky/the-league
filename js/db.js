@@ -20,6 +20,7 @@ const _cache = {
   keeperDeadline: null,// { at: ISO string } | null — past `at`, non-commish keeper toggles are blocked
   rosterMoves: [],     // [{ kind: "callup" | "demote", player_name, team_id, year?, at }]
   constitution: null,  // string (markdown) | null — commish-editable league rules
+  settings: {},        // { currentSeason?, enforceRule5RosterSpot?, enforceMinorsRosterSpot? }
 };
 // Cross-conversation read state for the trade inbox: { threadId: lastReadAt }.
 // Anything in the thread newer than lastReadAt counts as unread (covers BOTH
@@ -118,6 +119,7 @@ async function _fetchAll() {
   _cache.workaroundOverrides = {};
   _cache.keeperDeadline = null;
   _cache.constitution = null;
+  _cache.settings = {};
   // NOTE: do NOT reset _cache.rosterMoves here — it's already populated above
   // from the dedicated roster_moves table. A leftover reset from when this
   // data lived in league_state was the cause of a bug where send-downs
@@ -129,6 +131,7 @@ async function _fetchAll() {
     else if (r.key === "workaround_overrides") _cache.workaroundOverrides = r.state || {};
     else if (r.key === "keeper_deadline") _cache.keeperDeadline = r.state;
     else if (r.key === "constitution") _cache.constitution = (r.state && r.state.markdown) || null;
+    else if (r.key === "settings") _cache.settings = r.state || {};
   }
 
   _cache.callup = {};
@@ -435,6 +438,7 @@ function dbGetRule5() { return _clone(_cache.rule5); }
 function dbGetCallupOverrides() { return _clone(_cache.callup); }
 function dbGetCommishOverrides() { return _clone(_cache.commishOverrides); }
 function dbGetWorkaroundOverrides() { return _clone(_cache.workaroundOverrides); }
+function dbGetSettings() { return _clone(_cache.settings || {}); }
 function dbGetActivity() { return _cache.activity; }            // read-only
 function dbGetProposals() { return _cache.proposals; }          // read-only
 function dbGetMessages() { return _cache.messages; }            // read-only
@@ -650,6 +654,7 @@ async function saveRule5Async(state)            { return _saveLeagueStateAsync("
 async function saveCommishOverridesAsync(map)   { return _saveLeagueStateAsync("commish_overrides", map, "commishOverrides"); }
 async function saveWorkaroundOverridesAsync(m)  { return _saveLeagueStateAsync("workaround_overrides", m, "workaroundOverrides"); }
 async function saveKeeperDeadlineAsync(state)   { return _saveLeagueStateAsync("keeper_deadline", state, "keeperDeadline"); }
+async function saveSettingsAsync(s)             { return _saveLeagueStateAsync("settings", s, "settings"); }
 async function saveConstitutionAsync(markdown) {
   const prev = _cache.constitution;
   _cache.constitution = markdown;

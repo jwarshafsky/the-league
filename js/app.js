@@ -1,6 +1,59 @@
 // Fantasy League Manager - Main App
 
-const CURRENT_SEASON = 2026;
+// CURRENT_SEASON defaults to 2026 but can be overridden by the commissioner
+// via the Settings tab (stored in league_state.settings.currentSeason).
+// Kept as a `let` so existing references pick up the new value automatically
+// after the DB cache loads. _applySettingsFromCache() reconciles the override
+// once the cache is populated.
+let CURRENT_SEASON = 2026;
+const DEFAULT_SEASON = 2026;
+
+// Roster caps (league constitution).
+const ML_ROSTER_MAX = 25;
+const MIL_ROSTER_MAX = 10;
+
+function getLeagueSettings() {
+  if (typeof dbGetSettings === "function") return dbGetSettings();
+  return {};
+}
+
+function _applySettingsFromCache() {
+  const s = getLeagueSettings();
+  if (s && typeof s.currentSeason === "number") {
+    CURRENT_SEASON = s.currentSeason;
+  } else {
+    CURRENT_SEASON = DEFAULT_SEASON;
+  }
+}
+
+function isRule5RosterEnforcementEnabled() {
+  return !!getLeagueSettings().enforceRule5RosterSpot;
+}
+function isMinorsRosterEnforcementEnabled() {
+  return !!getLeagueSettings().enforceMinorsRosterSpot;
+}
+
+// Count current ML roster slots used by a team (majors + callups). After
+// applyRosterAdjustments, these arrays already reflect Rule 5 picks (which
+// are recorded as trades) and call-ups.
+function getTeamMlCount(teamId) {
+  const team = LEAGUE_DATA.teams.find(t => t.id === teamId);
+  if (!team) return 0;
+  return (team.majors || []).length + (team.callups || []).length;
+}
+
+// Count current MiL roster slots used by a team. Includes existing minors +
+// minors-draft picks already made by this team (Minors Draft picks don't
+// move players via the trade mechanism, so we count them explicitly).
+function getTeamMilCount(teamId) {
+  const team = LEAGUE_DATA.teams.find(t => t.id === teamId);
+  if (!team) return 0;
+  const draft = (typeof getDraft === "function") ? getDraft() : null;
+  const minorsPicks = draft && Array.isArray(draft.picks)
+    ? draft.picks.filter(p => p.team === teamId).length
+    : 0;
+  return (team.minors || []).length + minorsPicks;
+}
 
 // --- Contract Calculation Logic ---
 
@@ -1010,6 +1063,10 @@ function renderTradeBlockView() {
     const blocked = Object.keys(sel[teamId] || {}).filter(name => sel[teamId][name]?.tradeBlock);
     if (blocked.length) byTeam[teamId] = blocked.sort((a, b) => lastName(a).localeCompare(lastName(b)));
   }
+  const myTeamId = (typeof currentOwner !== "undefined" && currentOwner) ? currentOwner.team_id : null;
+  // Always include the manager's own team in the grid (even with no blocked
+  // players) so they have a clear path to edit their trade block.
+  if (myTeamId && !byTeam[myTeamId]) byTeam[myTeamId] = [];
   const orderedTeams = LEAGUE_DATA.teams.filter(t => byTeam[t.id]);
   if (!orderedTeams.length) {
     return `
@@ -1019,7 +1076,6 @@ function renderTradeBlockView() {
       </div>
     `;
   }
-  const myTeamId = (typeof currentOwner !== "undefined" && currentOwner) ? currentOwner.team_id : null;
   return `
     <div style="display:grid;grid-template-columns:repeat(auto-fill, minmax(300px, 1fr));gap:14px">
       ${orderedTeams.map(t => {
@@ -1030,22 +1086,25 @@ function renderTradeBlockView() {
         const priceMap = Object.fromEntries(eligible.map(p => [p.name, p.price]));
         const isMyTeam = t.id === myTeamId;
         const action = isMyTeam
-          ? '<div style="font-size:0.72rem;color:var(--text-dim);font-style:italic;margin-top:12px">(your team)</div>'
+          ? `<button class="trade-btn trade-btn-cancel" onclick="switchTab('eligible')" style="font-size:0.78rem;padding:6px 14px;margin-top:12px">Edit my trade block</button>`
           : (myTeamId
               ? `<button class="trade-btn" onclick="proposeTradeWith('${escapeJsString(t.id)}')" style="font-size:0.78rem;padding:6px 14px;margin-top:12px">Propose Trade</button>`
               : "");
+        const blockedHtml = byTeam[t.id].length
+          ? byTeam[t.id].map(name => {
+              const price = priceMap[name];
+              const priceStr = price !== undefined ? ` $${price}` : "";
+              return `<span style="font-size:0.78rem;background:rgba(249,115,22,0.15);color:var(--orange);padding:3px 9px;border-radius:10px;white-space:nowrap">${escapeHtml(name)}${priceStr}</span>`;
+            }).join("")
+          : `<span style="color:var(--text-dim);font-size:0.78rem;font-style:italic">No players on the block.</span>`;
         return `
           <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:14px">
             <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px">
-              <span style="color:var(--text-bright);font-weight:700">${escapeHtml(t.name)}</span>
+              <span style="color:var(--text-bright);font-weight:700">${escapeHtml(t.name)}${isMyTeam ? '<span style="color:var(--text-dim);font-weight:500;font-size:0.78rem"> (you)</span>' : ''}</span>
               <span style="color:var(--text-dim);font-size:0.75rem">${byTeam[t.id].length} player${byTeam[t.id].length === 1 ? "" : "s"}</span>
             </div>
             <div style="display:flex;flex-wrap:wrap;gap:5px">
-              ${byTeam[t.id].map(name => {
-                const price = priceMap[name];
-                const priceStr = price !== undefined ? ` $${price}` : "";
-                return `<span style="font-size:0.78rem;background:rgba(249,115,22,0.15);color:var(--orange);padding:3px 9px;border-radius:10px;white-space:nowrap">${escapeHtml(name)}${priceStr}</span>`;
-              }).join("")}
+              ${blockedHtml}
             </div>
             ${action}
           </div>
@@ -3759,6 +3818,14 @@ function makeDraftPick() {
   const notes = (notesEl.value || "").trim();
   if (!player) { alert("Enter a player name"); nameEl.focus(); return; }
 
+  // Roster spot enforcement (toggle in Settings). A Minors Draft pick fills
+  // a 10-man MiL slot; the team must have an open one. Trades or call-ups
+  // mid-draft can open a slot.
+  if (isMinorsRosterEnforcementEnabled() && getTeamMilCount(current.team) >= MIL_ROSTER_MAX) {
+    alert(`No open minors spot (${MIL_ROSTER_MAX}-man cap). Open one via trade or by calling up a minor leaguer, or commissioner can pass.`);
+    return;
+  }
+
   // Remember any new name the user typed so it appears in future suggestions
   if (typeof addCustomProspect === "function") addCustomProspect(player);
 
@@ -4070,6 +4137,9 @@ let currentView = "eligible";
 const _lastTeamSel = { eligible: null, keepers: null, rosters: null };
 
 function switchTab(tab) {
+  // Pick up the commish-set season (and other settings) before any render
+  // computes contract math.
+  if (typeof _applySettingsFromCache === "function") _applySettingsFromCache();
   // Re-derive each team's current minors/callups from the static anchor +
   // trade log + callup overrides before any render reads them.
   if (typeof applyRosterAdjustments === "function") applyRosterAdjustments();
@@ -4153,6 +4223,101 @@ function switchTab(tab) {
       currentView = "rules";
       content.innerHTML = renderRulesView();
       break;
+    case "settings":
+      currentView = "settings";
+      if (!isCommissioner()) {
+        content.innerHTML = '<div style="padding:30px;color:var(--text-dim);text-align:center">Settings are commissioner-only.</div>';
+        break;
+      }
+      content.innerHTML = renderSettingsView();
+      break;
+  }
+}
+
+function renderSettingsView() {
+  const settings = getLeagueSettings();
+  const enforceR5 = !!settings.enforceRule5RosterSpot;
+  const enforceMiL = !!settings.enforceMinorsRosterSpot;
+  const season = (typeof settings.currentSeason === "number") ? settings.currentSeason : DEFAULT_SEASON;
+  return `
+    <div style="max-width:720px">
+      <h2 style="color:var(--text-bright);margin-bottom:4px">Settings</h2>
+      <div style="color:var(--text-dim);font-size:0.82rem;margin-bottom:18px">Commissioner-only. Changes apply league-wide for everyone.</div>
+
+      <div class="keeper-projection" style="margin-bottom:14px">
+        <h3 style="margin-top:0">Season</h3>
+        <div style="color:var(--text-dim);font-size:0.84rem;margin-bottom:10px">
+          The current season drives contract math everywhere (Expiry years, keeper eligibility, etc.). Set this once at the start of each year.
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <label style="color:var(--text);font-size:0.88rem">Current season:</label>
+          <input type="number" id="settings-season" value="${season}" min="2020" max="2100" style="background:var(--bg);color:var(--text);border:1px solid var(--border);padding:8px 10px;border-radius:6px;font-size:0.95rem;width:110px">
+          <button class="trade-btn trade-btn-submit" onclick="submitSetSeason()" style="font-size:0.85rem">Set Year</button>
+          <span style="color:var(--text-dim);font-size:0.72rem">(currently ${CURRENT_SEASON})</span>
+        </div>
+      </div>
+
+      <div class="keeper-projection" style="margin-bottom:14px">
+        <h3 style="margin-top:0">Draft Roster Limits</h3>
+        <div style="color:var(--text-dim);font-size:0.84rem;margin-bottom:10px">
+          When enabled, the on-the-clock team can only submit a pick if they have an open roster spot. They can open a spot via trade (or calling up a minor leaguer, for minors) and try again. Commissioner can always pass.
+        </div>
+        <label style="display:flex;align-items:center;gap:10px;padding:10px;background:var(--bg);border:1px solid var(--border);border-radius:6px;cursor:pointer;margin-bottom:6px">
+          <input type="checkbox" id="settings-enforce-rule5" ${enforceR5 ? "checked" : ""} onchange="toggleEnforceRule5RosterSpot(this.checked)" style="width:18px;height:18px;cursor:pointer;accent-color:var(--accent)">
+          <span style="color:var(--text);font-size:0.9rem">Rule 5 Draft: enforce open 25-man ML spot</span>
+        </label>
+        <label style="display:flex;align-items:center;gap:10px;padding:10px;background:var(--bg);border:1px solid var(--border);border-radius:6px;cursor:pointer">
+          <input type="checkbox" id="settings-enforce-mil" ${enforceMiL ? "checked" : ""} onchange="toggleEnforceMinorsRosterSpot(this.checked)" style="width:18px;height:18px;cursor:pointer;accent-color:var(--accent)">
+          <span style="color:var(--text);font-size:0.9rem">Minors Draft: enforce open 10-man MiL spot</span>
+        </label>
+      </div>
+    </div>
+  `;
+}
+
+async function submitSetSeason() {
+  if (!isCommissioner()) { alert("Commissioners only."); return; }
+  const el = document.getElementById("settings-season");
+  const n = parseInt(el?.value || "", 10);
+  if (!Number.isFinite(n) || n < 2020 || n > 2100) {
+    alert("Enter a valid year between 2020 and 2100.");
+    return;
+  }
+  if (n === CURRENT_SEASON) return;
+  if (!confirm(`Set the current season to ${n}? This changes Expiry calculations league-wide.`)) return;
+  const prev = CURRENT_SEASON;
+  const settings = { ...getLeagueSettings(), currentSeason: n };
+  try {
+    await saveSettingsAsync(settings);
+    _applySettingsFromCache();
+    if (typeof logActivityAsync === "function") logActivityAsync("season_set", { from: prev, to: n });
+    switchTab("settings");
+  } catch (e) {
+    alert("Couldn't save: " + (e.message || e));
+  }
+}
+
+async function toggleEnforceRule5RosterSpot(checked) {
+  if (!isCommissioner()) return;
+  const settings = { ...getLeagueSettings(), enforceRule5RosterSpot: !!checked };
+  try {
+    await saveSettingsAsync(settings);
+    if (typeof logActivityAsync === "function") logActivityAsync("settings_changed", { key: "enforceRule5RosterSpot", value: !!checked });
+  } catch (e) {
+    alert("Couldn't save: " + (e.message || e));
+    switchTab("settings");
+  }
+}
+
+async function toggleEnforceMinorsRosterSpot(checked) {
+  if (!isCommissioner()) return;
+  const settings = { ...getLeagueSettings(), enforceMinorsRosterSpot: !!checked };
+  try {
+    await saveSettingsAsync(settings);
+    if (typeof logActivityAsync === "function") logActivityAsync("settings_changed", { key: "enforceMinorsRosterSpot", value: !!checked });
+  } catch (e) {
+    alert("Couldn't save: " + (e.message || e));
+    switchTab("settings");
   }
 }
 
@@ -5331,6 +5496,22 @@ function makeRule5Pick(playerName) {
   if (!poolEntry) { alert("Player not in pool"); return; }
   const pickedAlready = state.picks.some(p => p.playerName === playerName);
   if (pickedAlready) { alert("Already picked"); return; }
+  // Roster spot enforcement (toggle in Settings). Rule 5 picks of MLB-eligible
+  // players add to the 25-man ML roster; picks of MiLB-eligible players add to
+  // the 10-man MiL roster. Check whichever bucket the player would land in.
+  if (isRule5RosterEnforcementEnabled()) {
+    if (poolEntry.type === "minor") {
+      if (getTeamMilCount(cur.teamId) >= MIL_ROSTER_MAX) {
+        alert(`No open minors spot (${MIL_ROSTER_MAX}-man cap). Make a trade, call up a minor leaguer, or commissioner can pass.`);
+        return;
+      }
+    } else {
+      if (getTeamMlCount(cur.teamId) >= ML_ROSTER_MAX) {
+        alert(`No open ML spot (${ML_ROSTER_MAX}-man cap). Make a trade or commissioner can pass.`);
+        return;
+      }
+    }
+  }
 
   // Use a stable client-side ID to correlate the pick with its trade row,
   // independent of the server-issued UUID and array index.
@@ -5790,6 +5971,11 @@ function renderHeaderUser() {
     userBar.style.cssText = "position:absolute;top:8px;right:12px;display:flex;align-items:center;gap:10px;font-size:0.72rem;color:rgba(255,255,255,0.85)";
     document.querySelector(".app-header").appendChild(userBar);
   }
+  // Show/hide commissioner-only tabs (Settings) based on current owner.
+  const showCommish = isRealCommissioner() && !isCommishViewSuppressed();
+  document.querySelectorAll(".commish-only-tab").forEach(el => {
+    el.style.display = showCommish ? "" : "none";
+  });
   if (!currentUser) { userBar.style.display = "none"; return; }
   userBar.style.display = "flex";
   const teamName = currentOwner
