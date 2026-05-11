@@ -3801,6 +3801,9 @@ function switchTab(tab) {
   const title = document.getElementById("header-title");
   title.innerHTML = '<a href="https://fantasy.espn.com/baseball/league?leagueId=1200" target="_blank" rel="noopener">The League</a>';
 
+  // Draft grid needs more horizontal room than other views.
+  content.classList.toggle("wide", tab === "draft");
+
   backBtn.classList.remove("visible");
 
   switch (tab) {

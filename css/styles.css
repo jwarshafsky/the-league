@@ -268,7 +268,9 @@ body {
 .draft-list-mobile { display: none; }
 
 /* Main content */
-.main-content { padding: 16px; max-width: 900px; margin: 0 auto; }
+.main-content { padding: 16px; max-width: 1280px; margin: 0 auto; }
+/* Wide views (Minors Draft grid) get extra room. */
+.main-content.wide { max-width: 1480px; }
 
 /* Team grid (home view) */
 .team-grid {
