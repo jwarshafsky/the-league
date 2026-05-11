@@ -1702,7 +1702,8 @@ function renderFinancialsView() {
     <div style="color:var(--text-dim);font-size:0.82rem;margin-bottom:18px">League finances at a glance.</div>
 
     <div class="keeper-projection" style="margin-bottom:14px">
-      <h3 style="margin-top:0">Draft Dollars</h3>
+      <h3 style="margin-top:0">${CURRENT_SEASON + 1} Draft Dollars</h3>
+      <div style="color:var(--text-dim);font-size:0.78rem;margin-bottom:10px">Starting balance is $260 per team; trades shift it.</div>
       ${renderDraftDollarsPanel()}
     </div>
 
@@ -1766,17 +1767,20 @@ async function toggleFeePaid(teamId, kind, checked) {
 function renderDraftDollarsPanel() {
   const balances = getDraftDollarBalances();
   const rows = LEAGUE_DATA.teams.map(t => ({ ...t, balance: balances[t.id] ?? 260 }));
-  // Same display order as the league teams list (reads naturally).
+  // Grid of compact tiles — keeps the panel from stretching across the
+  // wider Financials viewport while still listing every team.
   return `
-    <div class="section-header">Draft Dollars</div>
-    <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:8px 10px">
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:6px">
       ${rows.map(t => {
         const diff = t.balance - 260;
         const diffStr = diff > 0 ? `+$${diff}` : diff < 0 ? `-$${Math.abs(diff)}` : "";
         const diffColor = diff > 0 ? "var(--green)" : diff < 0 ? "var(--red)" : "var(--text-dim)";
-        return `<div style="display:flex;justify-content:space-between;align-items:baseline;padding:5px 0;border-bottom:1px solid var(--border);font-size:0.85rem">
-          <span style="color:var(--text)">${t.name}</span>
-          <span>${diffStr ? `<span style="color:${diffColor};font-size:0.72rem;margin-right:8px">${diffStr}</span>` : ""}<span style="color:var(--text-bright);font-weight:600">$${t.balance}</span></span>
+        return `<div style="display:flex;justify-content:space-between;align-items:baseline;padding:7px 10px;background:var(--bg);border:1px solid var(--border);border-radius:6px;font-size:0.85rem">
+          <span style="color:var(--text)">${escapeHtml(t.name)}</span>
+          <span style="display:flex;align-items:baseline;gap:6px">
+            ${diffStr ? `<span style="color:${diffColor};font-size:0.72rem">${diffStr}</span>` : ""}
+            <span style="color:var(--text-bright);font-weight:700">$${t.balance}</span>
+          </span>
         </div>`;
       }).join("")}
     </div>
