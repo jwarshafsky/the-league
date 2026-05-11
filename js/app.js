@@ -3292,18 +3292,22 @@ function renderDraftBoard(draft) {
   }
   mobileHtml += '</div>';
 
+  // Fixed table layout + 100% width lets the 12 team columns flex to fit the
+  // viewport (no horizontal scroll on PC). Cells wrap long player names.
+  const teamColPct = (100 / teamsCount).toFixed(2);
   let html = mobileHtml + `<div class="draft-board-desktop" style="overflow-x:auto;-webkit-overflow-scrolling:touch">
-    <table class="player-table" style="min-width:100%;font-size:0.78rem">
+    <table class="player-table" style="width:100%;table-layout:fixed;font-size:0.76rem">
+    <colgroup><col style="width:34px">${Array.from({length:teamsCount}, () => `<col style="width:${teamColPct}%">`).join("")}</colgroup>
     <thead><tr>
-      <th style="position:sticky;left:0;background:var(--bg);z-index:2;min-width:40px">Rd</th>`;
+      <th style="position:sticky;left:0;background:var(--bg);z-index:2;text-align:center;padding:5px 2px">Rd</th>`;
   for (let i = 1; i <= teamsCount; i++) {
-    html += `<th style="min-width:110px;font-size:0.65rem">#${i}</th>`;
+    html += `<th style="font-size:0.62rem;padding:5px 4px;text-align:center">#${i}</th>`;
   }
   html += `</tr></thead><tbody>`;
 
   for (let round = 1; round <= draft.rounds; round++) {
     html += `<tr>
-      <td style="position:sticky;left:0;background:var(--bg-card);z-index:1;font-weight:700;color:var(--text-bright);text-align:center">R${round}</td>`;
+      <td style="position:sticky;left:0;background:var(--bg-card);z-index:1;font-weight:700;color:var(--text-bright);text-align:center;padding:4px 2px">R${round}</td>`;
     for (let pickInRound = 1; pickInRound <= teamsCount; pickInRound++) {
       const ownerId = getPickOwner(draft, round, pickInRound);
       const owner = LEAGUE_DATA.teams.find(t => t.id === ownerId);
@@ -3312,7 +3316,7 @@ function renderDraftBoard(draft) {
       const isCurrent = current && current.round === round && current.pickInRound === pickInRound;
       const isTraded = ownerId !== getBaseOwner(draft, round, pickInRound);
 
-      let cellStyle = "padding:5px 6px;vertical-align:top";
+      let cellStyle = "padding:4px 5px;vertical-align:top;word-wrap:break-word;overflow-wrap:break-word";
       if (commishCanEdit) cellStyle += ";cursor:pointer";
       if (isCurrent) cellStyle += ";background:rgba(59,130,246,0.2);outline:2px solid var(--accent)";
       else if (pick) cellStyle += ";background:rgba(34,197,94,0.06)";
@@ -3320,13 +3324,13 @@ function renderDraftBoard(draft) {
 
       const cellClickAttr = commishCanEdit ? `onclick="openPickEditor(${round},${pickInRound})" title="Click to edit"` : "";
       html += `<td style="${cellStyle}" ${cellClickAttr}>
-        <div style="color:var(--accent);font-weight:600;font-size:0.72rem">${owner ? owner.name : ownerId}${isTraded ? ' <span style="color:var(--orange);font-size:0.6rem">(T)</span>' : ''}</div>
+        <div style="color:var(--accent);font-weight:600;font-size:0.68rem;line-height:1.15">${owner ? owner.name : ownerId}${isTraded ? ' <span style="color:var(--orange);font-size:0.58rem">(T)</span>' : ''}</div>
         ${pick
-          ? `<div style="color:var(--text-bright);margin-top:2px;font-weight:600">${escapeHtml(pick.player)}</div>${pick.notes ? `<div style="color:var(--text-dim);font-size:0.65rem;margin-top:1px">${escapeHtml(pick.notes)}</div>` : ""}`
+          ? `<div style="color:var(--text-bright);margin-top:2px;font-weight:600;font-size:0.74rem;line-height:1.2">${escapeHtml(pick.player)}</div>${pick.notes ? `<div style="color:var(--text-dim);font-size:0.62rem;margin-top:1px;line-height:1.15">${escapeHtml(pick.notes)}</div>` : ""}`
           : isCurrent
-            ? '<div style="color:var(--text-dim);font-style:italic;margin-top:2px">On clock</div>'
+            ? '<div style="color:var(--text-dim);font-style:italic;margin-top:2px;font-size:0.7rem">On clock</div>'
             : isPassed
-              ? '<div style="color:var(--orange);font-size:0.7rem;margin-top:2px;font-weight:600">PASSED</div>'
+              ? '<div style="color:var(--orange);font-size:0.66rem;margin-top:2px;font-weight:600">PASSED</div>'
               : '<div style="color:var(--text-dim);margin-top:2px">—</div>'}
       </td>`;
     }
