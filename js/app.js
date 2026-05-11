@@ -4271,8 +4271,91 @@ function renderSettingsView() {
           <span style="color:var(--text);font-size:0.9rem">Minors Draft: enforce open 10-man MiL spot</span>
         </label>
       </div>
+
+      <div class="keeper-projection" style="margin-bottom:14px">
+        <h3 style="margin-top:0">Exports</h3>
+        <div style="color:var(--text-dim);font-size:0.84rem;margin-bottom:10px">
+          Download a snapshot of every team's roster with contract details (year acquired, salary, expiry, source).
+        </div>
+        <button class="trade-btn" onclick="exportContractsCsv()" style="font-size:0.85rem">Export contracts (.csv)</button>
+      </div>
     </div>
   `;
+}
+
+function exportContractsCsv() {
+  if (!isCommissioner()) { alert("Commissioners only."); return; }
+  if (typeof applyRosterAdjustments === "function") applyRosterAdjustments();
+  const rows = [];
+  rows.push(["Team","Roster","Player","Year Acquired","Salary","Expiry","Status","Source"]);
+
+  for (const team of LEAGUE_DATA.teams) {
+    const majors = (typeof getEligiblePlayers === "function") ? getEligiblePlayers(team) : [];
+    for (const p of majors) {
+      const expiry = (p.yearsRemaining != null) ? (CURRENT_SEASON + p.yearsRemaining) : "";
+      rows.push([
+        team.name,
+        "ML",
+        p.name,
+        p.yearAcquired ?? "",
+        p.price != null ? `$${p.price}` : "",
+        String(expiry),
+        p.contractLabel || p.contractStatus || "",
+        p.source || p.contractType || "",
+      ]);
+    }
+    for (const p of (team.callups || [])) {
+      const ms = getMinorLeagueContractStatus(p, CURRENT_SEASON);
+      const expiry = (ms.yearsRemaining != null) ? (CURRENT_SEASON + ms.yearsRemaining) : (ms.contractNote || "");
+      rows.push([
+        team.name,
+        "Call-up",
+        p.name,
+        p.yearAcquired ?? "",
+        p.price != null ? `$${p.price}` : "",
+        String(expiry),
+        ms.eligibilityWarning ? `Must Call Up by ${ms.eligibilityWarning}` : "Active",
+        "callup",
+      ]);
+    }
+    for (const p of (team.minors || [])) {
+      const ms = getMinorLeagueContractStatus(p, CURRENT_SEASON);
+      const expiry = (ms.yearsRemaining != null) ? (CURRENT_SEASON + ms.yearsRemaining) : (ms.contractNote || "");
+      rows.push([
+        team.name,
+        "MiL",
+        p.name,
+        p.yearAcquired ?? "",
+        "",
+        String(expiry),
+        ms.eligibilityWarning ? `Must Call Up by ${ms.eligibilityWarning}` : "Active",
+        "minors",
+      ]);
+    }
+  }
+
+  const csv = rows.map(row => row.map(_csvEscapeCell).join(",")).join("\n");
+  const dateStr = new Date().toISOString().slice(0, 10);
+  const filename = `the-league-contracts-${CURRENT_SEASON}-${dateStr}.csv`;
+  _downloadBlob(csv, filename, "text/csv;charset=utf-8");
+}
+
+function _csvEscapeCell(v) {
+  const s = String(v == null ? "" : v);
+  if (/[",\n\r]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+  return s;
+}
+
+function _downloadBlob(content, filename, mime) {
+  const blob = new Blob([content], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 async function submitSetSeason() {
