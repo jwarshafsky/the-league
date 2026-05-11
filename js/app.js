@@ -613,7 +613,8 @@ async function _reverseActivityEffect(entry) {
       return;
     }
     case "minors_pick_made":
-    case "minors_pick_passed": {
+    case "minors_pick_passed":
+    case "minors_pick_auto_skipped": {
       const draft = (typeof getDraft === "function") ? getDraft() : null;
       if (!draft) return;
       const round = p.round;
@@ -622,7 +623,7 @@ async function _reverseActivityEffect(entry) {
         draft.picks = draft.picks.filter(pick =>
           !(pick.round === round && pick.pickInRound === pickInRound && pick.player === playerName)
         );
-      } else if (entry.type === "minors_pick_passed" && Array.isArray(draft.passed)) {
+      } else if (Array.isArray(draft.passed)) {
         draft.passed = draft.passed.filter(pp => !(pp.round === round && pp.pickInRound === pickInRound));
       }
       if (typeof saveDraftAsync === "function") await saveDraftAsync(draft);
@@ -2991,6 +2992,105 @@ const DEFAULT_DRAFT_ORDER = [
   "aj", "josh-doug", "sam", "larry", "jesse", "jeff"
 ];
 
+// --- Draft clock ---
+//
+// 4-hour clock per pick that only ticks during active ET hours (8 AM to
+// midnight). Overnight (midnight to 8 AM ET) is automatically paused.
+// Commissioners can also pause/resume manually.
+const DRAFT_CLOCK_MS = 4 * 60 * 60 * 1000;
+const DRAFT_ACTIVE_START_HOUR = 8;  // 8 AM ET
+const DRAFT_ACTIVE_END_HOUR = 24;   // midnight ET (exclusive)
+let _draftClockInterval = null;
+let _draftAutoPassAttemptedAt = null; // throttle commish auto-pass attempts
+
+// Get the wall-clock date/time in America/New_York for a given UTC ms.
+function _getETParts(utcMs) {
+  const fmt = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    year: "numeric", month: "numeric", day: "numeric",
+    hour: "numeric", minute: "numeric", second: "numeric",
+    hour12: false,
+  });
+  const parts = fmt.formatToParts(new Date(utcMs));
+  const get = (t) => parseInt(parts.find(p => p.type === t).value, 10);
+  let hour = get("hour");
+  // Some locales report midnight as 24 instead of 0 when hour12:false.
+  if (hour === 24) hour = 0;
+  return {
+    year: get("year"),
+    month: get("month"),  // 1-indexed
+    day: get("day"),
+    hour,
+    minute: get("minute"),
+    second: get("second"),
+  };
+}
+
+// Convert an ET wall-clock date+time to a UTC ms. DST-aware via fixed-point
+// iteration: build a naive UTC, check what ET it represents, adjust by the
+// difference, repeat. Converges in 1-2 iterations.
+function _etMsAt(year, month, day, hour, minute) {
+  let utc = Date.UTC(year, month - 1, day, hour, minute);
+  for (let i = 0; i < 3; i++) {
+    const et = _getETParts(utc);
+    const etUtcEquiv = Date.UTC(et.year, et.month - 1, et.day, et.hour, et.minute);
+    const diff = Date.UTC(year, month - 1, day, hour, minute) - etUtcEquiv;
+    if (diff === 0) break;
+    utc += diff;
+  }
+  return utc;
+}
+
+// Active draft time elapsed between two UTC ms, skipping overnight blackout
+// (midnight to 8 AM ET).
+function activeDraftElapsedMs(fromMs, toMs) {
+  if (toMs <= fromMs) return 0;
+  let total = 0;
+  let cursor = fromMs;
+  for (let iter = 0; iter < 40 && cursor < toMs; iter++) {
+    const et = _getETParts(cursor);
+    const isActive = et.hour >= DRAFT_ACTIVE_START_HOUR && et.hour < DRAFT_ACTIVE_END_HOUR;
+    const segmentEnd = isActive
+      ? _etMsAt(et.year, et.month, et.day + 1, 0, 0)  // next midnight ET
+      : _etMsAt(et.year, et.month, et.day, DRAFT_ACTIVE_START_HOUR, 0);  // today's 8 AM ET
+    const effectiveEnd = Math.min(segmentEnd, toMs);
+    if (isActive) total += effectiveEnd - cursor;
+    cursor = effectiveEnd;
+  }
+  return total;
+}
+
+// Returns true if `nowMs` is in the overnight blackout window (midnight–8 AM ET).
+function isDraftOvernightBlackout(nowMs) {
+  const et = _getETParts(nowMs);
+  return et.hour < DRAFT_ACTIVE_START_HOUR;
+}
+
+// Snapshot of clock state at a moment in time.
+function computeDraftClockState(draft, nowMs) {
+  const clock = draft && draft.clock;
+  if (!clock || !clock.startedAt) {
+    return { running: false, started: false, paused: false, remainingMs: DRAFT_CLOCK_MS, expired: false };
+  }
+  const startedAt = new Date(clock.startedAt).getTime();
+  const paused = !!clock.paused;
+  const pausedAt = clock.pausedAt ? new Date(clock.pausedAt).getTime() : null;
+  const referenceMs = paused && pausedAt ? pausedAt : nowMs;
+  const elapsed = activeDraftElapsedMs(startedAt, referenceMs);
+  const remainingMs = Math.max(0, DRAFT_CLOCK_MS - elapsed);
+  const overnight = !paused && isDraftOvernightBlackout(nowMs);
+  return {
+    started: true,
+    paused,
+    overnight,
+    running: !paused && !overnight && remainingMs > 0,
+    expired: remainingMs <= 0,
+    remainingMs,
+    startedAt,
+    pausedAt,
+  };
+}
+
 function _normalizeDraft(stored) {
   stored.rounds = DRAFT_ROUNDS;
   stored.picks = (stored.picks || []).filter(p => p.round <= DRAFT_ROUNDS);
@@ -2998,6 +3098,7 @@ function _normalizeDraft(stored) {
   Object.keys(stored.tradedPicks || {}).forEach(k => {
     if (parseInt(k.split("p")[0], 10) > DRAFT_ROUNDS) delete stored.tradedPicks[k];
   });
+  if (!stored.clock) stored.clock = { startedAt: null, paused: false, pausedAt: null };
   return stored;
 }
 
@@ -3016,7 +3117,8 @@ function getDraft() {
     baseOrder: DEFAULT_DRAFT_ORDER.slice(),
     tradedPicks: {},
     picks: [],
-    passed: []
+    passed: [],
+    clock: { startedAt: null, paused: false, pausedAt: null },
   };
 }
 
@@ -3222,6 +3324,7 @@ function showDraftBoard() {
           <h3 style="margin:0">On the Clock: <span style="color:var(--accent)">${team ? escapeHtml(team.name) : escapeHtml(current.team)}</span></h3>
           <span style="color:var(--text-dim);font-size:0.82rem">Round ${current.round} &middot; Pick ${current.pickInRound} (Overall #${current.overall})</span>
         </div>
+        ${renderDraftClockBlock(draft, commish)}
         ${inputBlock}
       </div>
     `;
@@ -3250,6 +3353,95 @@ function showDraftBoard() {
   if (input) input.addEventListener("keydown", e => {
     if (e.key === "Enter") { e.preventDefault(); makeDraftPick(); }
   });
+
+  _startDraftClockTicker();
+}
+
+// Renders the clock area inside the "On the Clock" card. The remaining-time
+// number has id="draft-clock-time" so the per-second tick can update it
+// without re-rendering the whole board.
+function renderDraftClockBlock(draft, isCommish) {
+  const state = computeDraftClockState(draft, Date.now());
+  const controls = isCommish ? renderDraftClockControls(state) : "";
+  if (!state.started) {
+    return `
+      <div style="margin-top:10px;padding:10px 12px;background:var(--bg);border:1px solid var(--border);border-radius:6px;display:flex;flex-wrap:wrap;align-items:center;gap:10px">
+        <span id="draft-clock-time" style="color:var(--text-dim);font-size:0.88rem">Clock not started</span>
+        <span style="color:var(--text-dim);font-size:0.72rem;flex:1;min-width:140px">4 hour pick clock, pauses overnight (midnight–8 AM ET)</span>
+        ${controls}
+      </div>`;
+  }
+  return `
+    <div style="margin-top:10px;padding:10px 12px;background:var(--bg);border:1px solid var(--border);border-radius:6px;display:flex;flex-wrap:wrap;align-items:center;gap:10px">
+      <span id="draft-clock-time" style="font-size:1rem;font-weight:700;min-width:160px">${formatDraftClockText(state)}</span>
+      <span id="draft-clock-status" style="color:var(--text-dim);font-size:0.72rem;flex:1;min-width:120px">${draftClockStatusText(state)}</span>
+      ${controls}
+    </div>`;
+}
+
+function renderDraftClockControls(state) {
+  if (!state.started) {
+    return `<button class="trade-btn" onclick="startDraftClock()" style="font-size:0.78rem;padding:5px 10px">Start Clock</button>`;
+  }
+  if (state.paused) {
+    return `<button class="trade-btn" onclick="resumeDraftClock()" style="font-size:0.78rem;padding:5px 10px">Resume</button>`;
+  }
+  return `<button class="trade-btn trade-btn-cancel" onclick="pauseDraftClock()" style="font-size:0.78rem;padding:5px 10px">Pause</button>`;
+}
+
+function formatDraftClockText(state) {
+  if (!state.started) return "Clock not started";
+  const totalSec = Math.max(0, Math.floor(state.remainingMs / 1000));
+  const h = Math.floor(totalSec / 3600);
+  const m = Math.floor((totalSec % 3600) / 60);
+  const s = totalSec % 60;
+  const mm = String(m).padStart(2, "0");
+  const ss = String(s).padStart(2, "0");
+  return `${h}:${mm}:${ss}`;
+}
+
+function draftClockStatusText(state) {
+  if (!state.started) return "Clock not started";
+  if (state.expired) return "Expired — auto-skipping…";
+  if (state.paused) return "Paused by commissioner";
+  if (state.overnight) return "Overnight pause — resumes 8 AM ET";
+  return "Time remaining";
+}
+
+function _startDraftClockTicker() {
+  if (_draftClockInterval) { clearInterval(_draftClockInterval); _draftClockInterval = null; }
+  // Only run while the user is on the draft tab.
+  if (typeof currentView !== "undefined" && currentView !== "draft") return;
+  _draftClockInterval = setInterval(_tickDraftClock, 1000);
+}
+
+function _stopDraftClockTicker() {
+  if (_draftClockInterval) { clearInterval(_draftClockInterval); _draftClockInterval = null; }
+}
+
+function _tickDraftClock() {
+  const timeEl = document.getElementById("draft-clock-time");
+  const statusEl = document.getElementById("draft-clock-status");
+  if (!timeEl) {
+    // DOM not present (different tab / no current pick) — stop ticking.
+    _stopDraftClockTicker();
+    return;
+  }
+  const draft = getDraft();
+  const current = getCurrentPickInfo(draft);
+  if (!current) {
+    _stopDraftClockTicker();
+    return;
+  }
+  const state = computeDraftClockState(draft, Date.now());
+  timeEl.textContent = formatDraftClockText(state);
+  if (statusEl) statusEl.textContent = draftClockStatusText(state);
+  // Color the time text: red when expired, orange under 30min, default otherwise.
+  if (state.expired) timeEl.style.color = "var(--red)";
+  else if (state.remainingMs < 30 * 60 * 1000) timeEl.style.color = "var(--orange)";
+  else timeEl.style.color = "var(--text-bright)";
+
+  if (state.expired) _maybeAutoPassExpiredPick();
 }
 
 function renderDraftBoard(draft) {
@@ -3564,6 +3756,7 @@ function makeDraftPick() {
     notes,
     timestamp: Date.now()
   });
+  _resetDraftClock(draft);
   saveDraft(draft);
   if (typeof logActivityAsync === "function") {
     logActivityAsync("minors_pick_made", {
@@ -3574,8 +3767,9 @@ function makeDraftPick() {
   showDraftBoard();
 }
 
-function passCurrentPick() {
-  if (!isCommissioner()) {
+function passCurrentPick(opts) {
+  const auto = !!(opts && opts.auto);
+  if (!auto && !isCommissioner()) {
     alert("Only a commissioner can pass a pick. Ask a commish to do it for you.");
     return;
   }
@@ -3584,13 +3778,83 @@ function passCurrentPick() {
   if (!current) return;
   if (!draft.passed) draft.passed = [];
   draft.passed.push({ round: current.round, pickInRound: current.pickInRound, team: current.team });
+  _resetDraftClock(draft);
   saveDraft(draft);
   if (typeof logActivityAsync === "function") {
-    logActivityAsync("minors_pick_passed", {
+    logActivityAsync(auto ? "minors_pick_auto_skipped" : "minors_pick_passed", {
       round: current.round, pick_in_round: current.pickInRound,
     }, { targetTeamId: current.team });
   }
   showDraftBoard();
+}
+
+// Reset clock to start ticking for the next pick.
+function _resetDraftClock(draft) {
+  if (!draft.clock) draft.clock = {};
+  draft.clock.startedAt = new Date().toISOString();
+  draft.clock.paused = false;
+  draft.clock.pausedAt = null;
+}
+
+function startDraftClock() {
+  if (!isCommissioner()) { alert("Commissioners only."); return; }
+  const draft = getDraft();
+  _resetDraftClock(draft);
+  saveDraft(draft);
+  if (typeof logActivityAsync === "function") {
+    logActivityAsync("minors_clock_started", {});
+  }
+  showDraftBoard();
+}
+
+function pauseDraftClock() {
+  if (!isCommissioner()) { alert("Commissioners only."); return; }
+  const draft = getDraft();
+  if (!draft.clock || !draft.clock.startedAt || draft.clock.paused) return;
+  draft.clock.paused = true;
+  draft.clock.pausedAt = new Date().toISOString();
+  saveDraft(draft);
+  if (typeof logActivityAsync === "function") {
+    logActivityAsync("minors_clock_paused", {});
+  }
+  showDraftBoard();
+}
+
+function resumeDraftClock() {
+  if (!isCommissioner()) { alert("Commissioners only."); return; }
+  const draft = getDraft();
+  if (!draft.clock || !draft.clock.paused || !draft.clock.pausedAt) return;
+  // Shift startedAt forward by the active time elapsed during the pause so
+  // remaining time is preserved. activeDraftElapsedMs handles overnight.
+  const pausedAtMs = new Date(draft.clock.pausedAt).getTime();
+  const nowMs = Date.now();
+  const pauseActiveMs = activeDraftElapsedMs(pausedAtMs, nowMs);
+  const startedAtMs = new Date(draft.clock.startedAt).getTime();
+  draft.clock.startedAt = new Date(startedAtMs + pauseActiveMs).toISOString();
+  draft.clock.paused = false;
+  draft.clock.pausedAt = null;
+  saveDraft(draft);
+  if (typeof logActivityAsync === "function") {
+    logActivityAsync("minors_clock_resumed", {});
+  }
+  showDraftBoard();
+}
+
+// Called by the per-second clock tick when expiry is detected. Only
+// commissioners attempt this; the others wait for the realtime echo of the
+// pass. A throttle prevents multiple concurrent attempts from one commish if
+// the network is slow.
+function _maybeAutoPassExpiredPick() {
+  if (!isCommissioner()) return;
+  const now = Date.now();
+  if (_draftAutoPassAttemptedAt && (now - _draftAutoPassAttemptedAt) < 5000) return;
+  const draft = getDraft();
+  const current = getCurrentPickInfo(draft);
+  if (!current) return;
+  const state = computeDraftClockState(draft, now);
+  if (!state.started || !state.expired || state.paused) return;
+  _draftAutoPassAttemptedAt = now;
+  passCurrentPick({ auto: true });
 }
 
 function activatePassedPick(round, pickInRound) {
@@ -3803,6 +4067,10 @@ function switchTab(tab) {
 
   // Draft grid needs more horizontal room than other views.
   content.classList.toggle("wide", tab === "draft");
+
+  // Stop the draft clock ticker when leaving the draft tab — showDraftBoard
+  // restarts it on entry.
+  if (tab !== "draft" && typeof _stopDraftClockTicker === "function") _stopDraftClockTicker();
 
   backBtn.classList.remove("visible");
 
@@ -4030,10 +4298,18 @@ function describeActivity(a) {
       return `${target} picked ${player} <span style="color:var(--text-dim)">(R${p.round}.${p.pick_in_round})</span>`;
     case "minors_pick_passed":
       return `${target} passed at <span style="color:var(--text-dim)">R${p.round}.${p.pick_in_round}</span>`;
+    case "minors_pick_auto_skipped":
+      return `${target}'s pick was auto-skipped (clock expired) at <span style="color:var(--text-dim)">R${p.round}.${p.pick_in_round}</span>`;
     case "minors_pick_undone":
       return `${actor} undid pick: ${player} (R${p.round}.${p.pick_in_round})`;
     case "minors_draft_reset":
       return `${actor} reset the Minors Draft`;
+    case "minors_clock_started":
+      return `${actor} started the draft clock`;
+    case "minors_clock_paused":
+      return `${actor} paused the draft clock`;
+    case "minors_clock_resumed":
+      return `${actor} resumed the draft clock`;
     case "rule5_draft_reset":
       return `${actor} reset the Rule 5 Draft`;
     case "callup_price_set":
