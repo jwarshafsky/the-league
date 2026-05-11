@@ -857,12 +857,17 @@ async function setProposalStatusAsync(proposalId, status) {
 // chat thread) stays in the inbox — the Trade Log records just the swap.
 async function acceptProposalAsync(proposal) {
   // 1. Insert the trade. team1/team2 follow the proposal as-is.
+  // In proposals, team1_receives = items the proposer (from_team) gets and
+  // team2_receives = items the recipient gets. The trades table uses the
+  // same convention (teamNReceives = items teamN receives), so the arrays
+  // pass through unchanged. An earlier version swapped them here, which
+  // showed every accepted trade inverted on the Trade Log.
   const tradeRow = {
     date: new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }),
     team1: proposal.from_team_id,
     team2: proposal.to_team_id,
-    team1Receives: proposal.team2_receives || [],
-    team2Receives: proposal.team1_receives || [],
+    team1Receives: proposal.team1_receives || [],
+    team2Receives: proposal.team2_receives || [],
     notes: "",
   };
   const tradeId = await addTradeAsync(tradeRow);
