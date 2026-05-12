@@ -651,6 +651,22 @@ body {
   #pick-editor-modal {
     padding: 12px 8px !important;
   }
+
+  /* Message Board: fullscreen on mobile rather than a small pop-up — the
+     inline styles use min(380px, ...) / min(560px, ...) and a fixed
+     bottom/right offset, all of which we override here. */
+  #msgboard-panel {
+    top: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    width: 100vw !important;
+    height: 100vh !important;
+    height: 100dvh !important;
+    max-width: none !important;
+    border-radius: 0 !important;
+    border: none !important;
+  }
 }
 
 /* Sub-tab buttons (e.g. inside Trades) */
