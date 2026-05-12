@@ -88,7 +88,7 @@
         <div style="display:flex;align-items:center;justify-content:space-between;
                     gap:8px;padding:12px 14px;border-bottom:1px solid var(--border);
                     background:linear-gradient(135deg,var(--accent-dim),#1e3a5f)">
-          <div style="font-weight:700;color:var(--text-bright);font-size:0.95rem">Ask CommishAI</div>
+          <div style="font-weight:700;color:var(--text-bright);font-size:0.95rem;display:flex;align-items:center;gap:8px">Ask CommishAI <img src="icons/commish-ai.png" alt="" style="width:32px;height:32px;border-radius:50%"></div>
           <div style="display:flex;gap:6px">
             <button id="rules-bot-clear" title="Clear conversation"
               style="background:rgba(255,255,255,0.12);border:none;color:#fff;

@@ -25,7 +25,7 @@ const _cache = {
   keeperPriceExceptions: {}, // { playerName: truePrice } — overrides ESPN-displayed price
   notifyPrefs: {},     // { teamId: { prefs: {...}, receive_all, email } }
   pushSubs: [],        // [{ id, team_id, user_id, endpoint, ... }]
-  messages: [],        // [{ id, team_id, user_id, body, created_at }]
+  leagueMessages: [],  // [{ id, team_id, user_id, body, created_at }]
 };
 // Cross-conversation read state for the trade inbox: { threadId: lastReadAt }.
 // Anything in the thread newer than lastReadAt counts as unread (covers BOTH
@@ -143,7 +143,7 @@ async function _fetchAll() {
   _surfaceQuiet("notification_prefs", np);
   _surfaceQuiet("push_subscriptions", ps);
   _surfaceQuiet("league_messages", lm);
-  _cache.messages = lm.data || [];
+  _cache.leagueMessages = lm.data || [];
   _cache.notifyPrefs = {};
   for (const r of (np.data || [])) {
     _cache.notifyPrefs[r.team_id] = {
@@ -444,6 +444,7 @@ function _resetDb() {
   _cache.activity = [];
   _cache.proposals = [];
   _cache.messages = [];
+  _cache.leagueMessages = [];
   _cache.keeperDeadline = null;
   _cache.rosterMoves = [];
   _dbReady = false;
@@ -540,7 +541,7 @@ function dbCountMyPushSubs() {
 function dbHasPushSubForEndpoint(endpoint) {
   return (_cache.pushSubs || []).some(s => s.endpoint === endpoint);
 }
-function dbGetMessages() { return _clone(_cache.messages || []); }
+function dbGetMessages() { return _clone(_cache.leagueMessages || []); }
 
 async function postMessageAsync(body) {
   if (typeof currentOwner === "undefined" || !currentOwner) throw new Error("Sign in to post");
@@ -554,25 +555,23 @@ async function postMessageAsync(body) {
   };
   const { data, error } = await supabaseClient.from("league_messages").insert(row).select().single();
   if (error) throw error;
-  _cache.messages = [...(_cache.messages || []), data];
+  _cache.leagueMessages = [...(_cache.leagueMessages || []), data];
   return data;
 }
 
 async function deleteMessageAsync(id) {
   const { error } = await supabaseClient.from("league_messages").delete().eq("id", id);
   if (error) throw error;
-  _cache.messages = (_cache.messages || []).filter(m => m.id !== id);
+  _cache.leagueMessages = (_cache.leagueMessages || []).filter(m => m.id !== id);
 }
 
 async function clearAllMessagesAsync() {
-  // Commissioner-only by RLS — non-commish authors can only delete their own.
   const { error } = await supabaseClient.from("league_messages").delete().not("id", "is", null);
   if (error) throw error;
-  _cache.messages = [];
+  _cache.leagueMessages = [];
 }
 function dbGetActivity() { return _cache.activity; }            // read-only
 function dbGetProposals() { return _cache.proposals; }          // read-only
-function dbGetMessages() { return _cache.messages; }            // read-only
 
 // Group proposals into threads. Returns array of { threadId, proposals[],
 // messages[], latestProposal, lastActivityAt }, sorted by lastActivityAt
