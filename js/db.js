@@ -48,31 +48,112 @@ function dbMarkThreadRead(threadId) {
   const map = _getThreadReadTimes();
   map[threadId] = now;
   _saveThreadReadTimes(map);
-  // 2. Update the in-memory cache so dbGetThreadLastReadMs sees it instantly.
+  // 2. Update the in-memory cache so dbGetThreadLastReadMs sees it instantly,
+  //    then push to server. If the cache row is missing (notification_prefs
+  //    fetch errored or user has never had a row), fetch the existing row
+  //    from the server FIRST — otherwise our default-fallback would PUT
+  //    receive_all=false back over a real receive_all=true.
   if (typeof currentOwner !== "undefined" && currentOwner) {
-    const row = _cache.notifyPrefs[currentOwner.team_id] || { prefs: {}, receiveAll: false, email: null };
-    if (!row.prefs.inboxReads) row.prefs.inboxReads = {};
-    row.prefs.inboxReads[threadId] = now;
-    _cache.notifyPrefs[currentOwner.team_id] = row;
-    // 3. Push to server (fire-and-forget; localStorage covers the gap).
-    if (typeof saveNotifyPrefsAsync === "function") {
-      saveNotifyPrefsAsync({
-        teamId: currentOwner.team_id,
-        prefs: row.prefs,
-        receiveAll: row.receiveAll,
-        email: row.email || ((typeof currentUser !== "undefined" && currentUser) ? currentUser.email : null),
-      }).catch(e => console.warn("inbox-read sync failed:", e));
+    const teamId = currentOwner.team_id;
+    const cached = _cache.notifyPrefs[teamId];
+    if (cached) {
+      if (!cached.prefs.inboxReads) cached.prefs.inboxReads = {};
+      cached.prefs.inboxReads[threadId] = now;
+      _pushNotifyPrefsBackground(teamId, cached);
+    } else {
+      _markThreadReadAsync(teamId, threadId, now).catch(e =>
+        console.warn("inbox-read async sync failed:", e));
     }
   }
 }
+
+// Fetch the current notification_prefs row from the server, merge in the new
+// inboxReads timestamp, and write it back. Used when the in-memory cache row
+// is missing — avoids clobbering receive_all / email with our defaults.
+async function _markThreadReadAsync(teamId, threadId, nowIso) {
+  const { data, error } = await supabaseClient
+    .from("notification_prefs")
+    .select("*")
+    .eq("team_id", teamId)
+    .maybeSingle();
+  if (error) throw error;
+  const row = data
+    ? { prefs: data.prefs || {}, receiveAll: !!data.receive_all, email: data.email || null }
+    : { prefs: {}, receiveAll: false, email: null };
+  if (!row.prefs.inboxReads) row.prefs.inboxReads = {};
+  row.prefs.inboxReads[threadId] = nowIso;
+  _cache.notifyPrefs[teamId] = row;
+  await _pushNotifyPrefsBackground(teamId, row);
+}
+
+function _pushNotifyPrefsBackground(teamId, row) {
+  if (typeof saveNotifyPrefsAsync !== "function") return Promise.resolve();
+  return saveNotifyPrefsAsync({
+    teamId,
+    prefs: row.prefs,
+    receiveAll: row.receiveAll,
+    email: row.email || ((typeof currentUser !== "undefined" && currentUser) ? currentUser.email : null),
+  }).catch(e => console.warn("notification-prefs sync failed:", e));
+}
+
+// Message-board read tracking — same shape as thread reads. Writes both
+// localStorage (immediate) and notification_prefs.prefs.msgBoardLastSeen
+// (cross-device). Reads return max of both so a fresh read on either device
+// always wins.
+const MSGBOARD_LAST_SEEN_KEY = "flm_msgboard_last_seen";
+function dbGetMsgBoardLastSeenMs() {
+  let localMs = 0;
+  try { localMs = parseInt(localStorage.getItem(MSGBOARD_LAST_SEEN_KEY) || "0", 10) || 0; } catch {}
+  let serverMs = 0;
+  if (typeof currentOwner !== "undefined" && currentOwner) {
+    const ts = _cache.notifyPrefs[currentOwner.team_id]?.prefs?.msgBoardLastSeen;
+    if (ts) serverMs = new Date(ts).getTime();
+  }
+  return Math.max(localMs, serverMs);
+}
+function dbMarkMsgBoardSeen() {
+  const now = Date.now();
+  try { localStorage.setItem(MSGBOARD_LAST_SEEN_KEY, String(now)); } catch {}
+  if (typeof currentOwner === "undefined" || !currentOwner) return;
+  const teamId = currentOwner.team_id;
+  const nowIso = new Date(now).toISOString();
+  const cached = _cache.notifyPrefs[teamId];
+  if (cached) {
+    cached.prefs.msgBoardLastSeen = nowIso;
+    _pushNotifyPrefsBackground(teamId, cached);
+  } else {
+    _markMsgBoardSeenAsync(teamId, nowIso).catch(e =>
+      console.warn("msgboard-seen async sync failed:", e));
+  }
+}
+async function _markMsgBoardSeenAsync(teamId, nowIso) {
+  const { data, error } = await supabaseClient
+    .from("notification_prefs")
+    .select("*")
+    .eq("team_id", teamId)
+    .maybeSingle();
+  if (error) throw error;
+  const row = data
+    ? { prefs: data.prefs || {}, receiveAll: !!data.receive_all, email: data.email || null }
+    : { prefs: {}, receiveAll: false, email: null };
+  row.prefs.msgBoardLastSeen = nowIso;
+  _cache.notifyPrefs[teamId] = row;
+  await _pushNotifyPrefsBackground(teamId, row);
+}
 function dbGetThreadLastReadMs(threadId) {
-  // Server-side wins (cross-device), with localStorage as a fallback.
+  // Take the max of localStorage and server. Server alone isn't safe — if a
+  // realtime _fetchAll runs between dbMarkThreadRead's local write and its
+  // server write, the cache reloads the OLD server value and the badge
+  // re-appears. Local alone misses cross-device. max() handles both.
+  let localMs = 0;
+  const v = _getThreadReadTimes()[threadId];
+  if (v) localMs = new Date(v).getTime();
+  let serverMs = 0;
   if (typeof currentOwner !== "undefined" && currentOwner) {
     const serverTs = _cache.notifyPrefs[currentOwner.team_id]?.prefs?.inboxReads?.[threadId];
-    if (serverTs) return new Date(serverTs).getTime();
+    if (serverTs) serverMs = new Date(serverTs).getTime();
   }
-  const v = _getThreadReadTimes()[threadId];
-  return v ? new Date(v).getTime() : 0;
+  return Math.max(localMs, serverMs);
 }
 // True if there's at least one unread item (proposal or message from someone
 // else) in this thread for the current owner.

@@ -7310,7 +7310,7 @@ async function submitClaimTeam() {
 // Header button calls this — toggle the message-board panel and clear the
 // per-device unread marker so the badge zeros out.
 function openMessageBoard() {
-  try { localStorage.setItem("flm_msgboard_last_seen", String(Date.now())); } catch {}
+  if (typeof dbMarkMsgBoardSeen === "function") dbMarkMsgBoardSeen();
   if (typeof renderHeaderUser === "function") renderHeaderUser();
   if (typeof toggleMessageBoard === "function") toggleMessageBoard();
 }
@@ -7356,10 +7356,12 @@ function renderHeaderUser() {
     ? `<span title="Online: ${others.map(t => t.teamName).join(", ")}" style="display:flex;align-items:center;gap:4px"><span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:#22c55e;box-shadow:0 0 6px rgba(34,197,94,0.7)"></span>${others.length} online</span>`
     : `<span style="color:rgba(255,255,255,0.45)" title="No other owners online">no one else online</span>`;
 
-  // Message-board button — unread count = messages not yet seen by this owner
-  // (tracked in localStorage; cleared when they open the panel).
+  // Message-board button — unread count = messages not yet seen by this owner.
+  // The "last seen" timestamp lives in localStorage AND in
+  // notification_prefs.prefs.msgBoardLastSeen so reading on one device clears
+  // the badge on every device.
   const messages = (typeof dbGetMessages === "function") ? dbGetMessages() : [];
-  const lastSeenMs = parseInt(localStorage.getItem("flm_msgboard_last_seen") || "0", 10);
+  const lastSeenMs = (typeof dbGetMsgBoardLastSeenMs === "function") ? dbGetMsgBoardLastSeenMs() : 0;
   const myTeamForUnread = currentOwner?.team_id;
   const unread = messages.filter(m => m.team_id !== myTeamForUnread && new Date(m.created_at).getTime() > lastSeenMs).length;
   const msgBoardBtnHtml = `
