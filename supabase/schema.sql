@@ -670,6 +670,11 @@ drop trigger if exists np_touch on public.notification_prefs;
 create trigger np_touch before update on public.notification_prefs
   for each row execute function public.touch_updated_at();
 
+-- Explicit grants — Supabase only auto-grants new public-schema tables in
+-- some project configurations. Without these, RLS isn't even evaluated and
+-- writes fail with "permission denied for table notification_prefs".
+grant select, insert, update, delete on public.notification_prefs to authenticated;
+
 
 -- ============================================================================
 -- 12. push_subscriptions — one row per device-level Web Push subscription
@@ -705,6 +710,8 @@ create policy "ps_insert_own"
 create policy "ps_delete_own"
   on public.push_subscriptions for delete
   using (user_id = auth.uid() or public.is_commissioner());
+
+grant select, insert, update, delete on public.push_subscriptions to authenticated;
 
 
 -- ============================================================================
