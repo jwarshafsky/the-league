@@ -93,6 +93,12 @@ async function _fetchAll() {
       if (typeof showToast === "function") showToast(msg, "warn");
     }
   };
+  // Same as _surface, but only logs to the console — no toast. Use for tables
+  // whose absence is expected during partial rollouts (e.g. before the
+  // commissioner has run the SQL to create new tables).
+  const _surfaceQuiet = (label, res) => {
+    if (res.error) console.warn(`${label} fetch skipped: ${res.error.message || res.error}`);
+  };
   _surface("trades", trades);
   _surface("keeper_selections", ks);
   _surface("league_state", ls);
@@ -101,8 +107,12 @@ async function _fetchAll() {
   _surface("trade_proposals", props);
   _surface("trade_proposal_messages", msgs);
   _surface("roster_moves", rm);
-  _surface("notification_prefs", np);
-  _surface("push_subscriptions", ps);
+  // notification_prefs and push_subscriptions are optional — they only exist
+  // after the commissioner runs the schema additions for the notifications
+  // feature. If they don't exist yet, the query returns a 'relation does not
+  // exist' error from PostgREST; log it quietly but don't toast users.
+  _surfaceQuiet("notification_prefs", np);
+  _surfaceQuiet("push_subscriptions", ps);
   _cache.notifyPrefs = {};
   for (const r of (np.data || [])) {
     _cache.notifyPrefs[r.team_id] = {
