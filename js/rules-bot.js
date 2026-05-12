@@ -73,9 +73,9 @@
       <button id="rules-bot-fab" title="Ask CommishAI"
         style="position:fixed;bottom:calc(20px + env(safe-area-inset-bottom, 0px));right:calc(20px + env(safe-area-inset-right, 0px));z-index:990;
                width:54px;height:54px;border-radius:50%;border:none;padding:0;
-               background:transparent;cursor:pointer;
-               box-shadow:0 4px 14px rgba(0,0,0,0.35);display:none;
-               touch-action:manipulation;-webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none;overflow:hidden"><img src="icons/commish-ai.png" alt="" style="width:100%;height:100%;display:block"></button>
+               background:transparent;color:#fff;font-size:1.5rem;line-height:54px;text-align:center;cursor:pointer;
+               box-shadow:0 4px 14px rgba(0,0,0,0.35);display:none;overflow:hidden;
+               touch-action:manipulation;-webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none"><img id="rules-bot-fab-icon" src="icons/commish-ai.png" alt="" style="position:absolute;top:50%;left:50%;width:135%;height:135%;transform:translate(-50%,-50%);object-fit:contain;pointer-events:none"></button>
 
       <div id="rules-bot-panel"
         style="position:fixed;bottom:calc(84px + env(safe-area-inset-bottom, 0px));right:calc(20px + env(safe-area-inset-right, 0px));z-index:991;
@@ -234,7 +234,11 @@
     const fab = document.getElementById("rules-bot-fab");
     if (!panel || !fab) return;
     panel.style.display = _open ? "flex" : "none";
-    fab.textContent = _open ? "×" : "✨";
+    if (_open) {
+      fab.innerHTML = "×";
+    } else {
+      fab.innerHTML = '<img id="rules-bot-fab-icon" src="icons/commish-ai.png" alt="" style="position:absolute;top:50%;left:50%;width:135%;height:135%;transform:translate(-50%,-50%);object-fit:contain;pointer-events:none">';
+    }
     // Mutually exclusive with the message board — only one slide-up at a time.
     if (_open && typeof window.closeMessageBoard === "function") window.closeMessageBoard();
     if (_open) _renderLog();
