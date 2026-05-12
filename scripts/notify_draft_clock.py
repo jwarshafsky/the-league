@@ -161,7 +161,7 @@ def main():
             if addr and smtp_user and smtp_pass:
                 try:
                     html, text = render_alert(title, body, url=url, cta_label="Open Minors Draft")
-                    send_email(smtp_user, smtp_pass, [addr], f"Draft alert: {title}", html, text)
+                    send_email(smtp_user, smtp_pass, [addr], f"The League: Draft alert — {title}", html, text)
                     notify_count += 1
                 except Exception as e:
                     print(f"  ! email failed for {team_id}: {e}", file=sys.stderr)

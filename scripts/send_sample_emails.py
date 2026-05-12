@@ -113,34 +113,34 @@ def auth_invite_sample():
 
 
 SAMPLES = [
-    ("[Sample 1/10] Daily digest (everything-feed)", daily_digest),
-    ("[Sample 2/10] Weekly digest", weekly_digest),
-    ("[Sample 3/10] Instant — new trade proposal", lambda: render_alert(
+    ("The League: Daily digest — 12 events (SAMPLE 1/10)", daily_digest),
+    ("The League: Weekly digest — 18 events (SAMPLE 2/10)", weekly_digest),
+    ("The League: Trade proposal — Matt (SAMPLE 3/10)", lambda: render_alert(
         title="New trade proposal",
         body_text="<strong>Matt</strong> sent you a trade proposal: you get Bobby Witt Jr.; they get Bryce Harper + 1st-round 2027 pick.",
         url=APP_URL + "?tab=trades&sub=inbox", cta_label="View in inbox")),
-    ("[Sample 4/10] Instant — new trade message", lambda: render_alert(
+    ("The League: New trade message — Saxton (SAMPLE 4/10)", lambda: render_alert(
         title="New trade message",
         body_text='<strong>Saxton</strong> replied: "I can add $3 in draft dollars if you swap Wyatt for Carroll."',
         url=APP_URL + "?tab=trades&sub=inbox", cta_label="Open thread")),
-    ("[Sample 5/10] Instant — trade completed", lambda: render_alert(
+    ("The League: Trade completed — Saxton ↔ Larry (SAMPLE 5/10)", lambda: render_alert(
         title="Trade completed",
         body_text="<strong>Saxton</strong> ↔ <strong>Larry</strong>: Saxton gets Yordan Alvarez; Larry gets Wyatt Langford + $4 draft.",
         url=APP_URL + "?tab=trades&sub=log", cta_label="See trade log")),
-    ("[Sample 6/10] Draft — on the clock", lambda: render_alert(
+    ("The League: Draft alert — On the clock R3.4 (SAMPLE 6/10)", lambda: render_alert(
         title="On the clock — R3.4",
         body_text="Your team (<strong>Jeff</strong>) is on the clock for the Minors Draft (Round 3, Pick 4). The 4-hour pick clock is ticking — pauses overnight midnight–8 AM ET.",
         url=APP_URL + "?tab=draft", cta_label="Make my pick")),
-    ("[Sample 7/10] Draft — on deck", lambda: render_alert(
+    ("The League: Draft alert — On deck R3.5 (SAMPLE 7/10)", lambda: render_alert(
         title="On deck — R3.5",
         body_text="Your team (<strong>Jeff</strong>) is on deck for the Minors Draft (Round 3, Pick 5). One pick to go before you're up.",
         url=APP_URL + "?tab=draft", cta_label="Open Minors Draft")),
-    ("[Sample 8/10] Draft — in the hole", lambda: render_alert(
+    ("The League: Draft alert — In the hole R3.6 (SAMPLE 8/10)", lambda: render_alert(
         title="In the hole — R3.6",
         body_text="Your team (<strong>Jeff</strong>) is in the hole for the Minors Draft (Round 3, Pick 6). Two picks until you're up.",
         url=APP_URL + "?tab=draft", cta_label="Open Minors Draft")),
-    ("[Sample 9/10] Auth — magic link / sign-in", auth_magic_link_sample),
-    ("[Sample 10/10] Auth — invite user", auth_invite_sample),
+    ("The League: Sign in — magic link (SAMPLE 9/10)", auth_magic_link_sample),
+    ("The League: You're invited (SAMPLE 10/10)", auth_invite_sample),
 ]
 
 

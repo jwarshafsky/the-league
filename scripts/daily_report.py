@@ -138,7 +138,7 @@ def main():
             greeting += " (You're set to receive every league event.)"
         html, text = render_digest(title, today_subtitle, sections, greeting=greeting)
         n = sum(len(s["items"]) for s in sections)
-        subject = f"League digest: {n} event{'s' if n != 1 else ''}"
+        subject = f"The League: Daily digest — {n} event{'s' if n != 1 else ''}"
         if smtp_user and smtp_pass:
             try:
                 send_email(smtp_user, smtp_pass, [addr], subject, html, text)

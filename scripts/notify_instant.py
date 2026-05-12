@@ -180,7 +180,7 @@ def main():
         for tid in targets:
             addr = email_by_team.get(tid)
             if not addr: continue
-            subject = f"{meta['subject_prefix']} — {team_name(a.get('actor_team_id') or '?')}"
+            subject = f"The League: {meta['subject_prefix']} — {team_name(a.get('actor_team_id') or '?')}"
             html, text = render_alert(meta["title"], headline, url=meta["url"], cta_label="Open in app")
             if smtp_user and smtp_pass:
                 try:
