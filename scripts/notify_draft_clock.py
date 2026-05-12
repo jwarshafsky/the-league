@@ -21,7 +21,7 @@ from _notify_db import (
     SUPABASE_URL, APP_URL,
     load_env, fetch_all_owners, fetch_emails_by_user_id,
     fetch_notify_prefs, fetch_push_subs, fetch_league_state_row,
-    upsert_league_state_row, team_name,
+    upsert_league_state_row, team_name, parse_ts,
 )
 from _email_template import render_alert
 from _mail import send_email
@@ -41,6 +41,82 @@ def get_pick_owner(draft, round_num, pick_in_round):
     if draft.get("type") == "snake" and round_num % 2 == 0:
         return base[len(base) - pick_in_round] if 0 <= len(base) - pick_in_round < len(base) else None
     return base[pick_in_round - 1] if 0 <= pick_in_round - 1 < len(base) else None
+
+
+# --- Clock math (Python port of js/app.js activeDraftElapsedMs) ---
+# Active hours are 8 AM – midnight ET. The draft clock is 4 hours of active
+# time. Overnight (midnight–8 AM ET) is automatically excluded.
+
+DRAFT_CLOCK_MS = 4 * 60 * 60 * 1000
+ACTIVE_START_HOUR = 8
+ACTIVE_END_HOUR = 24
+
+
+def _et_parts(utc_ms):
+    """Return {year,month,day,hour,minute} in America/New_York for a UTC ms."""
+    try:
+        from zoneinfo import ZoneInfo
+        dt = datetime.fromtimestamp(utc_ms / 1000, tz=timezone.utc).astimezone(ZoneInfo("America/New_York"))
+    except Exception:
+        # Fallback for systems without zoneinfo — assume EST/EDT manually.
+        # Conservative: assume EDT (UTC-4) Mar-Nov, EST (UTC-5) otherwise.
+        from datetime import timedelta as _td
+        m = datetime.fromtimestamp(utc_ms / 1000, tz=timezone.utc).month
+        offset = -4 if 3 <= m <= 11 else -5
+        dt = datetime.fromtimestamp(utc_ms / 1000, tz=timezone.utc) + _td(hours=offset)
+    return dt.year, dt.month, dt.day, dt.hour, dt.minute
+
+
+def _et_ms_at(year, month, day, hour, minute):
+    """UTC ms representing the given wall-clock time in America/New_York."""
+    try:
+        from zoneinfo import ZoneInfo
+        # Normalize: handle day rollover (day+1 etc.)
+        from datetime import timedelta as _td
+        base = datetime(year, month, 1, tzinfo=ZoneInfo("America/New_York"))
+        dt = base + _td(days=day - 1, hours=hour, minutes=minute)
+        return int(dt.timestamp() * 1000)
+    except Exception:
+        m = month
+        offset = -4 if 3 <= m <= 11 else -5
+        dt = datetime(year, month, day, hour, minute, tzinfo=timezone.utc)
+        # subtract the ET offset to get back to UTC
+        from datetime import timedelta as _td
+        dt = dt - _td(hours=offset)
+        return int(dt.timestamp() * 1000)
+
+
+def active_elapsed_ms(from_ms, to_ms):
+    """Active draft time (excluding 12am–8am ET) between two UTC ms values."""
+    if to_ms <= from_ms: return 0
+    total = 0
+    cursor = from_ms
+    for _ in range(60):  # safety cap
+        if cursor >= to_ms: break
+        y, mo, d, h, _ = _et_parts(cursor)
+        is_active = ACTIVE_START_HOUR <= h < ACTIVE_END_HOUR
+        if is_active:
+            seg_end = _et_ms_at(y, mo, d + 1, 0, 0)  # next midnight ET
+        else:
+            seg_end = _et_ms_at(y, mo, d, ACTIVE_START_HOUR, 0)  # today 8am ET
+        eff_end = min(seg_end, to_ms)
+        if is_active: total += (eff_end - cursor)
+        cursor = eff_end
+    return total
+
+
+def clock_state(draft, now_ms):
+    """Returns (started, paused, expired, remaining_ms)."""
+    clk = draft.get("clock") or {}
+    started_at = clk.get("startedAt")
+    if not started_at: return False, False, False, DRAFT_CLOCK_MS
+    started_ms = int(parse_ts(started_at).timestamp() * 1000)
+    paused = bool(clk.get("paused"))
+    paused_at = clk.get("pausedAt")
+    ref_ms = int(parse_ts(paused_at).timestamp() * 1000) if (paused and paused_at) else now_ms
+    elapsed = active_elapsed_ms(started_ms, ref_ms)
+    remaining = max(0, DRAFT_CLOCK_MS - elapsed)
+    return True, paused, remaining <= 0, remaining
 
 
 def current_pick_info(draft):
@@ -109,6 +185,53 @@ def main():
     if not (draft.get("baseOrder") and len(draft["baseOrder"]) == 12):
         print("Draft not initialized."); return
 
+    # ------------------------------------------------------------------
+    # Auto-skip expired picks. The browser-side ticker only auto-skips
+    # when a commish has the draft tab open — if nobody does, the clock
+    # runs out but the pick never gets passed. This cron-side loop closes
+    # that gap. Loops in case multiple picks have stacked up as expired.
+    # ------------------------------------------------------------------
+    skipped = 0
+    for _ in range(50):  # safety cap
+        cur = current_pick_info(draft)
+        if not cur: break
+        started, paused, expired, _rem = clock_state(draft, int(datetime.now(timezone.utc).timestamp() * 1000))
+        if not started or paused or not expired: break
+        # Insert into passed; advance the clock for the next pick.
+        if "passed" not in draft or draft["passed"] is None:
+            draft["passed"] = []
+        draft["passed"].append({
+            "round": cur["round"], "pickInRound": cur["pickInRound"], "team": cur["team"], "auto": True,
+        })
+        draft["clock"] = {
+            "startedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+            "paused": False, "pausedAt": None,
+        }
+        # Log activity (best-effort; failure here shouldn't block the skip).
+        try:
+            urllib.request.urlopen(urllib.request.Request(
+                f"{SUPABASE_URL}/rest/v1/activity_log",
+                method="POST",
+                data=json.dumps({
+                    "type": "minors_pick_auto_skipped",
+                    "actor_team_id": None,
+                    "target_team_id": cur["team"],
+                    "payload": {"round": cur["round"], "pick_in_round": cur["pickInRound"]},
+                }).encode("utf-8"),
+                headers={
+                    "apikey": key, "Authorization": f"Bearer {key}",
+                    "Content-Type": "application/json",
+                },
+            ), timeout=10)
+        except Exception as e:
+            print(f"  ! activity_log insert failed: {e}", file=sys.stderr)
+        skipped += 1
+    if skipped:
+        upsert_league_state_row(key, "draft_2027", draft)
+        print(f"Auto-skipped {skipped} expired pick(s).")
+        # Re-load to make sure we work on the saved version below.
+        draft = fetch_league_state_row(key, "draft_2027") or draft
+
     cur = current_pick_info(draft)
     if not cur:
         print("Draft complete."); return
@@ -122,10 +245,18 @@ def main():
     marker = fetch_league_state_row(key, MARKER_KEY) or {}
     # marker structure: { "<team_id>": { "on_clock": "<pick-key>", "on_deck": "...", "in_hole": "..." } }
 
-    owners = fetch_all_owners(key) or []
-    emails_by_uid = fetch_emails_by_user_id(key)
-    all_prefs = fetch_notify_prefs(key)
-    push_subs = fetch_push_subs(key)
+    # Be defensive about the new notification tables — they only exist after
+    # the commissioner runs the schema additions. Auto-skip above runs
+    # whether or not these tables are reachable.
+    def _safe(fn, default):
+        try: return fn() or default
+        except Exception as e:
+            print(f"  ! {fn.__name__} skipped: {e}", file=sys.stderr); return default
+
+    owners = _safe(lambda: fetch_all_owners(key), [])
+    emails_by_uid = _safe(lambda: fetch_emails_by_user_id(key), {})
+    all_prefs = _safe(lambda: fetch_notify_prefs(key), {})
+    push_subs = _safe(lambda: fetch_push_subs(key), [])
     push_by_team = {}
     for s in push_subs:
         push_by_team.setdefault(s["team_id"], []).append(s)

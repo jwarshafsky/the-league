@@ -674,6 +674,7 @@ create trigger np_touch before update on public.notification_prefs
 -- some project configurations. Without these, RLS isn't even evaluated and
 -- writes fail with "permission denied for table notification_prefs".
 grant select, insert, update, delete on public.notification_prefs to authenticated;
+grant all on public.notification_prefs to service_role;
 
 
 -- ============================================================================
@@ -712,6 +713,7 @@ create policy "ps_delete_own"
   using (user_id = auth.uid() or public.is_commissioner());
 
 grant select, insert, update, delete on public.push_subscriptions to authenticated;
+grant all on public.push_subscriptions to service_role;
 
 
 -- ============================================================================
