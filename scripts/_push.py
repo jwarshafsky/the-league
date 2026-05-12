@@ -14,6 +14,26 @@ except ImportError:
     webpush = None
     WebPushException = Exception
 
+try:
+    from py_vapid import Vapid01
+except ImportError:
+    Vapid01 = None
+
+_vapid_instance = None
+
+
+def _get_vapid_instance(pem_str):
+    """Load + cache a Vapid01 instance from a PEM string. pywebpush's
+    `vapid_private_key=PEM` path tried to deserialize the string itself and
+    failed on some cryptography/OpenSSL combos — passing a Vapid01 object
+    instead works reliably."""
+    global _vapid_instance
+    if _vapid_instance is None:
+        if Vapid01 is None:
+            raise RuntimeError("py_vapid not installed — run: pip3 install --user py_vapid")
+        _vapid_instance = Vapid01.from_pem(pem_str.encode())
+    return _vapid_instance
+
 
 def send_push(subscription, payload, vapid_private_key, vapid_subject):
     """subscription: dict with keys 'endpoint' + 'keys' { p256dh, auth }.
@@ -25,7 +45,7 @@ def send_push(subscription, payload, vapid_private_key, vapid_subject):
     return webpush(
         subscription_info=subscription,
         data=json.dumps(payload),
-        vapid_private_key=vapid_private_key,
+        vapid_private_key=_get_vapid_instance(vapid_private_key),
         vapid_claims={"sub": vapid_subject},
     )
 
