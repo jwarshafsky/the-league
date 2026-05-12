@@ -37,12 +37,39 @@ function _getThreadReadTimes() {
 function _saveThreadReadTimes(map) {
   try { localStorage.setItem(TRADE_INBOX_READ_KEY, JSON.stringify(map)); } catch {}
 }
+// Read state lives in notification_prefs.prefs.inboxReads (server-side, syncs
+// across the user's devices via realtime) AND in localStorage as a fast path
+// (used by the next render before the server write round-trips). The server
+// is the source of truth for cross-device freshness.
 function dbMarkThreadRead(threadId) {
+  const now = new Date().toISOString();
+  // 1. Immediate local update so this device's badge clears without waiting.
   const map = _getThreadReadTimes();
-  map[threadId] = new Date().toISOString();
+  map[threadId] = now;
   _saveThreadReadTimes(map);
+  // 2. Update the in-memory cache so dbGetThreadLastReadMs sees it instantly.
+  if (typeof currentOwner !== "undefined" && currentOwner) {
+    const row = _cache.notifyPrefs[currentOwner.team_id] || { prefs: {}, receiveAll: false, email: null };
+    if (!row.prefs.inboxReads) row.prefs.inboxReads = {};
+    row.prefs.inboxReads[threadId] = now;
+    _cache.notifyPrefs[currentOwner.team_id] = row;
+    // 3. Push to server (fire-and-forget; localStorage covers the gap).
+    if (typeof saveNotifyPrefsAsync === "function") {
+      saveNotifyPrefsAsync({
+        teamId: currentOwner.team_id,
+        prefs: row.prefs,
+        receiveAll: row.receiveAll,
+        email: row.email || ((typeof currentUser !== "undefined" && currentUser) ? currentUser.email : null),
+      }).catch(e => console.warn("inbox-read sync failed:", e));
+    }
+  }
 }
 function dbGetThreadLastReadMs(threadId) {
+  // Server-side wins (cross-device), with localStorage as a fallback.
+  if (typeof currentOwner !== "undefined" && currentOwner) {
+    const serverTs = _cache.notifyPrefs[currentOwner.team_id]?.prefs?.inboxReads?.[threadId];
+    if (serverTs) return new Date(serverTs).getTime();
+  }
   const v = _getThreadReadTimes()[threadId];
   return v ? new Date(v).getTime() : 0;
 }
@@ -364,6 +391,16 @@ function _subscribeToChanges() {
           if (fresh) currentOwner = fresh;
           if (typeof fireAuthChange === "function") fireAuthChange();
           if (typeof switchTab === "function" && typeof currentView !== "undefined") switchTab(currentView);
+        }
+      )
+      // notification_prefs — re-fetch so the inbox-read state (stored in
+      // prefs.inboxReads) propagates across devices. Re-renders the header
+      // badge so the Trades count clears on iOS when read on desktop.
+      .on("postgres_changes",
+        { event: "*", schema: "public", table: "notification_prefs" },
+        async () => {
+          await _fetchAll();
+          if (typeof renderHeaderUser === "function") renderHeaderUser();
         }
       );
     _realtimeChannel.subscribe();
