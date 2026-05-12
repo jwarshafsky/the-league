@@ -1716,29 +1716,6 @@ const LUXURY_TAX_CAP = 350;
 // Rules: keepers and auction picks count at their stored price; free agents
 // count at $1; minor-league call-ups count at $0. Reads the current
 // ESPN-reconciled roster.
-// Is this callup "post-draft" (called up during the season → $1) or
-// "pre-draft" (came over from MiLB in the offseason → $0)?
-// Decision: check roster_moves (the app's call-up log) first; if no entry,
-// fall back to ESPN's ADD events. getMostRecentAddEvent only returns events
-// at or after snap.draftDate, so any hit there means it's a post-draft add.
-function _isPostDraftCallup(player) {
-  const snap = (typeof getEspnSnapshot === "function") ? getEspnSnapshot() : null;
-  const draftDate = snap?.draftDate || 0;
-  const moves = (typeof dbGetRosterMoves === "function") ? dbGetRosterMoves() : [];
-  const myMoves = moves.filter(m => m && m.kind === "callup" && m.player_name === player.name);
-  if (myMoves.length) {
-    // Pick the most recent app-side call-up record for this player.
-    const latest = myMoves.reduce((a, b) => (a.at > b.at ? a : b));
-    const ms = new Date(latest.at).getTime();
-    return ms > draftDate;
-  }
-  if (player.playerId != null) {
-    const lastAdd = (typeof getMostRecentAddEvent === "function") ? getMostRecentAddEvent(player.playerId) : null;
-    if (lastAdd) return true;
-  }
-  return false;
-}
-
 function getTeamLuxurySalary(team) {
   const players = (typeof getEligiblePlayers === "function") ? getEligiblePlayers(team) : [];
   let total = 0;
@@ -1747,9 +1724,8 @@ function getTeamLuxurySalary(team) {
     // player's "true" salary explicitly, so use it regardless of contractType.
     if (p.priceExceptionApplied && typeof p.price === "number") {
       total += p.price;
-    } else if (p.contractType === "callup") {
-      total += _isPostDraftCallup(p) ? 1 : 0;
-    } else if (p.contractType === "fa") {
+    } else if (p.contractType === "callup" || p.contractType === "fa") {
+      // Both free agents and minor-league call-ups count at $1 flat.
       total += 1;
     } else if (typeof p.price === "number") {
       total += p.price;
@@ -1765,17 +1741,16 @@ function renderLuxuryTaxTable() {
       const isFa = p.contractType === "fa";
       const isCallup = p.contractType === "callup";
       const hasOverride = p.priceExceptionApplied && typeof p.price === "number";
-      const postDraftCallup = isCallup && _isPostDraftCallup(p);
       const counted = hasOverride
         ? p.price
-        : isCallup ? (postDraftCallup ? 1 : 0)
-        : (isFa ? 1 : (typeof p.price === "number" ? p.price : 0));
+        : (isCallup || isFa) ? 1
+        : (typeof p.price === "number" ? p.price : 0);
       // A player drafted in a prior season's auction and still on the roster
       // is a "keeper" for display purposes; only current-season auction picks
       // get the "auction" badge.
       const yearAcquired = p.yearAcquired;
       const isKeeper = p.contractType === "auction" && yearAcquired != null && yearAcquired < CURRENT_SEASON;
-      return { name: p.name, type: p.contractType, isKeeper, hasOverride, postDraftCallup, price: p.price, counted };
+      return { name: p.name, type: p.contractType, isKeeper, hasOverride, price: p.price, counted };
     });
     const salary = breakdown.reduce((s, b) => s + b.counted, 0);
     const over = salary > LUXURY_TAX_CAP;
@@ -1811,7 +1786,7 @@ function renderLuxuryTaxTable() {
               .sort((a, b) => b.counted - a.counted)
               .map(b => {
                 const note = b.type === "fa" ? "FA"
-                  : b.type === "callup" ? (b.postDraftCallup ? "call-up (post-draft)" : "call-up (pre-draft)")
+                  : b.type === "callup" ? "call-up"
                   : b.isKeeper ? "keeper"
                   : "auction";
                 const noteHtml = `<span style="color:var(--text-dim);font-size:0.72rem">${escapeHtml(note)}</span>`;
@@ -1954,7 +1929,7 @@ function renderFinancialsView() {
     <div class="keeper-projection" style="margin-bottom:14px">
       <h3 style="margin-top:0">Luxury Tax</h3>
       <div style="color:var(--text-dim);font-size:0.82rem;margin-bottom:10px">
-        Cap is $${LUXURY_TAX_CAP}. Keepers and auction picks count at their price; free agents count at $1; pre-draft call-ups count at $0; post-draft call-ups count at $1. Numbers reflect the current ESPN roster.
+        Cap is $${LUXURY_TAX_CAP}. Keepers and auction picks count at their price; free agents and minor-league call-ups count at $1 each. Numbers reflect the current ESPN roster.
       </div>
       ${renderLuxuryTaxTable()}
     </div>
