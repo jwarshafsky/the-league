@@ -949,7 +949,7 @@ function renderCallupsTable(players, teamId) {
   const headerActionCol = showSendDown ? "<th></th>" : "";
   return `
     <table class="player-table mobile-stack-table">
-      <thead><tr><th>Player</th><th>Drafted</th><th>Career Stats</th><th>Status</th>${headerActionCol}</tr></thead>
+      <thead><tr><th>Player</th><th>Drafted</th><th>AB/IP</th><th>Status</th>${headerActionCol}</tr></thead>
       <tbody>
         ${players.map(p => {
           const ms = getMinorLeagueContractStatus(p, CURRENT_SEASON);
@@ -967,7 +967,7 @@ function renderCallupsTable(players, teamId) {
             <tr>
               <td class="notif-row-label"><span class="player-name">${escapeHtml(p.name)}</span></td>
               <td data-label="Drafted" class="player-year">${p.yearAcquired}</td>
-              <td data-label="Career" class="${statClass}">${statDisplay}</td>
+              <td data-label="AB/IP" class="${statClass}">${statDisplay}</td>
               <td data-label="Status"><span style="color:var(--text-dim);font-size:0.8rem">${formatCallupStatus(p, ms)}</span></td>
               ${actionCell}
             </tr>
@@ -1020,7 +1020,7 @@ function renderMinorsTable(players, teamId) {
   const headerActionCol = showCallUp ? "<th></th>" : "";
   return `
     <table class="player-table mobile-stack-table">
-      <thead><tr><th>Player</th><th>Drafted</th><th>Career Stats</th><th>Expiry</th><th>Status</th>${headerActionCol}</tr></thead>
+      <thead><tr><th>Player</th><th>Drafted</th><th>AB/IP</th><th>Expiry</th><th>Status</th>${headerActionCol}</tr></thead>
       <tbody>
         ${players.map(p => {
           const ms = getMinorLeagueContractStatus(p, CURRENT_SEASON);
@@ -1046,7 +1046,7 @@ function renderMinorsTable(players, teamId) {
             <tr>
               <td class="notif-row-label"><span class="player-name">${escapeHtml(p.name)}</span>${p.sendDownCount ? ` <span class="hide-on-mobile" style="color:var(--red);font-size:0.65rem;font-weight:700">$${p.sendDownCount * 10} fee</span>` : ''}</td>
               <td data-label="Drafted" class="player-year">${p.yearAcquired}</td>
-              <td data-label="Career" class="${statClass}">${statDisplay}</td>
+              <td data-label="AB/IP" class="${statClass}">${statDisplay}</td>
               <td data-label="Expiry">${milTag}</td>
               <td data-label="Status">${
                 p._teamStatus === "dropped" ? '<span style="color:var(--orange);font-size:0.8rem">Dropped</span>' :
@@ -5285,13 +5285,38 @@ function renderSettingsView() {
       <div class="keeper-projection" style="margin-bottom:14px">
         <h3 style="margin-top:0">Exports</h3>
         <div style="color:var(--text-dim);font-size:0.84rem;margin-bottom:10px">
-          Download a multi-tab spreadsheet mirroring the league's Google Sheet:
+          Generates a multi-tab spreadsheet mirroring the league's Google Sheet:
           <em>Minor Leagues</em>, <em>Keepers</em>, <em>Eligible Keepers</em>, and
-          <em>Rule 5 Draft</em>. Open in Google Sheets to refresh those tabs.
+          <em>Rule 5 Draft</em>.
         </div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap">
-          <button class="trade-btn" onclick="exportLeagueXlsx()" style="font-size:0.85rem">Export league (.xlsx)</button>
-          <button class="trade-btn trade-btn-cancel" onclick="exportContractsCsv()" style="font-size:0.78rem">Contracts only (.csv)</button>
+
+        <div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:12px">
+          <div style="font-weight:700;color:var(--text-bright);margin-bottom:4px;font-size:0.9rem">Direct sync to Google Sheets</div>
+          <div style="color:var(--text-dim);font-size:0.78rem;margin-bottom:10px">
+            One-time setup: deploy a small Apps Script Web App bound to your league sheet, then paste its URL below. Clicking <em>Sync</em> overwrites the four tabs with current league data.
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:6px">
+            <input id="settings-sheets-url" type="text" placeholder="https://script.google.com/macros/s/.../exec"
+              value="${escapeHtml((dbGetSettings()?.googleSheetsWebAppUrl) || "")}"
+              style="flex:1;min-width:240px;background:var(--bg-card);color:var(--text);border:1px solid var(--border);padding:7px 10px;border-radius:6px;font-size:0.82rem">
+            <button class="trade-btn" onclick="saveGoogleSheetsUrl()" style="font-size:0.78rem">Save URL</button>
+            <span id="sheets-url-status" style="font-size:0.75rem;color:var(--text-dim)"></span>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button id="sync-sheets-btn" class="trade-btn trade-btn-submit" onclick="syncToGoogleSheets()" style="font-size:0.85rem">Sync to Google Sheets</button>
+            <button class="trade-btn" onclick="showAppsScriptSetup()" style="font-size:0.78rem">Apps Script setup</button>
+          </div>
+        </div>
+
+        <div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:12px">
+          <div style="font-weight:700;color:var(--text-bright);margin-bottom:4px;font-size:0.9rem">Download a copy</div>
+          <div style="color:var(--text-dim);font-size:0.78rem;margin-bottom:10px">
+            Same four tabs as a local <code>.xlsx</code> file you can upload to Sheets manually, or use offline.
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button class="trade-btn" onclick="exportLeagueXlsx()" style="font-size:0.85rem">Export league (.xlsx)</button>
+            <button class="trade-btn trade-btn-cancel" onclick="exportContractsCsv()" style="font-size:0.78rem">Contracts only (.csv)</button>
+          </div>
         </div>
       </div>
 
@@ -5611,28 +5636,213 @@ function _downloadBlob(content, filename, mime) {
 //   3. "{year} Eligible Keepers"   — 12 team blocks × 9 cols, with Keeper / Rule 5 / Block flags
 //   4. "Rule 5 Draft {year}"       — pick log + per-team $ summary
 // ============================================================================
+function _buildLeagueExportPayload() {
+  if (typeof applyRosterAdjustments === "function") applyRosterAdjustments();
+  const teams = (typeof getDisplayOrderedTeams === "function") ? getDisplayOrderedTeams() : LEAGUE_DATA.teams;
+  const sel = (typeof dbGetKeeperSelections === "function") ? dbGetKeeperSelections() : {};
+  const sendDownsByTeam = (typeof getSendDownsByTeam === "function") ? getSendDownsByTeam() : {};
+  const rule5State = (typeof getRule5State === "function") ? getRule5State() : { picks: [], order: [] };
+  const balances = (typeof getDraftDollarBalances === "function") ? getDraftDollarBalances() : {};
+  return {
+    tabs: [
+      { name: `${CURRENT_SEASON} Minor Leagues`,    rows: _xlsxMinorLeaguesAoa(teams, sendDownsByTeam) },
+      { name: `${CURRENT_SEASON} Keepers`,          rows: _xlsxKeepersAoa(teams, sel) },
+      { name: `${CURRENT_SEASON} Eligible Keepers`, rows: _xlsxEligibleKeepersAoa(teams, sel, balances) },
+      { name: `Rule 5 Draft ${CURRENT_SEASON}`,     rows: _xlsxRule5Aoa(teams, rule5State) },
+    ],
+  };
+}
+
 function exportLeagueXlsx() {
   if (!isCommissioner()) { alert("Commissioners only."); return; }
   if (typeof XLSX === "undefined") {
     alert("Spreadsheet library failed to load. Reload the page and try again.");
     return;
   }
-  if (typeof applyRosterAdjustments === "function") applyRosterAdjustments();
-
-  const teams = (typeof getDisplayOrderedTeams === "function") ? getDisplayOrderedTeams() : LEAGUE_DATA.teams;
-  const sel = (typeof dbGetKeeperSelections === "function") ? dbGetKeeperSelections() : {};
-  const sendDownsByTeam = (typeof getSendDownsByTeam === "function") ? getSendDownsByTeam() : {};
-  const rule5State = (typeof getRule5State === "function") ? getRule5State() : { picks: [], order: [] };
-  const balances = (typeof getDraftDollarBalances === "function") ? getDraftDollarBalances() : {};
-
+  const payload = _buildLeagueExportPayload();
   const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, _xlsxMinorLeaguesSheet(teams, sendDownsByTeam),       `${CURRENT_SEASON} Minor Leagues`);
-  XLSX.utils.book_append_sheet(wb, _xlsxKeepersSheet(teams, sel),                         `${CURRENT_SEASON} Keepers`);
-  XLSX.utils.book_append_sheet(wb, _xlsxEligibleKeepersSheet(teams, sel, balances),       `${CURRENT_SEASON} Eligible Keepers`);
-  XLSX.utils.book_append_sheet(wb, _xlsxRule5Sheet(teams, rule5State),                    `Rule 5 Draft ${CURRENT_SEASON}`);
-
+  for (const tab of payload.tabs) {
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(tab.rows), tab.name);
+  }
   const date = new Date().toISOString().slice(0, 10);
   XLSX.writeFile(wb, `the-league-${CURRENT_SEASON}-${date}.xlsx`);
+}
+
+// Direct sync to Google Sheets via Apps Script Web App. The commish sets up
+// the Web App once on their sheet (see APPS_SCRIPT_SETUP comment below) and
+// pastes the deployment URL into the Commissioner Tools → Exports field.
+// We POST the same payload that builds the xlsx; the Apps Script writes each
+// tab into the bound spreadsheet, overwriting existing data.
+async function syncToGoogleSheets() {
+  if (!isCommissioner()) { alert("Commissioners only."); return; }
+  const settings = (typeof dbGetSettings === "function") ? dbGetSettings() : {};
+  const url = (settings.googleSheetsWebAppUrl || "").trim();
+  if (!url) {
+    alert("Set the Apps Script Web App URL in Commissioner Tools → Exports first. Click \"Apps Script setup\" for instructions.");
+    return;
+  }
+  if (!/^https:\/\/script\.google(?:usercontent)?\.com\/macros\/.+\/exec/.test(url)) {
+    alert("That doesn't look like a deployed Apps Script Web App URL. It should look like:\nhttps://script.google.com/macros/s/AKfy.../exec");
+    return;
+  }
+  const btn = document.getElementById("sync-sheets-btn");
+  if (btn) { btn.disabled = true; btn.textContent = "Syncing..."; }
+  try {
+    const payload = _buildLeagueExportPayload();
+    // text/plain avoids a CORS preflight; the Apps Script reads e.postData.contents.
+    const resp = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify(payload),
+      redirect: "follow",
+    });
+    const text = await resp.text();
+    let data; try { data = JSON.parse(text); } catch { data = null; }
+    if (data && data.ok) {
+      alert(`Synced ${data.tabs} tab${data.tabs === 1 ? "" : "s"} to Google Sheets.`);
+    } else if (data && data.error) {
+      alert(`Apps Script error: ${data.error}`);
+    } else {
+      alert(`Unexpected response from Apps Script (HTTP ${resp.status}). First 200 chars:\n\n${text.slice(0, 200)}`);
+    }
+  } catch (e) {
+    alert(`Sync request failed: ${e.message}`);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = "Sync to Google Sheets"; }
+  }
+}
+
+// APPS_SCRIPT_SETUP — paste this into the user's Google Sheet:
+//   1. Open the sheet → Extensions → Apps Script
+//   2. Replace Code.gs with the snippet below
+//   3. Deploy → New deployment → Web app
+//        Execute as: Me
+//        Who has access: Anyone with the link
+//      (anyone with the link can WRITE, so don't share the URL publicly)
+//   4. Copy the URL ending in /exec and paste it into Commissioner Tools.
+//
+//   /***** Apps Script (paste below) *****
+//   function doPost(e) {
+//     try {
+//       const data = JSON.parse(e.postData.contents);
+//       const ss = SpreadsheetApp.getActiveSpreadsheet();
+//       for (const tab of (data.tabs || [])) {
+//         let sheet = ss.getSheetByName(tab.name);
+//         if (!sheet) sheet = ss.insertSheet(tab.name);
+//         sheet.clearContents();
+//         const rows = tab.rows || [];
+//         if (rows.length === 0) continue;
+//         const maxCols = rows.reduce((m, r) => Math.max(m, (r || []).length), 0);
+//         const padded = rows.map(r => {
+//           const out = (r || []).slice();
+//           while (out.length < maxCols) out.push("");
+//           return out;
+//         });
+//         sheet.getRange(1, 1, padded.length, maxCols).setValues(padded);
+//       }
+//       return ContentService.createTextOutput(JSON.stringify({ok:true, tabs:(data.tabs||[]).length}))
+//         .setMimeType(ContentService.MimeType.JSON);
+//     } catch (err) {
+//       return ContentService.createTextOutput(JSON.stringify({ok:false, error:String(err)}))
+//         .setMimeType(ContentService.MimeType.JSON);
+//     }
+//   }
+//   function doGet() {
+//     return ContentService.createTextOutput("League sync endpoint OK")
+//       .setMimeType(ContentService.MimeType.TEXT);
+//   }
+//   *****/
+
+function showAppsScriptSetup() {
+  const code = `function doPost(e) {
+  try {
+    const data = JSON.parse(e.postData.contents);
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    for (const tab of (data.tabs || [])) {
+      let sheet = ss.getSheetByName(tab.name);
+      if (!sheet) sheet = ss.insertSheet(tab.name);
+      sheet.clearContents();
+      const rows = tab.rows || [];
+      if (rows.length === 0) continue;
+      const maxCols = rows.reduce((m, r) => Math.max(m, (r || []).length), 0);
+      const padded = rows.map(r => {
+        const out = (r || []).slice();
+        while (out.length < maxCols) out.push("");
+        return out;
+      });
+      sheet.getRange(1, 1, padded.length, maxCols).setValues(padded);
+    }
+    return ContentService.createTextOutput(JSON.stringify({ok:true, tabs:(data.tabs||[]).length}))
+      .setMimeType(ContentService.MimeType.JSON);
+  } catch (err) {
+    return ContentService.createTextOutput(JSON.stringify({ok:false, error:String(err)}))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+}
+function doGet() {
+  return ContentService.createTextOutput("League sync endpoint OK")
+    .setMimeType(ContentService.MimeType.TEXT);
+}`;
+  const existing = document.getElementById("apps-script-modal");
+  if (existing) existing.remove();
+  const modal = document.createElement("div");
+  modal.id = "apps-script-modal";
+  modal.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:1000;display:flex;align-items:flex-start;justify-content:center;padding:24px 16px;overflow-y:auto";
+  modal.onclick = e => { if (e.target === modal) modal.remove(); };
+  modal.innerHTML = `
+    <div style="max-width:720px;width:100%;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:18px;margin-top:20px">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px">
+        <h3 style="margin:0;color:var(--text-bright)">Google Sheets Sync — Setup</h3>
+        <button onclick="document.getElementById('apps-script-modal').remove()" style="background:none;border:none;color:var(--text-dim);font-size:1.4rem;cursor:pointer;padding:0 4px">×</button>
+      </div>
+      <ol style="color:var(--text);font-size:0.9rem;line-height:1.55;padding-left:22px;margin:0 0 14px">
+        <li>Open your league's Google Sheet in a new tab.</li>
+        <li>Click <strong>Extensions → Apps Script</strong>. A code editor opens.</li>
+        <li>Delete everything in <code>Code.gs</code> and paste the script below.</li>
+        <li>Click the save icon (or Ctrl/Cmd-S).</li>
+        <li>Click <strong>Deploy → New deployment</strong>.
+          <ul style="margin:4px 0;padding-left:18px">
+            <li>Gear icon → <strong>Web app</strong>.</li>
+            <li>Execute as: <strong>Me</strong>.</li>
+            <li>Who has access: <strong>Anyone</strong> (note: anyone with the URL can write to the sheet — treat it like a password).</li>
+            <li>Click <strong>Deploy</strong>, authorize when prompted.</li>
+          </ul>
+        </li>
+        <li>Copy the <strong>Web app URL</strong> (ends with <code>/exec</code>) and paste it into the field below.</li>
+      </ol>
+      <div style="position:relative;margin-bottom:10px">
+        <button onclick="navigator.clipboard.writeText(document.getElementById('apps-script-code').textContent); this.textContent='Copied!'; setTimeout(()=>this.textContent='Copy',1500)" style="position:absolute;top:6px;right:6px;background:var(--accent);color:#fff;border:none;padding:4px 10px;border-radius:4px;font-size:0.78rem;cursor:pointer;z-index:1">Copy</button>
+        <pre id="apps-script-code" style="background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:12px;overflow-x:auto;font-size:0.78rem;color:var(--text);max-height:280px;margin:0;white-space:pre-wrap">${escapeHtml(code)}</pre>
+      </div>
+      <div style="color:var(--text-dim);font-size:0.78rem;line-height:1.5">
+        Re-deploy only if you change the script. To redeploy without changing the URL, use
+        <em>Manage deployments → pencil icon → New version → Deploy</em>.
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+}
+
+async function saveGoogleSheetsUrl() {
+  if (!isCommissioner()) { alert("Commissioners only."); return; }
+  const input = document.getElementById("settings-sheets-url");
+  if (!input) return;
+  const url = (input.value || "").trim();
+  const cur = (typeof dbGetSettings === "function") ? { ...dbGetSettings() } : {};
+  cur.googleSheetsWebAppUrl = url;
+  if (typeof saveSettingsAsync === "function") {
+    try {
+      await saveSettingsAsync(cur);
+      const status = document.getElementById("sheets-url-status");
+      if (status) {
+        status.textContent = url ? "Saved." : "Cleared.";
+        status.style.color = "var(--green)";
+        setTimeout(() => { status.textContent = ""; }, 2500);
+      }
+    } catch (e) {
+      alert("Couldn't save: " + (e.message || e));
+    }
+  }
 }
 
 // Helper: year-acquired suffix used everywhere in the spreadsheet (e.g. "2024m").
@@ -5642,7 +5852,7 @@ function _xlsxYearM(year) {
 
 // "Minor Leagues" tab — block layout, 5 cols per team:
 // [pick#, name, year, paid-flag(0), separator]
-function _xlsxMinorLeaguesSheet(teams, sendDownsByTeam) {
+function _xlsxMinorLeaguesAoa(teams, sendDownsByTeam) {
   const aoa = [];
   const blockCols = 5;
   const totalCols = teams.length * blockCols;
@@ -5742,11 +5952,11 @@ function _xlsxMinorLeaguesSheet(teams, sendDownsByTeam) {
     aoa.push(r);
   }
 
-  return XLSX.utils.aoa_to_sheet(aoa);
+  return aoa;
 }
 
 // "Keepers" tab — majors keepers + pre-draft callups + minors, per team.
-function _xlsxKeepersSheet(teams, sel) {
+function _xlsxKeepersAoa(teams, sel) {
   const aoa = [];
   const blockCols = 5;
   const totalCols = teams.length * blockCols;
@@ -5854,12 +6064,12 @@ function _xlsxKeepersSheet(teams, sel) {
     aoa.push(r);
   }
 
-  return XLSX.utils.aoa_to_sheet(aoa);
+  return aoa;
 }
 
 // "Eligible Keepers" tab — 9 cols per team:
 // [Rule 5 #, Keeper #, Majors, Price, 1st Year, Final Year, Rule 5 Prot, Keeper?, Trading Block]
-function _xlsxEligibleKeepersSheet(teams, sel, balances) {
+function _xlsxEligibleKeepersAoa(teams, sel, balances) {
   const aoa = [];
   const blockCols = 9;
   const totalCols = teams.length * blockCols;
@@ -6003,11 +6213,11 @@ function _xlsxEligibleKeepersSheet(teams, sel, balances) {
     aoa.push(r);
   }
 
-  return XLSX.utils.aoa_to_sheet(aoa);
+  return aoa;
 }
 
 // "Rule 5 Draft" tab — pick log on the left, optional per-team summary on the right.
-function _xlsxRule5Sheet(teams, rule5State) {
+function _xlsxRule5Aoa(teams, rule5State) {
   const aoa = [];
   const picks = (rule5State && rule5State.picks) || [];
   const order = (rule5State && rule5State.order) || teams.map(t => t.id);
@@ -6071,7 +6281,7 @@ function _xlsxRule5Sheet(teams, rule5State) {
     if (rd >= maxRound) break;
   }
 
-  return XLSX.utils.aoa_to_sheet(aoa);
+  return aoa;
 }
 
 async function submitSetSeason() {
