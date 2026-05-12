@@ -4766,6 +4766,107 @@ function switchTab(tab) {
 // User Settings page — notification preferences (everyone)
 // ============================================================================
 
+// ---------- PWA install prompt ----------
+//
+// Chrome and Edge fire `beforeinstallprompt` when the PWA is eligible to
+// install. We stash the event so a click on the "Install" button can call
+// prompt() on it later. Safari (iOS + desktop) doesn't fire this event;
+// for those we show step-by-step instructions instead.
+let _deferredInstallPrompt = null;
+window.addEventListener("beforeinstallprompt", (e) => {
+  e.preventDefault();          // suppress the auto-banner so we control the moment
+  _deferredInstallPrompt = e;
+  // Re-render the settings install section if it's currently visible.
+  if (typeof currentView !== "undefined" && currentView === "user-settings" && typeof _refreshInstallSection === "function") {
+    _refreshInstallSection();
+  }
+});
+window.addEventListener("appinstalled", () => {
+  _deferredInstallPrompt = null;
+  if (typeof currentView !== "undefined" && currentView === "user-settings" && typeof _refreshInstallSection === "function") {
+    _refreshInstallSection();
+  }
+  if (typeof showToast === "function") showToast("Installed! Open The League from your home screen.");
+});
+
+function isPwaInstalled() {
+  if (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches) return true;
+  if ("standalone" in navigator && navigator.standalone) return true;  // iOS legacy
+  return false;
+}
+
+function detectInstallPlatform() {
+  const ua = navigator.userAgent || "";
+  const isIOS = /iPhone|iPad|iPod/.test(ua) && !window.MSStream;
+  const isAndroid = /Android/.test(ua);
+  const isSafari = /^((?!chrome|android|crios|fxios|edgios).)*safari/i.test(ua);
+  const isFirefox = /Firefox/i.test(ua);
+  if (isIOS && isSafari) return "ios-safari";
+  if (isIOS) return "ios-other";   // Chrome on iOS, Edge on iOS — same install gesture
+  if (isAndroid) return "android";
+  if (isSafari) return "macos-safari";
+  if (isFirefox) return "firefox";
+  return "chromium";
+}
+
+async function tapInstallButton() {
+  if (!_deferredInstallPrompt) return;
+  _deferredInstallPrompt.prompt();
+  const choice = await _deferredInstallPrompt.userChoice.catch(() => null);
+  _deferredInstallPrompt = null;
+  if (typeof _refreshInstallSection === "function") _refreshInstallSection();
+  if (choice && choice.outcome === "accepted" && typeof showToast === "function") {
+    showToast("Installing — open from your home screen when done.");
+  }
+}
+
+function _refreshInstallSection() {
+  const el = document.getElementById("settings-install-section");
+  if (el) el.outerHTML = renderInstallSection();
+}
+
+function renderInstallSection() {
+  // SVG icons re-used in the iOS / macOS instruction blocks.
+  const shareIconSvg = '<svg viewBox="0 0 24 24" width="18" height="18" style="vertical-align:middle;margin:0 3px" aria-hidden="true"><path fill="currentColor" d="M12 3l-4 4h3v6h2V7h3l-4-4zm-6 9H4v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8h-2v8H6v-8z"/></svg>';
+  const platform = detectInstallPlatform();
+  const installed = isPwaInstalled();
+  let body;
+  if (installed) {
+    body = `<div style="color:var(--green);font-weight:600">✓ The League is installed on this device.</div>
+      <div style="color:var(--text-dim);font-size:0.82rem;margin-top:6px">Open it from your home screen for the full app experience (push notifications, no URL bar).</div>`;
+  } else if (_deferredInstallPrompt) {
+    body = `<div style="color:var(--text);font-size:0.9rem;margin-bottom:10px">Install The League as an app on this device for push notifications and faster access.</div>
+      <button class="trade-btn trade-btn-submit" onclick="tapInstallButton()" style="font-size:0.9rem">Install The League</button>`;
+  } else if (platform === "ios-safari") {
+    body = `<div style="color:var(--text);font-size:0.9rem;line-height:1.6;margin-bottom:10px">To install on your iPhone / iPad:</div>
+      <ol style="margin:0;padding-left:22px;color:var(--text);font-size:0.88rem;line-height:1.8">
+        <li>Tap the Share button ${shareIconSvg} in Safari's bottom toolbar.</li>
+        <li>Scroll down and tap <strong>Add to Home Screen</strong>.</li>
+        <li>Tap <strong>Add</strong> in the top right.</li>
+      </ol>
+      <div style="color:var(--text-dim);font-size:0.78rem;margin-top:10px;line-height:1.5">Once installed, open The League from your home screen — that's the only way push notifications work on iOS.</div>`;
+  } else if (platform === "ios-other") {
+    body = `<div style="color:var(--text);font-size:0.9rem;line-height:1.55;margin-bottom:8px">On iPhone / iPad, the install option is only available in <strong>Safari</strong>.</div>
+      <div style="color:var(--text-dim);font-size:0.82rem;line-height:1.5">Open this site in Safari, then tap Share ${shareIconSvg} → <strong>Add to Home Screen</strong>.</div>`;
+  } else if (platform === "macos-safari") {
+    body = `<div style="color:var(--text);font-size:0.9rem;line-height:1.55;margin-bottom:8px">To install on Mac Safari (macOS Sonoma+):</div>
+      <ol style="margin:0;padding-left:22px;color:var(--text);font-size:0.88rem;line-height:1.8">
+        <li>Click <strong>File</strong> in the menu bar, then <strong>Add to Dock…</strong></li>
+        <li>Confirm the name and click <strong>Add</strong>.</li>
+      </ol>`;
+  } else if (platform === "android") {
+    body = `<div style="color:var(--text);font-size:0.9rem;line-height:1.55">Chrome should offer an "Install" prompt when you visit. If you don't see it, tap the <strong>⋮</strong> menu in Chrome and look for <strong>Install app</strong> or <strong>Add to Home screen</strong>.</div>`;
+  } else if (platform === "firefox") {
+    body = `<div style="color:var(--text);font-size:0.9rem;line-height:1.55">Firefox doesn't support installing web apps on desktop. Try Chrome, Edge, or Brave for an installable version.</div>`;
+  } else {
+    body = `<div style="color:var(--text);font-size:0.9rem;line-height:1.55">Tap your browser's menu and look for <strong>Install app</strong> or <strong>Add to Home Screen</strong>.</div>`;
+  }
+  return `<div id="settings-install-section" class="keeper-projection" style="margin-bottom:14px">
+    <h3 style="margin-top:0">Install on this device</h3>
+    ${body}
+  </div>`;
+}
+
 // VAPID public key (urlsafe base64). Pair lives in scripts/.env as
 // VAPID_PRIVATE_KEY. Generated once via scripts/generate_vapid.py.
 const VAPID_PUBLIC_KEY = "BNgnBnVKWKd39EOdA5UJNhCaOnzgGAtspFtXtJ8r_qnaQQXrz_E9UVodUMQZuaySxdE5sg5DPlDvaW8D7g2fk_Y";
@@ -4867,6 +4968,8 @@ function renderUserSettingsView() {
       <div style="color:var(--text-dim);font-size:0.82rem;margin-bottom:18px">
         Manager preferences for <strong>${escapeHtml(teamName)}</strong>${myEmail ? ` · emails go to <code>${escapeHtml(myEmail)}</code>` : ""}.
       </div>
+
+      ${renderInstallSection()}
 
       <div class="keeper-projection" style="margin-bottom:14px">
         <h3 style="margin-top:0">Notifications</h3>
