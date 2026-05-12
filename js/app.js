@@ -5285,9 +5285,14 @@ function renderSettingsView() {
       <div class="keeper-projection" style="margin-bottom:14px">
         <h3 style="margin-top:0">Exports</h3>
         <div style="color:var(--text-dim);font-size:0.84rem;margin-bottom:10px">
-          Download a snapshot of every team's roster with contract details (year acquired, salary, expiry, source).
+          Download a multi-tab spreadsheet mirroring the league's Google Sheet:
+          <em>Minor Leagues</em>, <em>Keepers</em>, <em>Eligible Keepers</em>, and
+          <em>Rule 5 Draft</em>. Open in Google Sheets to refresh those tabs.
         </div>
-        <button class="trade-btn" onclick="exportContractsCsv()" style="font-size:0.85rem">Export contracts (.csv)</button>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="trade-btn" onclick="exportLeagueXlsx()" style="font-size:0.85rem">Export league (.xlsx)</button>
+          <button class="trade-btn trade-btn-cancel" onclick="exportContractsCsv()" style="font-size:0.78rem">Contracts only (.csv)</button>
+        </div>
       </div>
 
       <div class="keeper-projection" style="margin-bottom:14px">
@@ -5595,6 +5600,478 @@ function _downloadBlob(content, filename, mime) {
   a.click();
   document.body.removeChild(a);
   setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+// ============================================================================
+// Multi-tab xlsx export — mirrors the league's Google Sheet so the commish
+// can paste columns back in (or replace the file outright). Uses SheetJS
+// (loaded via CDN in index.html). Tabs:
+//   1. "{year} Minor Leagues"      — wide grid, 12 team blocks × 5 cols
+//   2. "{year} Keepers"            — wide grid, majors + pre-draft callups + minors
+//   3. "{year} Eligible Keepers"   — 12 team blocks × 9 cols, with Keeper / Rule 5 / Block flags
+//   4. "Rule 5 Draft {year}"       — pick log + per-team $ summary
+// ============================================================================
+function exportLeagueXlsx() {
+  if (!isCommissioner()) { alert("Commissioners only."); return; }
+  if (typeof XLSX === "undefined") {
+    alert("Spreadsheet library failed to load. Reload the page and try again.");
+    return;
+  }
+  if (typeof applyRosterAdjustments === "function") applyRosterAdjustments();
+
+  const teams = (typeof getDisplayOrderedTeams === "function") ? getDisplayOrderedTeams() : LEAGUE_DATA.teams;
+  const sel = (typeof dbGetKeeperSelections === "function") ? dbGetKeeperSelections() : {};
+  const sendDownsByTeam = (typeof getSendDownsByTeam === "function") ? getSendDownsByTeam() : {};
+  const rule5State = (typeof getRule5State === "function") ? getRule5State() : { picks: [], order: [] };
+  const balances = (typeof getDraftDollarBalances === "function") ? getDraftDollarBalances() : {};
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, _xlsxMinorLeaguesSheet(teams, sendDownsByTeam),       `${CURRENT_SEASON} Minor Leagues`);
+  XLSX.utils.book_append_sheet(wb, _xlsxKeepersSheet(teams, sel),                         `${CURRENT_SEASON} Keepers`);
+  XLSX.utils.book_append_sheet(wb, _xlsxEligibleKeepersSheet(teams, sel, balances),       `${CURRENT_SEASON} Eligible Keepers`);
+  XLSX.utils.book_append_sheet(wb, _xlsxRule5Sheet(teams, rule5State),                    `Rule 5 Draft ${CURRENT_SEASON}`);
+
+  const date = new Date().toISOString().slice(0, 10);
+  XLSX.writeFile(wb, `the-league-${CURRENT_SEASON}-${date}.xlsx`);
+}
+
+// Helper: year-acquired suffix used everywhere in the spreadsheet (e.g. "2024m").
+function _xlsxYearM(year) {
+  return year != null ? `${year}m` : "";
+}
+
+// "Minor Leagues" tab — block layout, 5 cols per team:
+// [pick#, name, year, paid-flag(0), separator]
+function _xlsxMinorLeaguesSheet(teams, sendDownsByTeam) {
+  const aoa = [];
+  const blockCols = 5;
+  const totalCols = teams.length * blockCols;
+  const blank = () => new Array(totalCols).fill("");
+
+  // Row 1: team name + an unused "0" digit that exists in the source sheet.
+  // We don't know what the digit tracks; commissioner can overwrite if needed.
+  const r1 = blank();
+  teams.forEach((t, i) => {
+    r1[i * blockCols + 1] = t.name;
+    r1[i * blockCols + 2] = 0;
+  });
+  aoa.push(r1);
+
+  // Row 2: column labels
+  const r2 = blank();
+  teams.forEach((t, i) => {
+    r2[i * blockCols + 1] = "Minors";
+    r2[i * blockCols + 2] = "Year";
+  });
+  aoa.push(r2);
+
+  // Rows 3-12: 10 numbered minor-league slots
+  const minorsByTeam = teams.map(t => t.minors || []);
+  for (let row = 0; row < 10; row++) {
+    const r = blank();
+    teams.forEach((t, i) => {
+      const p = minorsByTeam[i][row];
+      r[i * blockCols + 0] = row + 1;
+      if (p) {
+        r[i * blockCols + 1] = p.name;
+        r[i * blockCols + 2] = _xlsxYearM(p.yearAcquired);
+        r[i * blockCols + 3] = 0;
+      }
+    });
+    aoa.push(r);
+  }
+
+  // Overflow rows (any team with > 10 minors): unnumbered extra rows
+  const maxMinors = Math.max(10, ...minorsByTeam.map(m => m.length));
+  for (let row = 10; row < maxMinors; row++) {
+    const r = blank();
+    teams.forEach((t, i) => {
+      const p = minorsByTeam[i][row];
+      if (p) {
+        r[i * blockCols + 1] = p.name;
+        r[i * blockCols + 2] = _xlsxYearM(p.yearAcquired);
+      }
+    });
+    aoa.push(r);
+  }
+
+  // Spacer rows
+  for (let i = 0; i < 6; i++) aoa.push(blank());
+
+  // "Called up:" header
+  const rCallHdr = blank();
+  teams.forEach((t, i) => { rCallHdr[i * blockCols + 1] = "Called up:"; });
+  aoa.push(rCallHdr);
+
+  // Callup rows (at least 7 numbered slots, more if any team has more)
+  const callupsByTeam = teams.map(t => t.callups || []);
+  const maxCallups = Math.max(7, ...callupsByTeam.map(c => c.length));
+  for (let row = 0; row < maxCallups; row++) {
+    const r = blank();
+    teams.forEach((t, i) => {
+      const p = callupsByTeam[i][row];
+      r[i * blockCols + 0] = row + 1;
+      if (p) {
+        r[i * blockCols + 1] = p.name;
+        r[i * blockCols + 2] = _xlsxYearM(p.yearAcquired);
+        r[i * blockCols + 3] = 0;
+      }
+    });
+    aoa.push(r);
+  }
+
+  // Spacers
+  for (let i = 0; i < 3; i++) aoa.push(blank());
+
+  // Fees row + names of triggering players
+  const teamFees = teams.map(t => (sendDownsByTeam[t.id] || []).map(m => m.player_name));
+  const rFees = blank();
+  teams.forEach((t, i) => {
+    rFees[i * blockCols + 1] = "Fees";
+    rFees[i * blockCols + 2] = `$${teamFees[i].length * 10}`;
+  });
+  aoa.push(rFees);
+
+  const maxFees = Math.max(0, ...teamFees.map(f => f.length));
+  for (let row = 0; row < maxFees; row++) {
+    const r = blank();
+    teams.forEach((t, i) => {
+      const name = teamFees[i][row];
+      if (name) r[i * blockCols + 1] = name;
+    });
+    aoa.push(r);
+  }
+
+  return XLSX.utils.aoa_to_sheet(aoa);
+}
+
+// "Keepers" tab — majors keepers + pre-draft callups + minors, per team.
+function _xlsxKeepersSheet(teams, sel) {
+  const aoa = [];
+  const blockCols = 5;
+  const totalCols = teams.length * blockCols;
+  const blank = () => new Array(totalCols).fill("");
+
+  // Row 1: team names
+  const r1 = blank();
+  teams.forEach((t, i) => { r1[i * blockCols + 1] = t.name; });
+  aoa.push(r1);
+
+  // Row 2: Majors / Price / Year / Expiry headers
+  const r2 = blank();
+  teams.forEach((t, i) => {
+    r2[i * blockCols + 1] = "Majors";
+    r2[i * blockCols + 2] = `${CURRENT_SEASON} Price`;
+    r2[i * blockCols + 3] = "Year";
+    r2[i * blockCols + 4] = "Expiry";
+  });
+  aoa.push(r2);
+
+  // 8 keeper rows. Pre-advance, team.majors IS the 2026 keepers.
+  for (let row = 0; row < 8; row++) {
+    const r = blank();
+    teams.forEach((t, i) => {
+      const p = (t.majors || [])[row];
+      r[i * blockCols + 0] = row + 1;
+      if (p) {
+        const cs = (typeof getContractStatus === "function") ? getContractStatus(p, CURRENT_SEASON) : { yearsRemaining: null };
+        const expiry = cs.yearsRemaining != null ? CURRENT_SEASON + cs.yearsRemaining : "";
+        r[i * blockCols + 1] = p.name;
+        r[i * blockCols + 2] = p.price != null ? p.price : "";
+        r[i * blockCols + 3] = p.yearAcquired ?? "";
+        r[i * blockCols + 4] = expiry;
+      }
+    });
+    aoa.push(r);
+  }
+
+  // Totals
+  const rCost = blank();
+  const rTeam = blank();
+  const rDraft = blank();
+  teams.forEach((t, i) => {
+    const keeperCost = (t.majors || []).reduce((s, p) => s + (p.price || 0), 0);
+    rCost[i * blockCols + 1] = "Total Keepers Cost";
+    rCost[i * blockCols + 2] = keeperCost;
+    rTeam[i * blockCols + 1] = "Total Team Money";
+    rTeam[i * blockCols + 2] = 260;
+    rDraft[i * blockCols + 1] = "Total Draft $ Available";
+    rDraft[i * blockCols + 2] = Math.max(0, 260 - keeperCost);
+  });
+  aoa.push(rCost, rTeam, rDraft);
+  aoa.push(blank());
+
+  // "Pre-Draft Call Ups" section
+  const rPreHdr = blank();
+  teams.forEach((t, i) => { rPreHdr[i * blockCols + 1] = "Pre-Draft Call Ups"; });
+  aoa.push(rPreHdr);
+
+  const rPreCols = blank();
+  teams.forEach((t, i) => {
+    rPreCols[i * blockCols + 1] = "Minors";
+    rPreCols[i * blockCols + 2] = "Year";
+  });
+  aoa.push(rPreCols);
+
+  for (let row = 0; row < 10; row++) {
+    const r = blank();
+    teams.forEach((t, i) => {
+      const p = (t.callups || [])[row];
+      r[i * blockCols + 0] = row + 1;
+      if (p) {
+        r[i * blockCols + 1] = p.name;
+        r[i * blockCols + 2] = _xlsxYearM(p.yearAcquired);
+        r[i * blockCols + 3] = 0;
+      }
+    });
+    aoa.push(r);
+  }
+
+  aoa.push(blank());
+
+  // Minors section with Career ABs/IP
+  const rMinHdr = blank();
+  teams.forEach((t, i) => {
+    rMinHdr[i * blockCols + 1] = "Minors";
+    rMinHdr[i * blockCols + 2] = "Year";
+    rMinHdr[i * blockCols + 3] = "Career ABs/IP";
+  });
+  aoa.push(rMinHdr);
+
+  for (let row = 0; row < 10; row++) {
+    const r = blank();
+    teams.forEach((t, i) => {
+      const p = (t.minors || [])[row];
+      r[i * blockCols + 0] = row + 1;
+      if (p) {
+        r[i * blockCols + 1] = p.name;
+        r[i * blockCols + 2] = _xlsxYearM(p.yearAcquired);
+        r[i * blockCols + 3] = p.careerStat ?? 0;
+      } else {
+        r[i * blockCols + 3] = 0;
+      }
+    });
+    aoa.push(r);
+  }
+
+  return XLSX.utils.aoa_to_sheet(aoa);
+}
+
+// "Eligible Keepers" tab — 9 cols per team:
+// [Rule 5 #, Keeper #, Majors, Price, 1st Year, Final Year, Rule 5 Prot, Keeper?, Trading Block]
+function _xlsxEligibleKeepersSheet(teams, sel, balances) {
+  const aoa = [];
+  const blockCols = 9;
+  const totalCols = teams.length * blockCols;
+  const blank = () => new Array(totalCols).fill("");
+
+  // Top stats section
+  const r1 = blank();
+  teams.forEach((t, i) => { r1[i * blockCols + 2] = t.name; });
+  aoa.push(r1);
+
+  const drafts = teams.map(t => (balances[t.id] != null ? balances[t.id] : 260));
+  const keeperFlags = teams.map(t => sel[t.id] || {});
+
+  const r2 = blank();
+  teams.forEach((t, i) => {
+    r2[i * blockCols + 2] = `${CURRENT_SEASON} Draft Dollars:`;
+    r2[i * blockCols + 3] = drafts[i];
+  });
+  aoa.push(r2);
+
+  const r3 = blank();
+  teams.forEach((t, i) => {
+    const cost = (t.majors || []).reduce((s, p) => s + (p.price || 0), 0);
+    r3[i * blockCols + 2] = `${CURRENT_SEASON} Keeper Costs:`;
+    r3[i * blockCols + 3] = cost;
+  });
+  aoa.push(r3);
+
+  const r4 = blank();
+  teams.forEach((t, i) => {
+    const r5Count = Object.values(keeperFlags[i]).filter(f => f && f.rule5).length;
+    r4[i * blockCols + 2] = "Rule 5 Protections:";
+    r4[i * blockCols + 3] = r5Count;
+  });
+  aoa.push(r4);
+
+  const r5 = blank();
+  teams.forEach((t, i) => { r5[i * blockCols + 2] = "Keepers:"; });
+  aoa.push(r5);
+
+  const r6 = blank();
+  teams.forEach((t, i) => {
+    const majorsKept = (t.majors || []).filter(p => (keeperFlags[i][p.name] || {}).keeper).length;
+    r6[i * blockCols + 2] = "    Majors:";
+    r6[i * blockCols + 3] = majorsKept;
+  });
+  aoa.push(r6);
+
+  const r7 = blank();
+  teams.forEach((t, i) => {
+    const minorsKept = [...(t.minors || []), ...(t.callups || [])]
+      .filter(p => {
+        const f = keeperFlags[i][p.name] || {};
+        return f.minorKeeper || f.keeper;
+      }).length;
+    r7[i * blockCols + 2] = "    Minors:";
+    r7[i * blockCols + 3] = minorsKept;
+  });
+  aoa.push(r7);
+
+  aoa.push(blank()); // spacer
+
+  // Headers
+  const rHdr = blank();
+  teams.forEach((t, i) => {
+    rHdr[i * blockCols + 0] = "Rule 5 #";
+    rHdr[i * blockCols + 1] = "Keeper #";
+    rHdr[i * blockCols + 2] = "Majors";
+    rHdr[i * blockCols + 3] = `${CURRENT_SEASON} Price`;
+    rHdr[i * blockCols + 4] = "1st Year";
+    rHdr[i * blockCols + 5] = "Final Year";
+    rHdr[i * blockCols + 6] = "Rule 5 Protection";
+    rHdr[i * blockCols + 7] = "Keeper?";
+    rHdr[i * blockCols + 8] = "Trading Block";
+  });
+  aoa.push(rHdr);
+
+  // Build rows by walking each team's eligible players (majors + their reconciled keeper view).
+  // Use the per-team eligible-keepers function so we get the same set of names + price-shifts.
+  const perTeamPlayers = teams.map(t => {
+    const eligible = (typeof getEligiblePlayers === "function") ? getEligiblePlayers(t) : (t.majors || []);
+    return eligible;
+  });
+  const maxPlayers = Math.max(0, ...perTeamPlayers.map(arr => arr.length));
+
+  // Running Rule 5 # and Keeper # counters per team
+  const r5Counters = new Array(teams.length).fill(0);
+  const kpCounters = new Array(teams.length).fill(0);
+
+  for (let row = 0; row < maxPlayers; row++) {
+    const r = blank();
+    teams.forEach((t, i) => {
+      const p = perTeamPlayers[i][row];
+      if (!p) return;
+      const flags = keeperFlags[i][p.name] || {};
+      const yearsRemaining = p.yearsRemaining;
+      const isEligible = p.canKeepNextYear !== false && yearsRemaining != null;
+      const finalYear = isEligible ? CURRENT_SEASON + yearsRemaining : (p.contractStatus === "expired" ? "Expired" : "Ineligible");
+      const priceCell = isEligible ? (p.price ?? "") : (p.contractStatus === "expired" ? "Expired" : "Ineligible");
+      const firstYearCell = isEligible ? (p.yearAcquired ?? "") : (p.contractStatus === "expired" ? p.yearAcquired ?? "" : "Ineligible");
+
+      if (flags.rule5) r5Counters[i] += 1;
+      if (flags.keeper) kpCounters[i] += 1;
+      r[i * blockCols + 0] = flags.rule5 ? r5Counters[i] : "";
+      r[i * blockCols + 1] = flags.keeper ? kpCounters[i] : "";
+      r[i * blockCols + 2] = p.name;
+      r[i * blockCols + 3] = priceCell;
+      r[i * blockCols + 4] = firstYearCell;
+      r[i * blockCols + 5] = finalYear;
+      r[i * blockCols + 6] = flags.rule5 ? 1 : 0;
+      r[i * blockCols + 7] = flags.keeper ? 1 : 0;
+      r[i * blockCols + 8] = flags.tradeBlock ? 1 : 0;
+    });
+    aoa.push(r);
+  }
+
+  aoa.push(blank());
+
+  // Minors section
+  const rMinLabel = blank();
+  teams.forEach((t, i) => { rMinLabel[i * blockCols + 2] = "Minors"; });
+  aoa.push(rMinLabel);
+
+  const minorsLists = teams.map(t => [...(t.minors || []), ...(t.callups || [])]);
+  const maxMinorsAll = Math.max(0, ...minorsLists.map(l => l.length));
+  for (let row = 0; row < maxMinorsAll; row++) {
+    const r = blank();
+    teams.forEach((t, i) => {
+      const p = minorsLists[i][row];
+      if (!p) return;
+      const flags = keeperFlags[i][p.name] || {};
+      const ms = (typeof getMinorLeagueContractStatus === "function") ? getMinorLeagueContractStatus(p, CURRENT_SEASON) : { yearsRemaining: null };
+      const finalYear = ms.yearsRemaining != null ? CURRENT_SEASON + ms.yearsRemaining : "";
+      r[i * blockCols + 2] = p.name;
+      r[i * blockCols + 4] = _xlsxYearM(p.yearAcquired);
+      r[i * blockCols + 5] = finalYear;
+      r[i * blockCols + 6] = flags.rule5 ? 1 : 0;
+      r[i * blockCols + 7] = (flags.minorKeeper || flags.keeper) ? 1 : 0;
+      r[i * blockCols + 8] = flags.tradeBlock ? 1 : 0;
+    });
+    aoa.push(r);
+  }
+
+  return XLSX.utils.aoa_to_sheet(aoa);
+}
+
+// "Rule 5 Draft" tab — pick log on the left, optional per-team summary on the right.
+function _xlsxRule5Sheet(teams, rule5State) {
+  const aoa = [];
+  const picks = (rule5State && rule5State.picks) || [];
+  const order = (rule5State && rule5State.order) || teams.map(t => t.id);
+  const teamName = id => (LEAGUE_DATA.teams.find(t => t.id === id) || {}).name || id;
+
+  const teamCols = order.map(id => teamName(id));
+  // Header: Rd | Pick # | Team | Player | Taken From | (spacer) | Pick # | <team cols...>
+  aoa.push(["Rd", "Pick #", "Team", "Player", "Taken From", "", "", ...teamCols]);
+
+  // Group picks by round so we can emit per-round summary in the team-cols matrix.
+  const rounds = {};
+  for (const pk of picks) {
+    if (!rounds[pk.round]) rounds[pk.round] = [];
+    rounds[pk.round].push(pk);
+  }
+  // Always include rounds at least up to the current one even if empty.
+  const maxRound = Math.max(0, ...Object.keys(rounds).map(Number), (rule5State?.currentRound || 0));
+
+  for (let rd = 1; rd <= maxRound || rd === 1; rd++) {
+    const rdPicks = (rounds[rd] || []).slice().sort((a, b) => a.idx - b.idx);
+    // For the team-column summary in this round
+    const teamPicks = {};
+    for (const pk of rdPicks) {
+      teamPicks[pk.teamId] = pk.pass ? "Pass" : pk.playerName;
+    }
+    // Pick rows
+    for (let i = 0; i < order.length; i++) {
+      const pk = rdPicks[i];
+      const row = [
+        rd,
+        i + 1,
+        pk ? teamName(pk.teamId) : teamName(order[i]),
+        pk ? (pk.pass ? "Pass" : pk.playerName) : "",
+        pk ? (pk.pass ? "" : teamName(pk.fromTeamId)) : "",
+      ];
+      if (i === 0) {
+        // Only first row of round shows per-team summary
+        row.push("", i + 1);
+        for (const tid of order) {
+          row.push(teamPicks[tid] != null ? teamPicks[tid] : "");
+        }
+      }
+      aoa.push(row);
+    }
+    // Round totals: $ Spent / $ Gained
+    const spent = {};
+    const gained = {};
+    for (const tid of order) { spent[tid] = 0; gained[tid] = 0; }
+    for (const pk of rdPicks) {
+      if (pk.pass) continue;
+      spent[pk.teamId] = (spent[pk.teamId] || 0) + 1;
+      if (pk.fromTeamId) gained[pk.fromTeamId] = (gained[pk.fromTeamId] || 0) + 1;
+    }
+    const spentRow = ["", "", "", "", "", "$ Spent", ""];
+    const gainedRow = ["", "", "", "", "", "$ Gained", ""];
+    for (const tid of order) {
+      spentRow.push(spent[tid]);
+      gainedRow.push(gained[tid]);
+    }
+    aoa.push(spentRow, gainedRow);
+    if (rd >= maxRound) break;
+  }
+
+  return XLSX.utils.aoa_to_sheet(aoa);
 }
 
 async function submitSetSeason() {
