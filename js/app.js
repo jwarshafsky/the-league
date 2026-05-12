@@ -548,7 +548,7 @@ function renderMinorsKeepersTable(minors) {
               <td><span class="player-name">${escapeHtml(p.name)}</span>${statusBadge}</td>
               <td class="player-year">${p.yearAcquired}</td>
               <td class="${statClass}">${p.careerStat}</td>
-              <td>${milTag}${p.sendDownCount ? ` <span style="color:var(--red);font-size:0.7rem;font-weight:600">($${p.sendDownCount * 10} send down fee)</span>` : ""}</td>
+              <td>${milTag}${p.sendDownCount ? ` <span class="hide-on-mobile" style="color:var(--red);font-size:0.7rem;font-weight:600">($${p.sendDownCount * 10} send down fee)</span>` : ""}</td>
             </tr>
           `;
         }).join("")}
@@ -1044,7 +1044,7 @@ function renderMinorsTable(players, teamId) {
           })();
           return `
             <tr>
-              <td class="notif-row-label"><span class="player-name">${escapeHtml(p.name)}</span>${p.sendDownCount ? ` <span style="color:var(--red);font-size:0.65rem;font-weight:700">$${p.sendDownCount * 10} fee</span>` : ''}</td>
+              <td class="notif-row-label"><span class="player-name">${escapeHtml(p.name)}</span>${p.sendDownCount ? ` <span class="hide-on-mobile" style="color:var(--red);font-size:0.65rem;font-weight:700">$${p.sendDownCount * 10} fee</span>` : ''}</td>
               <td data-label="Drafted" class="player-year">${p.yearAcquired}</td>
               <td data-label="Career" class="${statClass}">${statDisplay}</td>
               <td data-label="Expiry">${milTag}</td>
@@ -3445,7 +3445,7 @@ function renderMinorsEligibleTable(minors, teamId, teamSelections) {
             <tr style="${rowBg}">
               <td>
                 <span class="player-name" style="${nameStyle}">${escapeHtml(p.name)}</span>
-                ${p.sendDownCount ? ` <span style="color:var(--red);font-size:0.65rem;font-weight:700">$${p.sendDownCount * 10} fee</span>` : ''}
+                ${p.sendDownCount ? ` <span class="hide-on-mobile" style="color:var(--red);font-size:0.65rem;font-weight:700">$${p.sendDownCount * 10} fee</span>` : ''}
                 <div style="font-size:0.7rem;color:var(--text-dim);margin-top:2px">
                   <span class="${statClass}">${p.careerStat} ${p.statType}</span>
                   ${ms.eligibilityWarning ? ` <span class="hide-on-mobile" style="color:var(--orange);font-weight:700;margin-left:4px">${escapeHtml(ms.eligibilityWarning)}</span>` : ''}
