@@ -1,0 +1,93 @@
+<!--
+  Paste into Supabase Dashboard →
+    Authentication → Email Templates → "Invite User"
+
+  Supabase template variables:
+    {{ .ConfirmationURL }}  — invite-acceptance URL
+    {{ .Email }}            — recipient address
+    {{ .SiteURL }}          — project site URL
+-->
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>You're invited to The League</title>
+</head>
+<body style="margin:0;padding:0;background:#e2e8f0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#0f172a">
+
+  <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background:#e2e8f0;padding:24px 12px">
+    <tr><td align="center">
+
+      <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" style="max-width:600px;width:100%;background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 4px 16px rgba(15,23,42,0.08)">
+
+        <!-- HEADER -->
+        <tr>
+          <td style="background:linear-gradient(135deg,#1e40af,#1e3a5f);padding:24px 28px;color:#ffffff">
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
+              <tr>
+                <td valign="middle" style="width:48px">
+                  <img src="https://jwarshafsky.github.io/the-league/icons/icon-192.png" alt="The League" width="40" height="40" style="display:block;border-radius:8px">
+                </td>
+                <td valign="middle" style="padding-left:14px">
+                  <div style="font-size:18px;font-weight:700;letter-spacing:0.2px">The League</div>
+                  <div style="font-size:13px;color:rgba(255,255,255,0.78);margin-top:2px">You're invited</div>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+        <!-- BODY -->
+        <tr>
+          <td style="padding:28px 28px 8px 28px">
+            <div style="font-size:18px;font-weight:700;color:#0f172a;margin-bottom:8px">Welcome to The League</div>
+            <div style="font-size:14px;color:#475569;line-height:1.55">
+              You've been added to The League — a 12-team keeper fantasy baseball app. Click the button below to claim your team and sign in.
+            </div>
+          </td>
+        </tr>
+
+        <!-- CTA -->
+        <tr>
+          <td align="center" style="padding:18px 28px 6px 28px">
+            <a href="{{ .ConfirmationURL }}" style="display:inline-block;background:#1e40af;color:#ffffff;text-decoration:none;font-size:15px;font-weight:600;padding:13px 26px;border-radius:8px">
+              Accept invite &amp; sign in
+            </a>
+          </td>
+        </tr>
+
+        <!-- BACKUP -->
+        <tr>
+          <td style="padding:24px 28px 6px 28px">
+            <div style="font-size:12px;color:#64748b;line-height:1.55">
+              If the button doesn't open, paste this URL into your browser:
+            </div>
+            <div style="font-size:12px;color:#1e40af;word-break:break-all;margin-top:6px;line-height:1.5">
+              {{ .ConfirmationURL }}
+            </div>
+          </td>
+        </tr>
+
+        <!-- FOOTER -->
+        <tr>
+          <td style="padding:18px 28px;background:#f1f5f9;border-top:1px solid #e2e8f0">
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
+              <tr>
+                <td style="font-size:12px;color:#64748b;line-height:1.5">
+                  The League · 12-team keeper baseball
+                </td>
+                <td align="right" style="font-size:12px;color:#64748b">
+                  <a href="https://jwarshafsky.github.io/the-league/" style="color:#1e40af;text-decoration:underline">Open the app</a>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+      </table>
+    </td></tr>
+  </table>
+
+</body>
+</html>

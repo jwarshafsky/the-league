@@ -1,0 +1,123 @@
+<!--
+  Paste this entire file into Supabase Dashboard →
+    Authentication → Email Templates → "Magic Link"
+  (also works for "OTP" / "Sign in with OTP" if you use that template separately).
+
+  Supabase template variables it uses:
+    {{ .ConfirmationURL }}  — the clickable magic-link URL
+    {{ .Token }}            — the fallback 8-digit OTP code (the user types this
+                              into the "or use a code" input on the login page)
+    {{ .SiteURL }}          — your project's site URL (used for the logo)
+
+  To preview the design without Supabase, replace the variables manually:
+    {{ .ConfirmationURL }} → https://jwarshafsky.github.io/the-league/
+    {{ .Token }}           → 12345678
+    {{ .SiteURL }}         → https://jwarshafsky.github.io/the-league/
+-->
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sign in to The League</title>
+</head>
+<body style="margin:0;padding:0;background:#e2e8f0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#0f172a">
+
+  <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background:#e2e8f0;padding:24px 12px">
+    <tr><td align="center">
+
+      <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" style="max-width:600px;width:100%;background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 4px 16px rgba(15,23,42,0.08)">
+
+        <!-- HEADER -->
+        <tr>
+          <td style="background:linear-gradient(135deg,#1e40af,#1e3a5f);padding:24px 28px;color:#ffffff">
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
+              <tr>
+                <td valign="middle" style="width:48px">
+                  <img src="https://jwarshafsky.github.io/the-league/icons/icon-192.png" alt="The League" width="40" height="40" style="display:block;border-radius:8px">
+                </td>
+                <td valign="middle" style="padding-left:14px">
+                  <div style="font-size:18px;font-weight:700;letter-spacing:0.2px">The League</div>
+                  <div style="font-size:13px;color:rgba(255,255,255,0.78);margin-top:2px">Sign in link</div>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+        <!-- BODY -->
+        <tr>
+          <td style="padding:28px 28px 8px 28px">
+            <div style="font-size:18px;font-weight:700;color:#0f172a;margin-bottom:8px">Sign in to The League</div>
+            <div style="font-size:14px;color:#475569;line-height:1.55">
+              Tap the button below from the device you want to sign in on. The link expires in 60 minutes.
+            </div>
+          </td>
+        </tr>
+
+        <!-- CTA BUTTON -->
+        <tr>
+          <td align="center" style="padding:18px 28px 6px 28px">
+            <a href="{{ .ConfirmationURL }}" style="display:inline-block;background:#1e40af;color:#ffffff;text-decoration:none;font-size:15px;font-weight:600;padding:13px 26px;border-radius:8px">
+              Sign in to The League
+            </a>
+          </td>
+        </tr>
+
+        <!-- FALLBACK CODE -->
+        <tr>
+          <td style="padding:24px 28px 6px 28px">
+            <div style="font-size:12px;color:#64748b;text-transform:uppercase;letter-spacing:0.6px;font-weight:700;margin-bottom:8px">Or enter this code</div>
+            <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:14px 18px;text-align:center">
+              <div style="font-family:'SF Mono',Menlo,Consolas,monospace;font-size:28px;font-weight:700;letter-spacing:6px;color:#0f172a">{{ .Token }}</div>
+              <div style="font-size:12px;color:#64748b;margin-top:8px">Paste this on the sign-in screen if the button doesn't work.</div>
+            </div>
+          </td>
+        </tr>
+
+        <!-- BACKUP RAW LINK -->
+        <tr>
+          <td style="padding:18px 28px 6px 28px">
+            <div style="font-size:12px;color:#64748b;line-height:1.55">
+              If the button above doesn't open, copy and paste this URL:
+            </div>
+            <div style="font-size:12px;color:#1e40af;word-break:break-all;margin-top:6px;line-height:1.5">
+              {{ .ConfirmationURL }}
+            </div>
+          </td>
+        </tr>
+
+        <!-- DIDNT REQUEST -->
+        <tr>
+          <td style="padding:18px 28px 24px 28px">
+            <div style="font-size:12px;color:#64748b;line-height:1.55">
+              Didn't request this sign-in link? You can safely ignore this email — no action is needed.
+            </div>
+          </td>
+        </tr>
+
+        <!-- FOOTER -->
+        <tr>
+          <td style="padding:18px 28px;background:#f1f5f9;border-top:1px solid #e2e8f0">
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
+              <tr>
+                <td style="font-size:12px;color:#64748b;line-height:1.5">
+                  The League · 12-team keeper baseball
+                </td>
+                <td align="right" style="font-size:12px;color:#64748b">
+                  <a href="https://jwarshafsky.github.io/the-league/" style="color:#1e40af;text-decoration:underline">Open the app</a>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+      </table>
+
+      <div style="font-size:11px;color:#64748b;margin-top:12px">This email was sent to you because someone (hopefully you) requested a sign-in link for The League.</div>
+
+    </td></tr>
+  </table>
+
+</body>
+</html>
