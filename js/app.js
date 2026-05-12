@@ -4766,10 +4766,9 @@ function switchTab(tab) {
 // User Settings page — notification preferences (everyone)
 // ============================================================================
 
-// VAPID public key (urlsafe base64). Replace via Commissioner Tools → Web Push
-// section, or set the VAPID_PUBLIC_KEY constant via `npm run set-vapid` script.
-// Empty string means web push is disabled until the commish generates keys.
-const VAPID_PUBLIC_KEY = "BPLACEHOLDER_REPLACE_WITH_GENERATED_VAPID_PUBLIC_KEY";
+// VAPID public key (urlsafe base64). Pair lives in scripts/.env as
+// VAPID_PRIVATE_KEY. Generated once via scripts/generate_vapid.py.
+const VAPID_PUBLIC_KEY = "BNgnBnVKWKd39EOdA5UJNhCaOnzgGAtspFtXtJ8r_qnaQQXrz_E9UVodUMQZuaySxdE5sg5DPlDvaW8D7g2fk_Y";
 
 // Notification event taxonomy: each row defines its label and which channels
 // it supports. `email` = list of allowed frequencies. `push` = whether the
