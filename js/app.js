@@ -4917,6 +4917,13 @@ function renderUserSettingsView() {
           <button class="trade-btn" onclick="sendTestNotification()" style="font-size:0.85rem;background:var(--purple);color:#fff">Send test notification</button>
         </div>
         <div id="settings-push-error" style="color:var(--red);font-size:0.78rem;margin-top:8px;display:none"></div>
+        <div style="color:var(--text-dim);font-size:0.72rem;margin-top:10px;line-height:1.5">
+          <strong>If the test doesn't appear:</strong> notifications can be blocked at the OS level even when the browser is allowed. Check:
+          <span style="display:block;margin-top:3px">• <strong>macOS</strong>: System Settings → Notifications → Chrome (or your browser) → Allow notifications, banner style: Banners or Alerts.</span>
+          <span style="display:block">• <strong>Windows</strong>: Settings → System → Notifications → ensure your browser is on, and Focus Assist isn't blocking.</span>
+          <span style="display:block">• <strong>Browser site settings</strong>: click the lock icon in the URL bar → Notifications → Allow for this site.</span>
+          <span style="display:block">• <strong>iOS</strong>: install the app to the Home Screen first (Share → Add to Home Screen), then open from there.</span>
+        </div>
       </div>
     </div>
   `;
@@ -5067,16 +5074,29 @@ async function sendTestNotification() {
   try {
     if (!("Notification" in window)) throw new Error("Notifications not supported in this browser.");
     let perm = Notification.permission;
-    if (perm === "default") perm = await Notification.requestPermission();
-    if (perm !== "granted") throw new Error("Notification permission denied.");
+    if (perm === "denied") {
+      throw new Error("Notification permission was denied earlier. Open your browser's site settings for this page and switch notifications to Allow, then refresh and try again.");
+    }
+    if (perm === "default") {
+      perm = await Notification.requestPermission();
+      if (perm !== "granted") throw new Error("You didn't grant notification permission.");
+    }
+    if (!("serviceWorker" in navigator)) throw new Error("Service Worker not available.");
     const reg = await navigator.serviceWorker.ready;
+    // Use relative paths — they resolve against the page's base URL so this
+    // works on both jwarshafsky.github.io/the-league/ and any other host.
     await reg.showNotification("The League — test notification", {
-      body: "If you can see this, push notifications work on this device. 🎉",
-      icon: "/the-league/icons/icon-192.png",
-      badge: "/the-league/icons/icon-64.png",
+      body: "If you can see this, notifications work on this device. 🎉",
+      icon: "icons/icon-192.png",
+      badge: "icons/icon-64.png",
       tag: "the-league-test",
-      data: { url: "/the-league/?tab=user-settings" },
+      renotify: true,
+      requireInteraction: false,
+      data: { url: "./?tab=user-settings" },
     });
+    // The call resolves silently — give the user a confirmation in case the
+    // OS suppressed the visible banner (Focus mode, DND, etc.).
+    if (typeof showToast === "function") showToast("Test notification dispatched. If you didn't see a banner, check OS notification settings (macOS: System Settings → Notifications → your browser; Windows: Settings → Notifications).");
   } catch (e) {
     _showPushError(e.message || String(e));
   }
