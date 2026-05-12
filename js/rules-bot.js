@@ -72,11 +72,10 @@
     root.innerHTML = `
       <button id="rules-bot-fab" title="Ask CommishAI"
         style="position:fixed;bottom:calc(20px + env(safe-area-inset-bottom, 0px));right:calc(20px + env(safe-area-inset-right, 0px));z-index:990;
-               width:54px;height:54px;border-radius:50%;border:none;
-               background:linear-gradient(135deg,var(--accent),#1e3a5f);
-               color:#fff;font-size:1.5rem;cursor:pointer;
+               width:54px;height:54px;border-radius:50%;border:none;padding:0;
+               background:transparent;cursor:pointer;
                box-shadow:0 4px 14px rgba(0,0,0,0.35);display:none;
-               touch-action:manipulation;-webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none">✨</button>
+               touch-action:manipulation;-webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none;overflow:hidden"><img src="icons/commish-ai.png" alt="" style="width:100%;height:100%;display:block"></button>
 
       <div id="rules-bot-panel"
         style="position:fixed;bottom:calc(84px + env(safe-area-inset-bottom, 0px));right:calc(20px + env(safe-area-inset-right, 0px));z-index:991;
@@ -88,7 +87,7 @@
         <div style="display:flex;align-items:center;justify-content:space-between;
                     gap:8px;padding:12px 14px;border-bottom:1px solid var(--border);
                     background:linear-gradient(135deg,var(--accent-dim),#1e3a5f)">
-          <div style="font-weight:700;color:var(--text-bright);font-size:0.95rem;display:flex;align-items:center;gap:8px">Ask CommishAI <img src="icons/commish-ai.png" alt="" style="width:32px;height:32px;border-radius:50%"></div>
+          <div style="font-weight:700;color:var(--text-bright);font-size:0.95rem;display:flex;align-items:center;gap:10px">Ask CommishAI <img src="icons/commish-ai.png" alt="" style="width:48px;height:48px"></div>
           <div style="display:flex;gap:6px">
             <button id="rules-bot-clear" title="Clear conversation"
               style="background:rgba(255,255,255,0.12);border:none;color:#fff;
