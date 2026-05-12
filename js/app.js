@@ -4939,25 +4939,26 @@ function renderUserSettingsView() {
   // so the radios line up vertically. Cells for unsupported frequencies show
   // a dash instead of the radio.
   const FREQS = ["instant", "daily", "weekly", "never"];
+  const FREQ_LABELS = { instant: "Instant", daily: "Daily", weekly: "Weekly", never: "Never" };
   const eventRowsHtml = NOTIFY_EVENTS.map(e => {
     const cur = prefs[e.key] || {};
     const cells = FREQS.map(freq => {
       if (!e.email.includes(freq)) {
-        return `<td style="padding:9px 6px;text-align:center;color:var(--text-dim);font-size:0.74rem">—</td>`;
+        return `<td class="notif-na" data-label="${FREQ_LABELS[freq]}" style="padding:9px 6px;text-align:center;color:var(--text-dim);font-size:0.74rem">—</td>`;
       }
       const id = `np-${e.key}-${freq}`;
       const checked = cur.email === freq ? "checked" : "";
-      return `<td style="padding:9px 6px;text-align:center">
+      return `<td data-label="${FREQ_LABELS[freq]}" style="padding:9px 6px;text-align:center">
         <input type="radio" name="np-${e.key}" id="${id}" value="${freq}" ${checked} onchange="setNotifyEmail('${e.key}', '${freq}')" style="accent-color:var(--accent);cursor:pointer">
       </td>`;
     }).join("");
     const pushCol = e.push
       ? `<input type="checkbox" ${cur.push ? "checked" : ""} onchange="setNotifyPush('${e.key}', this.checked)" style="accent-color:var(--accent);cursor:pointer">`
-      : `<span style="color:var(--text-dim);font-size:0.74rem">—</span>`;
+      : `<span class="notif-na-inline" style="color:var(--text-dim);font-size:0.74rem">—</span>`;
     return `<tr>
-      <td style="padding:9px 10px;color:var(--text);vertical-align:middle">${escapeHtml(e.label)}</td>
+      <td class="notif-row-label" style="padding:9px 10px;color:var(--text);vertical-align:middle">${escapeHtml(e.label)}</td>
       ${cells}
-      <td style="padding:9px 10px;text-align:center;vertical-align:middle">${pushCol}</td>
+      <td data-label="Push" style="padding:9px 10px;text-align:center;vertical-align:middle">${pushCol}</td>
     </tr>`;
   }).join("");
 
@@ -4965,11 +4966,11 @@ function renderUserSettingsView() {
   const dcRowsHtml = DRAFT_CLOCK_STATES.map(s => {
     const c = dc[s.key] || {};
     return `<tr>
-      <td style="padding:8px 10px;color:var(--text)">${escapeHtml(s.label)}</td>
-      <td style="padding:8px 10px;text-align:center">
+      <td class="notif-row-label" style="padding:8px 10px;color:var(--text)">${escapeHtml(s.label)}</td>
+      <td data-label="Email" style="padding:8px 10px;text-align:center">
         <input type="checkbox" ${c.email ? "checked" : ""} onchange="setDraftClockChannel('${s.key}','email',this.checked)" style="accent-color:var(--accent)">
       </td>
-      <td style="padding:8px 10px;text-align:center">
+      <td data-label="Push" style="padding:8px 10px;text-align:center">
         <input type="checkbox" ${c.push ? "checked" : ""} onchange="setDraftClockChannel('${s.key}','push',this.checked)" style="accent-color:var(--accent)">
       </td>
     </tr>`;
@@ -4987,8 +4988,8 @@ function renderUserSettingsView() {
         <div style="color:var(--text-dim);font-size:0.82rem;margin-bottom:10px">
           Choose how you want to hear about each kind of event. Email frequency for keeper-protection / Rule 5 / call-up / send-down / other teams' picks tops out at Daily. Push is only available for event types that fire in real time.
         </div>
-        <div style="overflow-x:auto">
-          <table class="player-table" style="font-size:0.85rem;width:100%;max-width:760px">
+        <div class="notif-table-wrap" style="overflow-x:auto">
+          <table class="player-table notif-table" style="font-size:0.85rem;width:100%;max-width:760px">
             <colgroup>
               <col>
               <col style="width:64px">
@@ -5017,7 +5018,7 @@ function renderUserSettingsView() {
         <div style="color:var(--text-dim);font-size:0.82rem;margin-bottom:10px">
           Get notified when your team's pick is coming up. (No per-pick spam — just these three states.)
         </div>
-        <table class="player-table" style="font-size:0.85rem;width:100%;max-width:520px">
+        <table class="player-table notif-table" style="font-size:0.85rem;width:100%;max-width:520px">
           <thead>
             <tr>
               <th style="text-align:left">State</th>

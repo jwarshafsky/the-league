@@ -667,6 +667,47 @@ body {
     border-radius: 0 !important;
     border: none !important;
   }
+
+  /* Notification preference tables (Settings page): collapse the dense
+     6-column grid into one card per event. The thead is hidden; each
+     <td> displays its data-label inline next to the radio/checkbox. */
+  .notif-table { display: block !important; max-width: none !important; }
+  .notif-table thead { display: none !important; }
+  .notif-table colgroup { display: none !important; }
+  .notif-table tbody { display: block !important; }
+  .notif-table tr {
+    display: block !important;
+    border: 1px solid var(--border) !important;
+    border-radius: 8px !important;
+    margin-bottom: 10px !important;
+    padding: 10px 12px !important;
+    background: var(--bg) !important;
+  }
+  .notif-table tr:nth-child(even) td,
+  .notif-table tr:hover td { background: transparent !important; }
+  .notif-table td { display: block !important; padding: 0 !important; border: none !important; }
+  .notif-table td.notif-row-label {
+    font-weight: 700 !important;
+    color: var(--text-bright) !important;
+    font-size: 0.95rem !important;
+    text-align: left !important;
+    padding-bottom: 8px !important;
+    margin-bottom: 8px !important;
+    border-bottom: 1px solid var(--border) !important;
+  }
+  .notif-table td:not(.notif-row-label) {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    padding: 6px 0 !important;
+  }
+  .notif-table td:not(.notif-row-label)::before {
+    content: attr(data-label);
+    color: var(--text-dim);
+    font-size: 0.84rem;
+  }
+  .notif-table td.notif-na { display: none !important; }
+  .notif-table .notif-table-wrap, .notif-table-wrap { overflow: visible !important; }
 }
 
 /* Sub-tab buttons (e.g. inside Trades) */
