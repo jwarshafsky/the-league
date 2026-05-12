@@ -7264,6 +7264,14 @@ async function submitClaimTeam() {
   if (typeof initDb === "function" && currentOwner) initDb();
 }
 
+// Header button calls this — toggle the message-board panel and clear the
+// per-device unread marker so the badge zeros out.
+function openMessageBoard() {
+  try { localStorage.setItem("flm_msgboard_last_seen", String(Date.now())); } catch {}
+  if (typeof renderHeaderUser === "function") renderHeaderUser();
+  if (typeof toggleMessageBoard === "function") toggleMessageBoard();
+}
+
 function renderHeaderUser() {
   let userBar = document.getElementById("user-bar");
   if (!userBar) {
@@ -7305,6 +7313,21 @@ function renderHeaderUser() {
     ? `<span title="Online: ${others.map(t => t.teamName).join(", ")}" style="display:flex;align-items:center;gap:4px"><span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:#22c55e;box-shadow:0 0 6px rgba(34,197,94,0.7)"></span>${others.length} online</span>`
     : `<span style="color:rgba(255,255,255,0.45)" title="No other owners online">no one else online</span>`;
 
+  // Message-board button — unread count = messages not yet seen by this owner
+  // (tracked in localStorage; cleared when they open the panel).
+  const messages = (typeof dbGetMessages === "function") ? dbGetMessages() : [];
+  const lastSeenMs = parseInt(localStorage.getItem("flm_msgboard_last_seen") || "0", 10);
+  const myTeamForUnread = currentOwner?.team_id;
+  const unread = messages.filter(m => m.team_id !== myTeamForUnread && new Date(m.created_at).getTime() > lastSeenMs).length;
+  const msgBoardBtnHtml = `
+    <button onclick="openMessageBoard()" title="League message board${unread ? ` — ${unread} unread` : ""}"
+      style="position:relative;background:rgba(0,0,0,0.25);border:1px solid rgba(255,255,255,0.2);color:#fff;
+             padding:3px 8px;border-radius:5px;font-size:0.92rem;cursor:pointer;line-height:1;display:inline-flex;align-items:center;gap:4px">
+      💬
+      ${unread ? `<span style="position:absolute;top:-5px;right:-5px;background:var(--red);color:#fff;font-size:0.6rem;font-weight:800;border-radius:9px;padding:1px 5px;line-height:1.2">${unread}</span>` : ""}
+    </button>
+  `;
+
   // Optional preview-mode banner so it's obvious commish controls are hidden.
   const previewTag = previewMode
     ? '<span title="Viewing as a regular manager — click your name to switch back" style="background:#fbbf24;color:#000;font-size:0.62rem;font-weight:800;padding:1px 6px;border-radius:8px;text-transform:uppercase;letter-spacing:0.04em">Manager view</span>'
@@ -7312,6 +7335,7 @@ function renderHeaderUser() {
 
   userBar.innerHTML = `
     ${onlineHtml}
+    ${msgBoardBtnHtml}
     ${previewTag}
     ${nameHtml}
     <button onclick="signOut()" style="background:rgba(0,0,0,0.25);border:1px solid rgba(255,255,255,0.2);color:white;padding:3px 8px;border-radius:4px;font-size:0.7rem;cursor:pointer">Sign Out</button>

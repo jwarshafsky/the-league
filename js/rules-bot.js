@@ -76,7 +76,7 @@
                background:linear-gradient(135deg,var(--accent),#1e3a5f);
                color:#fff;font-size:1.5rem;cursor:pointer;
                box-shadow:0 4px 14px rgba(0,0,0,0.35);display:none;
-               touch-action:manipulation;-webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none">💬</button>
+               touch-action:manipulation;-webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none">✨</button>
 
       <div id="rules-bot-panel"
         style="position:fixed;bottom:calc(84px + env(safe-area-inset-bottom, 0px));right:calc(20px + env(safe-area-inset-right, 0px));z-index:991;
@@ -235,7 +235,7 @@
     const fab = document.getElementById("rules-bot-fab");
     if (!panel || !fab) return;
     panel.style.display = _open ? "flex" : "none";
-    fab.textContent = _open ? "×" : "💬";
+    fab.textContent = _open ? "×" : "✨";
     if (_open) _renderLog();
     // Note: deliberately NOT auto-focusing the input on open — on iOS PWA
     // that triggers the soft keyboard immediately, which combined with our

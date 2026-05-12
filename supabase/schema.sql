@@ -717,6 +717,44 @@ grant all on public.push_subscriptions to service_role;
 
 
 -- ============================================================================
+-- 13. league_messages — shared message board, anyone can post their own,
+--      commissioners can delete anything.
+-- ============================================================================
+create table if not exists public.league_messages (
+  id          uuid primary key default gen_random_uuid(),
+  team_id     text not null,
+  user_id     uuid references auth.users(id) on delete set null,
+  body        text not null,
+  created_at  timestamptz not null default now()
+);
+
+create index if not exists league_messages_created_at_idx
+  on public.league_messages(created_at);
+
+alter table public.league_messages enable row level security;
+
+drop policy if exists "lm_select_all"    on public.league_messages;
+drop policy if exists "lm_insert_own"    on public.league_messages;
+drop policy if exists "lm_delete_admin"  on public.league_messages;
+
+create policy "lm_select_all"
+  on public.league_messages for select
+  using (auth.role() = 'authenticated');
+
+create policy "lm_insert_own"
+  on public.league_messages for insert
+  with check (team_id = public.my_team_id());
+
+-- Delete: commissioners can clear anyone, authors can remove their own row.
+create policy "lm_delete_admin"
+  on public.league_messages for delete
+  using (public.is_commissioner() or user_id = auth.uid());
+
+grant select, insert, delete on public.league_messages to authenticated;
+grant all on public.league_messages to service_role;
+
+
+-- ============================================================================
 -- BOOTSTRAP — run AFTER Jeff has logged in once via magic link.
 -- This claims 'jeff' as Jeff's team and makes him a commissioner.
 -- ============================================================================

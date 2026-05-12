@@ -25,6 +25,7 @@ const _cache = {
   keeperPriceExceptions: {}, // { playerName: truePrice } — overrides ESPN-displayed price
   notifyPrefs: {},     // { teamId: { prefs: {...}, receive_all, email } }
   pushSubs: [],        // [{ id, team_id, user_id, endpoint, ... }]
+  messages: [],        // [{ id, team_id, user_id, body, created_at }]
 };
 // Cross-conversation read state for the trade inbox: { threadId: lastReadAt }.
 // Anything in the thread newer than lastReadAt counts as unread (covers BOTH
@@ -98,7 +99,7 @@ function onDbReady(fn) {
 }
 
 async function _fetchAll() {
-  const [trades, ks, ls, co, act, props, msgs, rm, np, ps] = await Promise.all([
+  const [trades, ks, ls, co, act, props, msgs, rm, np, ps, lm] = await Promise.all([
     supabaseClient.from("trades").select("*").order("created_at", { ascending: true }),
     supabaseClient.from("keeper_selections").select("*"),
     supabaseClient.from("league_state").select("*"),
@@ -109,6 +110,7 @@ async function _fetchAll() {
     supabaseClient.from("roster_moves").select("*").order("at", { ascending: true }),
     supabaseClient.from("notification_prefs").select("*"),
     supabaseClient.from("push_subscriptions").select("*"),
+    supabaseClient.from("league_messages").select("*").order("created_at", { ascending: true }).limit(500),
   ]);
   // Surface query errors so a transient network/RLS issue doesn't silently
   // wipe the UI to empty caches. Each table is independent — we still load
@@ -140,6 +142,8 @@ async function _fetchAll() {
   // exist' error from PostgREST; log it quietly but don't toast users.
   _surfaceQuiet("notification_prefs", np);
   _surfaceQuiet("push_subscriptions", ps);
+  _surfaceQuiet("league_messages", lm);
+  _cache.messages = lm.data || [];
   _cache.notifyPrefs = {};
   for (const r of (np.data || [])) {
     _cache.notifyPrefs[r.team_id] = {
@@ -402,6 +406,16 @@ function _subscribeToChanges() {
           await _fetchAll();
           if (typeof renderHeaderUser === "function") renderHeaderUser();
         }
+      )
+      // league_messages — refresh the in-memory cache and re-render the
+      // board if open so messages from other teams appear without polling.
+      .on("postgres_changes",
+        { event: "*", schema: "public", table: "league_messages" },
+        async () => {
+          await _fetchAll();
+          if (typeof _renderMessageBoard === "function") _renderMessageBoard();
+          if (typeof renderHeaderUser === "function") renderHeaderUser();
+        }
       );
     _realtimeChannel.subscribe();
   } catch (e) {
@@ -525,6 +539,36 @@ function dbCountMyPushSubs() {
 }
 function dbHasPushSubForEndpoint(endpoint) {
   return (_cache.pushSubs || []).some(s => s.endpoint === endpoint);
+}
+function dbGetMessages() { return _clone(_cache.messages || []); }
+
+async function postMessageAsync(body) {
+  if (typeof currentOwner === "undefined" || !currentOwner) throw new Error("Sign in to post");
+  const trimmed = (body || "").trim();
+  if (!trimmed) throw new Error("Empty message");
+  if (trimmed.length > 1000) throw new Error("Message too long (1000 char max)");
+  const row = {
+    team_id: currentOwner.team_id,
+    user_id: currentUser ? currentUser.id : null,
+    body: trimmed,
+  };
+  const { data, error } = await supabaseClient.from("league_messages").insert(row).select().single();
+  if (error) throw error;
+  _cache.messages = [...(_cache.messages || []), data];
+  return data;
+}
+
+async function deleteMessageAsync(id) {
+  const { error } = await supabaseClient.from("league_messages").delete().eq("id", id);
+  if (error) throw error;
+  _cache.messages = (_cache.messages || []).filter(m => m.id !== id);
+}
+
+async function clearAllMessagesAsync() {
+  // Commissioner-only by RLS — non-commish authors can only delete their own.
+  const { error } = await supabaseClient.from("league_messages").delete().not("id", "is", null);
+  if (error) throw error;
+  _cache.messages = [];
 }
 function dbGetActivity() { return _cache.activity; }            // read-only
 function dbGetProposals() { return _cache.proposals; }          // read-only
