@@ -7372,6 +7372,14 @@ function renderHeaderUser() {
   if (tradesNav) tradesNav.innerHTML = "Trades" + badgeHtml;
   const drawerTrades = document.getElementById("drawer-trades");
   if (drawerTrades) drawerTrades.innerHTML = "Trades" + badgeHtml;
+
+  const drawerMessages = document.getElementById("drawer-messages");
+  if (drawerMessages) {
+    const msgBadge = unread > 0
+      ? ` <span style="color:var(--red);font-weight:800;margin-left:2px">(${unread})</span>`
+      : "";
+    drawerMessages.innerHTML = "Message Board" + msgBadge;
+  }
 }
 
 // Re-render the header bar whenever someone joins or leaves.
