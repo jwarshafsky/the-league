@@ -644,12 +644,18 @@ body {
     grid-template-columns: 1fr !important;
   }
 
-  /* Modals: tighter padding so content has room. */
+  /* Modals: tighter padding so content has room, plus iOS notch / status-bar
+     inset on top so the modal close (×) isn't hidden underneath. */
   #thread-detail-modal,
   #proposal-composer-modal,
   #commish-editor-modal,
-  #pick-editor-modal {
-    padding: 12px 8px !important;
+  #pick-editor-modal,
+  #trophy-detail-modal,
+  #manager-history-modal {
+    padding-top: calc(12px + env(safe-area-inset-top, 0px)) !important;
+    padding-right: 8px !important;
+    padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px)) !important;
+    padding-left: 8px !important;
   }
 
   /* Message Board: fullscreen on mobile rather than a small pop-up — the
@@ -666,6 +672,13 @@ body {
     max-width: none !important;
     border-radius: 0 !important;
     border: none !important;
+  }
+  /* Push the header gradient down past the iOS status-bar / notch so the
+     close (×) and "Clear all" buttons are tappable. The header is the
+     first child div of the panel; bumping its padding-top extends the
+     gradient up to the very top of the screen as well. */
+  #msgboard-panel > div:first-child {
+    padding-top: calc(13px + env(safe-area-inset-top, 0px)) !important;
   }
 
   /* Notification preference tables (Settings page): collapse the dense
