@@ -4684,6 +4684,11 @@ function switchTab(tab) {
   document.querySelectorAll(".nav-tab, .nav-drawer-item").forEach(t => t.classList.remove("active"));
   document.querySelectorAll(`[data-tab="${tab}"]`).forEach(el => el.classList.add("active"));
 
+  // Reset scroll to top when switching tabs — without this, mobile users
+  // land halfway down the new tab because the previous tab's scroll
+  // position carried over.
+  try { window.scrollTo(0, 0); } catch {}
+
   const content = document.getElementById("main-content");
   const backBtn = document.getElementById("back-btn");
   const title = document.getElementById("header-title");
