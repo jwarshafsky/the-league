@@ -3328,7 +3328,9 @@ function renderEligibleTable(players, teamId, teamSelections) {
             : p.nextYearPrice != null
               ? `<span class="player-price">$${p.nextYearPrice}</span>`
               : (p.contractType === 'callup'
-                  ? `<button onclick="promptCallupPrice('${escapeJsString(p.name)}',${teamId ? `'${escapeJsString(teamId)}'` : 'null'})" style="background:none;border:1px dashed var(--border);color:var(--yellow);font-size:0.72rem;padding:2px 8px;border-radius:4px;cursor:pointer">Set price</button>`
+                  ? (isCommissioner()
+                      ? `<button onclick="promptCallupPrice('${escapeJsString(p.name)}',${teamId ? `'${escapeJsString(teamId)}'` : 'null'})" style="background:none;border:1px dashed var(--border);color:var(--yellow);font-size:0.72rem;padding:2px 8px;border-radius:4px;cursor:pointer">Set price</button>`
+                      : '<span style="color:var(--text-dim);font-size:0.78rem" title="Price will be set after this season">TBD</span>')
                   : '<span style="color:var(--text-dim)">—</span>');
           const injuryTag = '';  // IL status removed — was eating row space
           const rowBg = p.workaround && p.workaround.needsConfirmation
