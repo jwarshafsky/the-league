@@ -1797,7 +1797,7 @@ function renderLuxuryTaxTable() {
   rows.sort((a, b) => b.salary - a.salary);
   return `
     <div style="max-width:760px">
-      <table class="player-table" style="font-size:0.88rem;width:100%;table-layout:fixed">
+      <table class="player-table mobile-stack-table" style="font-size:0.88rem;width:100%;table-layout:fixed">
         <colgroup>
           <col style="width:140px">
           <col style="width:80px">
@@ -1833,7 +1833,7 @@ function renderLuxuryTaxTable() {
               }).join("");
             return `
               <tr>
-                <td style="padding:8px 10px">
+                <td class="notif-row-label" style="padding:8px 10px">
                   <details>
                     <summary style="cursor:pointer;list-style:none">
                       <span style="font-weight:700;color:var(--text-bright)">${escapeHtml(r.team.name)}</span>
@@ -1846,10 +1846,10 @@ function renderLuxuryTaxTable() {
                     </div>
                   </details>
                 </td>
-                <td style="text-align:right;padding:8px 6px;color:var(--text-dim)">${r.breakdown.length}</td>
-                <td style="text-align:right;padding:8px 6px;color:${r.over ? 'var(--red)' : 'var(--text)'};font-weight:${r.over ? '700' : '400'}">$${r.salary}</td>
-                <td style="text-align:right;padding:8px 6px;color:${r.remaining > 0 ? 'var(--green)' : 'var(--text-dim)'}">${r.remaining > 0 ? `$${r.remaining}` : '—'}</td>
-                <td style="text-align:right;padding:8px 10px;color:${r.surplus > 0 ? 'var(--red)' : 'var(--text-dim)'};font-weight:${r.surplus > 0 ? '700' : '400'}">${r.surplus > 0 ? `$${r.surplus}` : '—'}</td>
+                <td data-label="Players" style="text-align:right;padding:8px 6px;color:var(--text-dim)">${r.breakdown.length}</td>
+                <td data-label="Salary" style="text-align:right;padding:8px 6px;color:${r.over ? 'var(--red)' : 'var(--text)'};font-weight:${r.over ? '700' : '400'}">$${r.salary}</td>
+                <td data-label="Remaining" style="text-align:right;padding:8px 6px;color:${r.remaining > 0 ? 'var(--green)' : 'var(--text-dim)'}">${r.remaining > 0 ? `$${r.remaining}` : '—'}</td>
+                <td data-label="Surplus" style="text-align:right;padding:8px 10px;color:${r.surplus > 0 ? 'var(--red)' : 'var(--text-dim)'};font-weight:${r.surplus > 0 ? '700' : '400'}">${r.surplus > 0 ? `$${r.surplus}` : '—'}</td>
               </tr>
             `;
           }).join("")}
@@ -1916,20 +1916,20 @@ function renderFinancialsView() {
             : '<span style="color:var(--red);font-size:0.78rem;font-weight:700">unpaid</span>');
     return `
       <tr style="${allPaid ? 'opacity:0.55' : ''}">
-        <td style="font-weight:700;color:var(--text-bright);vertical-align:top;padding:8px 10px">${escapeHtml(team.name)}</td>
-        <td style="text-align:right;vertical-align:top;padding:8px 6px">$${LEAGUE_FEE}</td>
-        <td style="text-align:center;vertical-align:top;padding:8px 6px">${leaguePaidCtl}</td>
-        <td style="vertical-align:top;padding:8px 10px">
+        <td class="notif-row-label" style="font-weight:700;color:var(--text-bright);vertical-align:top;padding:8px 10px">${escapeHtml(team.name)}</td>
+        <td data-label="League fee" style="text-align:right;vertical-align:top;padding:8px 6px">$${LEAGUE_FEE}</td>
+        <td data-label="League paid?" style="text-align:center;vertical-align:top;padding:8px 6px">${leaguePaidCtl}</td>
+        <td data-label="Send-downs" style="vertical-align:top;padding:8px 10px">
           <div style="display:flex;justify-content:space-between;gap:8px;align-items:baseline">
             <span style="color:var(--text);font-size:0.84rem">${sd.length} send-down${sd.length === 1 ? "" : "s"}</span>
             <span style="color:var(--text-bright);font-weight:600">$${callupFees}</span>
           </div>
           ${sdSummary}
         </td>
-        <td style="text-align:center;vertical-align:top;padding:8px 6px">${callupPaidCtl}</td>
-        <td style="text-align:right;vertical-align:top;padding:8px 6px">${luxuryAmountCtl}</td>
-        <td style="text-align:center;vertical-align:top;padding:8px 6px">${luxuryPaidCtl}</td>
-        <td style="text-align:right;font-weight:700;color:${totalDue === 0 ? 'var(--green)' : 'var(--text-bright)'};vertical-align:top;padding:8px 10px">$${totalDue}</td>
+        <td data-label="Send-downs paid?" style="text-align:center;vertical-align:top;padding:8px 6px">${callupPaidCtl}</td>
+        <td data-label="Luxury tax" style="text-align:right;vertical-align:top;padding:8px 6px">${luxuryAmountCtl}</td>
+        <td data-label="Luxury paid?" style="text-align:center;vertical-align:top;padding:8px 6px">${luxuryPaidCtl}</td>
+        <td data-label="Total due" style="text-align:right;font-weight:700;color:${totalDue === 0 ? 'var(--green)' : 'var(--text-bright)'};vertical-align:top;padding:8px 10px">$${totalDue}</td>
       </tr>
     `;
   }).join("");
@@ -1976,7 +1976,7 @@ function renderFinancialsView() {
         ${commish ? " Edit any amount and check the box to mark a team as paid." : " Only the commissioner can edit amounts and mark fees paid."}
       </div>
       <div style="max-width:880px;overflow-x:auto">
-        <table class="player-table" style="font-size:0.85rem;width:100%;table-layout:fixed">
+        <table class="player-table mobile-stack-table" style="font-size:0.85rem;width:100%;table-layout:fixed">
           <colgroup>
             <col style="width:110px">
             <col style="width:66px">
@@ -4988,8 +4988,8 @@ function renderUserSettingsView() {
         <div style="color:var(--text-dim);font-size:0.82rem;margin-bottom:10px">
           Choose how you want to hear about each kind of event. Email frequency for keeper-protection / Rule 5 / call-up / send-down / other teams' picks tops out at Daily. Push is only available for event types that fire in real time.
         </div>
-        <div class="notif-table-wrap" style="overflow-x:auto">
-          <table class="player-table notif-table" style="font-size:0.85rem;width:100%;max-width:760px">
+        <div class="mobile-stack-table-wrap" style="overflow-x:auto">
+          <table class="player-table mobile-stack-table" style="font-size:0.85rem;width:100%;max-width:760px">
             <colgroup>
               <col>
               <col style="width:64px">
@@ -5018,7 +5018,7 @@ function renderUserSettingsView() {
         <div style="color:var(--text-dim);font-size:0.82rem;margin-bottom:10px">
           Get notified when your team's pick is coming up. (No per-pick spam — just these three states.)
         </div>
-        <table class="player-table notif-table" style="font-size:0.85rem;width:100%;max-width:520px">
+        <table class="player-table mobile-stack-table" style="font-size:0.85rem;width:100%;max-width:520px">
           <thead>
             <tr>
               <th style="text-align:left">State</th>
