@@ -26,19 +26,20 @@
     root.innerHTML = `
       <div id="msgboard-panel" style="
         position:fixed;
-        right:18px;
-        bottom:calc(82px + env(safe-area-inset-bottom, 0px));
-        width:min(440px, calc(100vw - 24px));
-        height:min(540px, calc(100vh - 140px));
+        right:calc(20px + env(safe-area-inset-right, 0px));
+        bottom:calc(84px + env(safe-area-inset-bottom, 0px));
+        width:min(380px,calc(100vw - 32px));
+        height:min(560px,calc(100vh - 120px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)));
         background:var(--bg-card);
         border:1px solid var(--border);
         border-radius:14px;
-        box-shadow:0 18px 50px rgba(0,0,0,0.45);
-        z-index:992;
+        box-shadow:0 10px 40px rgba(0,0,0,0.45);
+        z-index:991;
         display:none;
         flex-direction:column;
         overflow:hidden;
         font-family:inherit;
+        transition:bottom 0.18s ease, height 0.18s ease;
       ">
         <div style="
           padding:13px 16px;
@@ -85,7 +86,7 @@
             border:1px solid var(--border);
             border-radius:8px;
             padding:9px 11px;
-            font-size:0.92rem;
+            font-size:16px;
             font-family:inherit;
             resize:none;
             min-height:38px;
@@ -120,21 +121,51 @@
     });
     document.getElementById("msgboard-input").addEventListener("input", _autoSize);
 
-    // iOS keyboard handling — pin the panel above the soft keyboard.
-    if (window.visualViewport) {
-      const apply = () => {
-        const panel = document.getElementById("msgboard-panel");
-        if (!panel) return;
-        const vv = window.visualViewport;
-        const kbHeight = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
-        if (kbHeight > 50) {
-          panel.style.bottom = `${kbHeight + 16}px`;
-        } else {
-          panel.style.bottom = "calc(82px + env(safe-area-inset-bottom, 0px))";
-        }
-      };
-      window.visualViewport.addEventListener("resize", apply);
-      window.visualViewport.addEventListener("scroll", apply);
+    // iOS keyboard handling — mirrors rules-bot.js. Tracks override state so
+    // we only adjust positioning when there's actually a soft keyboard, and
+    // restores the original CSS calc() positioning when it dismisses.
+    try {
+      const inputEl = document.getElementById("msgboard-input");
+      const panel = document.getElementById("msgboard-panel");
+      if (inputEl && panel && window.visualViewport) {
+        let _bottomBackup = null;
+        let _heightBackup = null;
+        const apply = () => {
+          try {
+            const vv = window.visualViewport;
+            const kbH = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+            if (kbH > 50) {
+              if (_bottomBackup === null) {
+                _bottomBackup = panel.style.bottom;
+                _heightBackup = panel.style.height;
+              }
+              panel.style.bottom = (kbH + 8) + "px";
+              panel.style.height = Math.min(560, vv.height - 16) + "px";
+            } else if (_bottomBackup !== null) {
+              panel.style.bottom = _bottomBackup;
+              panel.style.height = _heightBackup;
+              _bottomBackup = null;
+              _heightBackup = null;
+            }
+          } catch (e) { console.warn("[msgboard] kb apply failed:", e); }
+        };
+        window.visualViewport.addEventListener("resize", apply);
+        window.visualViewport.addEventListener("scroll", apply);
+        inputEl.addEventListener("focus", apply);
+        inputEl.addEventListener("blur", () => {
+          // Restore on blur with a short delay — vv events sometimes fire late.
+          setTimeout(() => {
+            if (_bottomBackup !== null) {
+              panel.style.bottom = _bottomBackup;
+              panel.style.height = _heightBackup;
+              _bottomBackup = null;
+              _heightBackup = null;
+            }
+          }, 60);
+        });
+      }
+    } catch (e) {
+      console.warn("[msgboard] keyboard handler setup failed:", e);
     }
   }
 
@@ -147,6 +178,8 @@
 
   function _open_panel() {
     _ensureMounted();
+    // Mutually exclusive with the CommishAI panel — only one slide-up at a time.
+    if (typeof window.closeRulesBot === "function") window.closeRulesBot();
     _open = true;
     const panel = document.getElementById("msgboard-panel");
     if (panel) panel.style.display = "flex";
@@ -162,6 +195,9 @@
     const panel = document.getElementById("msgboard-panel");
     if (panel) panel.style.display = "none";
   }
+
+  // Expose close so the chatbot can dismiss us when it opens.
+  window.closeMessageBoard = _close;
 
   function _toggle() {
     if (_open) _close();

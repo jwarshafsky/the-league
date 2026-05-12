@@ -80,7 +80,7 @@
 
       <div id="rules-bot-panel"
         style="position:fixed;bottom:calc(84px + env(safe-area-inset-bottom, 0px));right:calc(20px + env(safe-area-inset-right, 0px));z-index:991;
-               width:min(340px,calc(100vw - 32px));
+               width:min(380px,calc(100vw - 32px));
                height:min(560px,calc(100vh - 120px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)));
                background:var(--bg-card);border:1px solid var(--border);
                border-radius:14px;box-shadow:0 10px 40px rgba(0,0,0,0.45);
@@ -236,6 +236,8 @@
     if (!panel || !fab) return;
     panel.style.display = _open ? "flex" : "none";
     fab.textContent = _open ? "×" : "✨";
+    // Mutually exclusive with the message board — only one slide-up at a time.
+    if (_open && typeof window.closeMessageBoard === "function") window.closeMessageBoard();
     if (_open) _renderLog();
     // Note: deliberately NOT auto-focusing the input on open — on iOS PWA
     // that triggers the soft keyboard immediately, which combined with our
@@ -514,6 +516,8 @@
   function init() {
     _ensureMounted();
     _watchAuth();
+    // Expose close so the message board can dismiss us when it opens.
+    window.closeRulesBot = () => _toggle(false);
   }
 
   if (document.readyState === "loading") {
