@@ -5319,10 +5319,10 @@ function renderKeeperPriceExceptionsEditor() {
         }
         return `
           <tr>
-            <td style="padding:6px 8px;color:var(--text-bright)">${escapeHtml(name)}</td>
-            <td style="padding:6px 8px;color:var(--text-dim);font-size:0.82rem">${escapeHtml(teamName)}</td>
-            <td style="padding:6px 8px;text-align:right;color:var(--text)">$${escapeHtml(String(ex[name]))}</td>
-            <td style="padding:6px 8px;text-align:right">
+            <td class="notif-row-label" style="padding:6px 8px;color:var(--text-bright)">${escapeHtml(name)}</td>
+            <td data-label="Team" style="padding:6px 8px;color:var(--text-dim);font-size:0.82rem">${escapeHtml(teamName)}</td>
+            <td data-label="True salary" style="padding:6px 8px;text-align:right;color:var(--text)">$${escapeHtml(String(ex[name]))}</td>
+            <td data-label="" style="padding:6px 8px;text-align:right">
               <button class="trade-btn trade-btn-cancel" onclick="removeKeeperPriceException('${escapeJsString(name)}')" style="font-size:0.74rem;padding:3px 8px">Remove</button>
             </td>
           </tr>
@@ -5342,7 +5342,7 @@ function renderKeeperPriceExceptionsEditor() {
       </label>
       <button class="trade-btn trade-btn-submit" onclick="submitKeeperPriceException()" style="font-size:0.85rem;height:36px">Add / Update</button>
     </div>
-    <table class="player-table" style="width:100%;max-width:600px;font-size:0.85rem">
+    <table class="player-table mobile-stack-table" style="width:100%;max-width:600px;font-size:0.85rem">
       <thead>
         <tr>
           <th>Player</th>
