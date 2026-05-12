@@ -194,18 +194,49 @@ function getProspectCacheMeta() {
   } catch { return null; }
 }
 
+// Custom-prospect names are league-wide: when one owner types a name during
+// a minors pick, every other owner's autocomplete should pick it up too.
+// Stored in league_state.custom_prospects (synced via realtime); localStorage
+// kept as a fast-path cache so the autocomplete works pre-DB-ready.
 function getCustomProspects() {
-  try { return JSON.parse(localStorage.getItem("flm_custom_prospects") || "[]"); }
-  catch { return []; }
+  // Union the server cache (authoritative, league-wide) with the local cache
+  // (covers names typed offline or before the data layer finished loading).
+  const server = (typeof dbGetCustomProspects === "function") ? dbGetCustomProspects() : [];
+  let local = [];
+  try { local = JSON.parse(localStorage.getItem("flm_custom_prospects") || "[]"); } catch {}
+  if (!server.length) return local;
+  if (!local.length) return server.slice();
+  const seen = new Set(server);
+  const merged = server.slice();
+  for (const n of local) if (!seen.has(n)) { seen.add(n); merged.push(n); }
+  return merged;
 }
 
 function addCustomProspect(name) {
-  const list = getCustomProspects();
+  if (!name) return;
   const cached = getCachedProspects() || [];
-  if (!list.includes(name) && !cached.includes(name)) {
-    list.push(name);
-    if (list.length > 2000) list.shift();
-    localStorage.setItem("flm_custom_prospects", JSON.stringify(list));
+  if (cached.includes(name)) return;
+  // Local write-through so this device sees it instantly.
+  let local = [];
+  try { local = JSON.parse(localStorage.getItem("flm_custom_prospects") || "[]"); } catch {}
+  if (!local.includes(name)) {
+    local.push(name);
+    if (local.length > 2000) local.shift();
+    try { localStorage.setItem("flm_custom_prospects", JSON.stringify(local)); } catch {}
+  }
+  // Push to the shared league-wide list. Fire-and-forget — the realtime
+  // callback on league_state will refresh _cache.customProspects on every
+  // device. If the function isn't defined yet (script load order), the next
+  // call will catch up.
+  if (typeof saveCustomProspectsAsync === "function" && typeof dbGetCustomProspects === "function") {
+    const server = dbGetCustomProspects();
+    if (!server.includes(name)) {
+      const next = server.concat([name]);
+      // Cap server-side too so the league_state row doesn't grow forever.
+      while (next.length > 2000) next.shift();
+      saveCustomProspectsAsync(next).catch(e =>
+        console.warn("custom-prospects sync failed:", e));
+    }
   }
 }
 

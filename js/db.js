@@ -26,6 +26,7 @@ const _cache = {
   notifyPrefs: {},     // { teamId: { prefs: {...}, receive_all, email } }
   pushSubs: [],        // [{ id, team_id, user_id, endpoint, ... }]
   leagueMessages: [],  // [{ id, team_id, user_id, body, created_at }]
+  customProspects: [], // string[] — names typed during minors picks; shared league-wide via league_state
 };
 // Cross-conversation read state for the trade inbox: { threadId: lastReadAt }.
 // Anything in the thread newer than lastReadAt counts as unread (covers BOTH
@@ -275,6 +276,7 @@ async function _fetchAll() {
     else if (r.key === "settings") _cache.settings = r.state || {};
     else if (r.key === "fees_paid") _cache.feesPaid = r.state || {};
     else if (r.key === "keeper_price_exceptions") _cache.keeperPriceExceptions = r.state || {};
+    else if (r.key === "custom_prospects") _cache.customProspects = Array.isArray(r.state) ? r.state : (r.state?.names || []);
   }
 
   _cache.callup = {};
@@ -868,6 +870,8 @@ async function saveKeeperDeadlineAsync(state)   { return _saveLeagueStateAsync("
 async function saveSettingsAsync(s)             { return _saveLeagueStateAsync("settings", s, "settings"); }
 async function saveFeesPaidAsync(m)             { return _saveLeagueStateAsync("fees_paid", m, "feesPaid"); }
 async function saveKeeperPriceExceptionsAsync(m){ return _saveLeagueStateAsync("keeper_price_exceptions", m, "keeperPriceExceptions"); }
+async function saveCustomProspectsAsync(list)   { return _saveLeagueStateAsync("custom_prospects", list, "customProspects"); }
+function dbGetCustomProspects() { return _cache.customProspects || []; }
 
 async function saveNotifyPrefsAsync({ teamId, prefs, receiveAll, email }) {
   if (!teamId) throw new Error("teamId required");
