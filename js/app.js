@@ -4925,25 +4925,28 @@ function renderUserSettingsView() {
   // endpoint stored in DB). Will be filled in by setupSettingsPagePushUi().
   const pushStateInitial = '<span id="settings-push-state" style="color:var(--text-dim);font-size:0.82rem">checking…</span>';
 
+  // Every event row gets the same 4 columns (Instant / Daily / Weekly / Never)
+  // so the radios line up vertically. Cells for unsupported frequencies show
+  // a dash instead of the radio.
+  const FREQS = ["instant", "daily", "weekly", "never"];
   const eventRowsHtml = NOTIFY_EVENTS.map(e => {
     const cur = prefs[e.key] || {};
-    const radios = e.email.map(freq => {
+    const cells = FREQS.map(freq => {
+      if (!e.email.includes(freq)) {
+        return `<td style="padding:9px 6px;text-align:center;color:var(--text-dim);font-size:0.74rem">—</td>`;
+      }
       const id = `np-${e.key}-${freq}`;
       const checked = cur.email === freq ? "checked" : "";
-      return `<label style="display:inline-flex;align-items:center;gap:4px;font-size:0.82rem;color:var(--text);cursor:pointer">
-        <input type="radio" name="np-${e.key}" id="${id}" value="${freq}" ${checked} onchange="setNotifyEmail('${e.key}', '${freq}')" style="accent-color:var(--accent)">
-        ${freq[0].toUpperCase() + freq.slice(1)}
-      </label>`;
-    }).join("&nbsp;&nbsp;");
+      return `<td style="padding:9px 6px;text-align:center">
+        <input type="radio" name="np-${e.key}" id="${id}" value="${freq}" ${checked} onchange="setNotifyEmail('${e.key}', '${freq}')" style="accent-color:var(--accent);cursor:pointer">
+      </td>`;
+    }).join("");
     const pushCol = e.push
-      ? `<label style="display:inline-flex;align-items:center;gap:5px;font-size:0.82rem;color:var(--text);cursor:pointer">
-          <input type="checkbox" ${cur.push ? "checked" : ""} onchange="setNotifyPush('${e.key}', this.checked)" style="accent-color:var(--accent)">
-          Push
-        </label>`
+      ? `<input type="checkbox" ${cur.push ? "checked" : ""} onchange="setNotifyPush('${e.key}', this.checked)" style="accent-color:var(--accent);cursor:pointer">`
       : `<span style="color:var(--text-dim);font-size:0.74rem">—</span>`;
     return `<tr>
       <td style="padding:9px 10px;color:var(--text);vertical-align:middle">${escapeHtml(e.label)}</td>
-      <td style="padding:9px 10px;vertical-align:middle">${radios}</td>
+      ${cells}
       <td style="padding:9px 10px;text-align:center;vertical-align:middle">${pushCol}</td>
     </tr>`;
   }).join("");
@@ -4976,11 +4979,22 @@ function renderUserSettingsView() {
         </div>
         <div style="overflow-x:auto">
           <table class="player-table" style="font-size:0.85rem;width:100%;max-width:760px">
+            <colgroup>
+              <col>
+              <col style="width:64px">
+              <col style="width:64px">
+              <col style="width:64px">
+              <col style="width:64px">
+              <col style="width:72px">
+            </colgroup>
             <thead>
               <tr>
                 <th style="text-align:left">Event</th>
-                <th style="text-align:left">Email</th>
-                <th style="text-align:center;width:80px">Push</th>
+                <th style="text-align:center">Instant</th>
+                <th style="text-align:center">Daily</th>
+                <th style="text-align:center">Weekly</th>
+                <th style="text-align:center">Never</th>
+                <th style="text-align:center">Push</th>
               </tr>
             </thead>
             <tbody>${eventRowsHtml}</tbody>
