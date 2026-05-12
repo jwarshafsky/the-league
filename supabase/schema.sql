@@ -642,6 +642,72 @@ create trigger tp_touch before update on public.trade_proposals
 
 
 -- ============================================================================
+-- 11. notification_prefs — per-team email + push preferences
+-- ============================================================================
+create table if not exists public.notification_prefs (
+  team_id     text primary key,
+  prefs       jsonb not null default '{}'::jsonb,
+  receive_all boolean not null default false,
+  email       text,
+  updated_at  timestamptz not null default now()
+);
+
+alter table public.notification_prefs enable row level security;
+
+drop policy if exists "np_select_all"  on public.notification_prefs;
+drop policy if exists "np_write_owner" on public.notification_prefs;
+
+create policy "np_select_all"
+  on public.notification_prefs for select
+  using (auth.role() = 'authenticated');
+
+create policy "np_write_owner"
+  on public.notification_prefs for all
+  using (team_id = public.my_team_id() or public.is_commissioner())
+  with check (team_id = public.my_team_id() or public.is_commissioner());
+
+drop trigger if exists np_touch on public.notification_prefs;
+create trigger np_touch before update on public.notification_prefs
+  for each row execute function public.touch_updated_at();
+
+
+-- ============================================================================
+-- 12. push_subscriptions — one row per device-level Web Push subscription
+-- ============================================================================
+create table if not exists public.push_subscriptions (
+  id          uuid primary key default gen_random_uuid(),
+  team_id     text not null,
+  user_id     uuid not null references auth.users(id) on delete cascade,
+  endpoint    text not null,
+  p256dh      text not null,
+  auth_key    text not null,
+  user_agent  text,
+  created_at  timestamptz not null default now()
+);
+
+create unique index if not exists push_subscriptions_endpoint_idx
+  on public.push_subscriptions(endpoint);
+
+alter table public.push_subscriptions enable row level security;
+
+drop policy if exists "ps_select_own"   on public.push_subscriptions;
+drop policy if exists "ps_insert_own"   on public.push_subscriptions;
+drop policy if exists "ps_delete_own"   on public.push_subscriptions;
+
+create policy "ps_select_own"
+  on public.push_subscriptions for select
+  using (user_id = auth.uid() or public.is_commissioner());
+
+create policy "ps_insert_own"
+  on public.push_subscriptions for insert
+  with check (user_id = auth.uid());
+
+create policy "ps_delete_own"
+  on public.push_subscriptions for delete
+  using (user_id = auth.uid() or public.is_commissioner());
+
+
+-- ============================================================================
 -- BOOTSTRAP — run AFTER Jeff has logged in once via magic link.
 -- This claims 'jeff' as Jeff's team and makes him a commissioner.
 -- ============================================================================

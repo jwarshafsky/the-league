@@ -500,12 +500,20 @@ function renderMinorsKeepersTable(minors) {
           const statusBadge = p._calledUp
             ? ` <span class="hide-on-mobile" style="color:var(--purple);font-size:0.7rem;font-weight:600">Called up</span>`
             : (ms.eligibilityWarning ? ` <span class="hide-on-mobile" style="color:var(--orange);font-size:0.7rem;font-weight:600">${escapeHtml(ms.eligibilityWarning)}</span>` : "");
+          const milTag = (() => {
+            if (ms.yearsRemaining === null) {
+              return `<span class="contract-tag contract-new">${escapeHtml(ms.contractNote)}</span>`;
+            }
+            const yrs = ms.yearsRemaining;
+            const cls = yrs === 0 ? "final" : yrs === 1 ? "expiring" : "mid";
+            return `<span class="contract-tag contract-${cls}">${CURRENT_SEASON + yrs}</span>`;
+          })();
           return `
             <tr>
               <td><span class="player-name">${escapeHtml(p.name)}</span>${statusBadge}</td>
               <td class="player-year">${p.yearAcquired}</td>
               <td class="${statClass}">${p.careerStat}</td>
-              <td><span style="color:var(--text-dim);font-size:0.8rem">${ms.yearsRemaining !== null ? (CURRENT_SEASON + ms.yearsRemaining) : ms.contractNote}</span>${p.sendDownCount ? ` <span style="color:var(--red);font-size:0.7rem;font-weight:600">($${p.sendDownCount * 10} send down fee)</span>` : ""}</td>
+              <td>${milTag}${p.sendDownCount ? ` <span style="color:var(--red);font-size:0.7rem;font-weight:600">($${p.sendDownCount * 10} send down fee)</span>` : ""}</td>
             </tr>
           `;
         }).join("")}
@@ -947,7 +955,18 @@ function isPlayerDroppedFromEspn(playerName) {
 }
 
 function formatCallupStatus(player, ms) {
-  if (player.dropped || isPlayerDroppedFromEspn(player.name)) return "Dropped";
+  if (player.dropped || isPlayerDroppedFromEspn(player.name)) {
+    // Distinguish a fresh app-side call-up that hasn't synced to ESPN yet
+    // (ESPN sync runs every 15min; commish may take longer to mirror the move
+    // on the ESPN side) from a real drop. If the app's roster_moves table has
+    // a callup for this player in the past 24h, show "Call Up Pending".
+    const moves = (typeof dbGetRosterMoves === "function") ? dbGetRosterMoves() : [];
+    const recent = moves.find(m =>
+      m && m.kind === "callup" && m.player_name === player.name &&
+      m.at && (Date.now() - new Date(m.at).getTime()) < 24 * 60 * 60 * 1000
+    );
+    return recent ? "Call Up Pending" : "Dropped";
+  }
   const priceStr = (player.price !== undefined && player.price !== null) ? `$${player.price}` : "$TBD";
   if (ms.yearsRemaining !== null) {
     const yrs = ms.yearsRemaining;
@@ -978,12 +997,22 @@ function renderMinorsTable(players, teamId) {
               <button class="trade-btn" onclick="callUpMinorPlayer('${escapeJsString(p.name)}','${escapeJsString(teamId)}')"
                 style="font-size:0.72rem;padding:3px 8px;background:var(--purple);color:#fff">Call Up</button>
             </td>` : "";
+          const milTag = (() => {
+            if (ms.yearsRemaining === null) {
+              return ms.contractNote
+                ? `<span class="contract-tag contract-new">${escapeHtml(ms.contractNote)}</span>`
+                : '<span style="color:var(--text-dim);font-size:0.8rem">—</span>';
+            }
+            const yrs = ms.yearsRemaining;
+            const cls = yrs === 0 ? "final" : yrs === 1 ? "expiring" : "mid";
+            return `<span class="contract-tag contract-${cls}">${CURRENT_SEASON + yrs}</span>`;
+          })();
           return `
             <tr>
               <td><span class="player-name">${escapeHtml(p.name)}</span>${p.sendDownCount ? ` <span style="color:var(--red);font-size:0.65rem;font-weight:700">$${p.sendDownCount * 10} fee</span>` : ''}</td>
               <td class="player-year">${p.yearAcquired}</td>
               <td class="${statClass}">${statDisplay}</td>
-              <td><span style="color:var(--text-dim);font-size:0.8rem">${ms.yearsRemaining !== null ? (CURRENT_SEASON + ms.yearsRemaining) : (ms.contractNote || '—')}</span></td>
+              <td>${milTag}</td>
               <td>${
                 p._teamStatus === "dropped" ? '<span style="color:var(--orange);font-size:0.8rem">Dropped</span>' :
                 p._teamStatus === "traded"  ? '<span style="color:var(--accent);font-size:0.8rem">Traded</span>' :
@@ -1142,6 +1171,10 @@ let _tradesSubTab = "inbox";
 function setTradesSubTab(name) {
   _tradesSubTab = name;
   renderTradesShell();
+  // Keep the parent "Trades" tab badge in sync — opening the inbox sub-tab
+  // (and reading threads from there) marks them read in localStorage, but
+  // the badge only re-paints when we explicitly call renderHeaderUser.
+  if (typeof renderHeaderUser === "function") renderHeaderUser();
 }
 // Convenience for places that used to switchTab("trade-inbox") etc.
 function goToTrades(sub) {
@@ -1683,12 +1716,39 @@ const LUXURY_TAX_CAP = 350;
 // Rules: keepers and auction picks count at their stored price; free agents
 // count at $1; minor-league call-ups count at $0. Reads the current
 // ESPN-reconciled roster.
+// Is this callup "post-draft" (called up during the season → $1) or
+// "pre-draft" (came over from MiLB in the offseason → $0)?
+// Decision: check roster_moves (the app's call-up log) first; if no entry,
+// fall back to ESPN's ADD events. getMostRecentAddEvent only returns events
+// at or after snap.draftDate, so any hit there means it's a post-draft add.
+function _isPostDraftCallup(player) {
+  const snap = (typeof getEspnSnapshot === "function") ? getEspnSnapshot() : null;
+  const draftDate = snap?.draftDate || 0;
+  const moves = (typeof dbGetRosterMoves === "function") ? dbGetRosterMoves() : [];
+  const myMoves = moves.filter(m => m && m.kind === "callup" && m.player_name === player.name);
+  if (myMoves.length) {
+    // Pick the most recent app-side call-up record for this player.
+    const latest = myMoves.reduce((a, b) => (a.at > b.at ? a : b));
+    const ms = new Date(latest.at).getTime();
+    return ms > draftDate;
+  }
+  if (player.playerId != null) {
+    const lastAdd = (typeof getMostRecentAddEvent === "function") ? getMostRecentAddEvent(player.playerId) : null;
+    if (lastAdd) return true;
+  }
+  return false;
+}
+
 function getTeamLuxurySalary(team) {
   const players = (typeof getEligiblePlayers === "function") ? getEligiblePlayers(team) : [];
   let total = 0;
   for (const p of players) {
-    if (p.contractType === "callup") {
-      total += 0;
+    // Keeper-Price Exception always wins — the commissioner has set the
+    // player's "true" salary explicitly, so use it regardless of contractType.
+    if (p.priceExceptionApplied && typeof p.price === "number") {
+      total += p.price;
+    } else if (p.contractType === "callup") {
+      total += _isPostDraftCallup(p) ? 1 : 0;
     } else if (p.contractType === "fa") {
       total += 1;
     } else if (typeof p.price === "number") {
@@ -1704,13 +1764,18 @@ function renderLuxuryTaxTable() {
     const breakdown = players.map(p => {
       const isFa = p.contractType === "fa";
       const isCallup = p.contractType === "callup";
-      const counted = isCallup ? 0 : (isFa ? 1 : (typeof p.price === "number" ? p.price : 0));
+      const hasOverride = p.priceExceptionApplied && typeof p.price === "number";
+      const postDraftCallup = isCallup && _isPostDraftCallup(p);
+      const counted = hasOverride
+        ? p.price
+        : isCallup ? (postDraftCallup ? 1 : 0)
+        : (isFa ? 1 : (typeof p.price === "number" ? p.price : 0));
       // A player drafted in a prior season's auction and still on the roster
       // is a "keeper" for display purposes; only current-season auction picks
       // get the "auction" badge.
       const yearAcquired = p.yearAcquired;
       const isKeeper = p.contractType === "auction" && yearAcquired != null && yearAcquired < CURRENT_SEASON;
-      return { name: p.name, type: p.contractType, isKeeper, price: p.price, counted };
+      return { name: p.name, type: p.contractType, isKeeper, hasOverride, postDraftCallup, price: p.price, counted };
     });
     const salary = breakdown.reduce((s, b) => s + b.counted, 0);
     const over = salary > LUXURY_TAX_CAP;
@@ -1746,7 +1811,7 @@ function renderLuxuryTaxTable() {
               .sort((a, b) => b.counted - a.counted)
               .map(b => {
                 const note = b.type === "fa" ? "FA"
-                  : b.type === "callup" ? "call-up"
+                  : b.type === "callup" ? (b.postDraftCallup ? "call-up (post-draft)" : "call-up (pre-draft)")
                   : b.isKeeper ? "keeper"
                   : "auction";
                 const noteHtml = `<span style="color:var(--text-dim);font-size:0.72rem">${escapeHtml(note)}</span>`;
@@ -1889,7 +1954,7 @@ function renderFinancialsView() {
     <div class="keeper-projection" style="margin-bottom:14px">
       <h3 style="margin-top:0">Luxury Tax</h3>
       <div style="color:var(--text-dim);font-size:0.82rem;margin-bottom:10px">
-        Cap is $${LUXURY_TAX_CAP}. Keepers and auction picks count at their price; free agents count at $1; minor-league call-ups count at $0. Numbers reflect the current ESPN roster.
+        Cap is $${LUXURY_TAX_CAP}. Keepers and auction picks count at their price; free agents count at $1; pre-draft call-ups count at $0; post-draft call-ups count at $1. Numbers reflect the current ESPN roster.
       </div>
       ${renderLuxuryTaxTable()}
     </div>
@@ -4680,7 +4745,7 @@ function switchTab(tab) {
     case "settings":
       currentView = "settings";
       if (!isCommissioner()) {
-        content.innerHTML = '<div style="padding:30px;color:var(--text-dim);text-align:center">Settings are commissioner-only.</div>';
+        content.innerHTML = '<div style="padding:30px;color:var(--text-dim);text-align:center">Commissioner Tools are commissioner-only.</div>';
         break;
       }
       content.innerHTML = renderSettingsView();
@@ -4688,6 +4753,332 @@ function switchTab(tab) {
       // them after the container is in the DOM.
       if (typeof _refreshSnapshotList === "function") _refreshSnapshotList();
       break;
+    case "user-settings":
+      currentView = "user-settings";
+      content.innerHTML = renderUserSettingsView();
+      // Update the per-device Web Push state asynchronously (needs SW ready).
+      if (typeof _refreshPushStateLabel === "function") _refreshPushStateLabel();
+      break;
+  }
+}
+
+// ============================================================================
+// User Settings page — notification preferences (everyone)
+// ============================================================================
+
+// VAPID public key (urlsafe base64). Replace via Commissioner Tools → Web Push
+// section, or set the VAPID_PUBLIC_KEY constant via `npm run set-vapid` script.
+// Empty string means web push is disabled until the commish generates keys.
+const VAPID_PUBLIC_KEY = "BPLACEHOLDER_REPLACE_WITH_GENERATED_VAPID_PUBLIC_KEY";
+
+// Notification event taxonomy: each row defines its label and which channels
+// it supports. `email` = list of allowed frequencies. `push` = whether the
+// per-row push checkbox is shown.
+const NOTIFY_EVENTS = [
+  { key: "trade_proposal",   label: "Trade proposal received",      email: ["instant","daily","weekly","never"], push: true,  defaults: { email: "instant", push: true } },
+  { key: "trade_update",     label: "Trade proposal updates",        email: ["instant","daily","weekly","never"], push: true,  defaults: { email: "instant", push: true } },
+  { key: "trade_message",    label: "Trade thread message",          email: ["instant","daily","weekly","never"], push: true,  defaults: { email: "instant", push: true } },
+  { key: "trade_completed",  label: "Trade completed (any league trade)", email: ["instant","daily","weekly","never"], push: true,  defaults: { email: "daily", push: false } },
+  { key: "keeper_protect",   label: "Keeper protection changes",     email: ["daily","weekly","never"],            push: false, defaults: { email: "daily" } },
+  { key: "rule5_protect",    label: "Rule 5 protection changes",     email: ["daily","weekly","never"],            push: false, defaults: { email: "daily" } },
+  { key: "callup",           label: "Call-ups",                       email: ["daily","weekly","never"],            push: false, defaults: { email: "daily" } },
+  { key: "send_down",        label: "Send-downs",                     email: ["daily","weekly","never"],            push: false, defaults: { email: "daily" } },
+  { key: "draft_picks",      label: "Other teams' draft picks",       email: ["daily","weekly","never"],            push: false, defaults: { email: "daily" } },
+];
+
+const DRAFT_CLOCK_STATES = [
+  { key: "in_hole",  label: "In the hole" },
+  { key: "on_deck",  label: "On deck" },
+  { key: "on_clock", label: "On the clock" },
+];
+
+function getDefaultNotifyPrefs() {
+  const out = {};
+  for (const e of NOTIFY_EVENTS) {
+    out[e.key] = { email: e.defaults.email, push: e.push ? !!e.defaults.push : false };
+  }
+  out.draft_clock = { in_hole: { email: true, push: true }, on_deck: { email: true, push: true }, on_clock: { email: true, push: true } };
+  return out;
+}
+
+function getMyNotifyPrefs() {
+  if (typeof currentOwner === "undefined" || !currentOwner) return getDefaultNotifyPrefs();
+  const row = (typeof dbGetNotifyPrefs === "function") ? dbGetNotifyPrefs(currentOwner.team_id) : null;
+  if (!row) return getDefaultNotifyPrefs();
+  // Merge with defaults so newly-added event types pick up sensible values.
+  const defaults = getDefaultNotifyPrefs();
+  const merged = { ...defaults };
+  for (const k of Object.keys(row.prefs || {})) merged[k] = row.prefs[k];
+  return merged;
+}
+
+function renderUserSettingsView() {
+  if (typeof currentOwner === "undefined" || !currentOwner) {
+    return '<div style="padding:30px;color:var(--text-dim);text-align:center">Sign in to manage your notification preferences.</div>';
+  }
+  const teamId = currentOwner.team_id;
+  const teamName = LEAGUE_DATA.teams.find(t => t.id === teamId)?.name || teamId;
+  const prefs = getMyNotifyPrefs();
+  const myEmail = (currentUser && currentUser.email) || "";
+
+  // Push state — checked client-side, since this is per-device (subscription
+  // endpoint stored in DB). Will be filled in by setupSettingsPagePushUi().
+  const pushStateInitial = '<span id="settings-push-state" style="color:var(--text-dim);font-size:0.82rem">checking…</span>';
+
+  const eventRowsHtml = NOTIFY_EVENTS.map(e => {
+    const cur = prefs[e.key] || {};
+    const radios = e.email.map(freq => {
+      const id = `np-${e.key}-${freq}`;
+      const checked = cur.email === freq ? "checked" : "";
+      return `<label style="display:inline-flex;align-items:center;gap:4px;font-size:0.82rem;color:var(--text);cursor:pointer">
+        <input type="radio" name="np-${e.key}" id="${id}" value="${freq}" ${checked} onchange="setNotifyEmail('${e.key}', '${freq}')" style="accent-color:var(--accent)">
+        ${freq[0].toUpperCase() + freq.slice(1)}
+      </label>`;
+    }).join("&nbsp;&nbsp;");
+    const pushCol = e.push
+      ? `<label style="display:inline-flex;align-items:center;gap:5px;font-size:0.82rem;color:var(--text);cursor:pointer">
+          <input type="checkbox" ${cur.push ? "checked" : ""} onchange="setNotifyPush('${e.key}', this.checked)" style="accent-color:var(--accent)">
+          Push
+        </label>`
+      : `<span style="color:var(--text-dim);font-size:0.74rem">—</span>`;
+    return `<tr>
+      <td style="padding:9px 10px;color:var(--text);vertical-align:middle">${escapeHtml(e.label)}</td>
+      <td style="padding:9px 10px;vertical-align:middle">${radios}</td>
+      <td style="padding:9px 10px;text-align:center;vertical-align:middle">${pushCol}</td>
+    </tr>`;
+  }).join("");
+
+  const dc = prefs.draft_clock || {};
+  const dcRowsHtml = DRAFT_CLOCK_STATES.map(s => {
+    const c = dc[s.key] || {};
+    return `<tr>
+      <td style="padding:8px 10px;color:var(--text)">${escapeHtml(s.label)}</td>
+      <td style="padding:8px 10px;text-align:center">
+        <input type="checkbox" ${c.email ? "checked" : ""} onchange="setDraftClockChannel('${s.key}','email',this.checked)" style="accent-color:var(--accent)">
+      </td>
+      <td style="padding:8px 10px;text-align:center">
+        <input type="checkbox" ${c.push ? "checked" : ""} onchange="setDraftClockChannel('${s.key}','push',this.checked)" style="accent-color:var(--accent)">
+      </td>
+    </tr>`;
+  }).join("");
+
+  return `
+    <div style="max-width:840px">
+      <h2 style="color:var(--text-bright);margin-bottom:6px">Settings</h2>
+      <div style="color:var(--text-dim);font-size:0.82rem;margin-bottom:18px">
+        Manager preferences for <strong>${escapeHtml(teamName)}</strong>${myEmail ? ` · emails go to <code>${escapeHtml(myEmail)}</code>` : ""}.
+      </div>
+
+      <div class="keeper-projection" style="margin-bottom:14px">
+        <h3 style="margin-top:0">Notifications</h3>
+        <div style="color:var(--text-dim);font-size:0.82rem;margin-bottom:10px">
+          Choose how you want to hear about each kind of event. Email frequency for keeper-protection / Rule 5 / call-up / send-down / other teams' picks tops out at Daily. Push is only available for event types that fire in real time.
+        </div>
+        <div style="overflow-x:auto">
+          <table class="player-table" style="font-size:0.85rem;width:100%;max-width:760px">
+            <thead>
+              <tr>
+                <th style="text-align:left">Event</th>
+                <th style="text-align:left">Email</th>
+                <th style="text-align:center;width:80px">Push</th>
+              </tr>
+            </thead>
+            <tbody>${eventRowsHtml}</tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="keeper-projection" style="margin-bottom:14px">
+        <h3 style="margin-top:0">Draft alerts (your team)</h3>
+        <div style="color:var(--text-dim);font-size:0.82rem;margin-bottom:10px">
+          Get notified when your team's pick is coming up. (No per-pick spam — just these three states.)
+        </div>
+        <table class="player-table" style="font-size:0.85rem;width:100%;max-width:520px">
+          <thead>
+            <tr>
+              <th style="text-align:left">State</th>
+              <th style="text-align:center;width:90px">Email</th>
+              <th style="text-align:center;width:90px">Push</th>
+            </tr>
+          </thead>
+          <tbody>${dcRowsHtml}</tbody>
+        </table>
+      </div>
+
+      <div class="keeper-projection" style="margin-bottom:14px">
+        <h3 style="margin-top:0">Web Push on this device</h3>
+        <div style="color:var(--text-dim);font-size:0.82rem;margin-bottom:10px">
+          Push notifications work per-device. Enable on each phone or browser you want to receive them on. Push delivery requires HTTPS — already in place.
+        </div>
+        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+          ${pushStateInitial}
+          <button class="trade-btn" onclick="enablePushOnThisDevice()" style="font-size:0.85rem">Enable Push on this device</button>
+          <button class="trade-btn trade-btn-cancel" onclick="disablePushOnThisDevice()" style="font-size:0.85rem">Disable</button>
+          <button class="trade-btn" onclick="sendTestNotification()" style="font-size:0.85rem;background:var(--purple);color:#fff">Send test notification</button>
+        </div>
+        <div id="settings-push-error" style="color:var(--red);font-size:0.78rem;margin-top:8px;display:none"></div>
+      </div>
+    </div>
+  `;
+}
+
+async function setNotifyEmail(eventKey, freq) {
+  if (!currentOwner) return;
+  const prefs = getMyNotifyPrefs();
+  if (!prefs[eventKey]) prefs[eventKey] = {};
+  prefs[eventKey].email = freq;
+  await _saveMyNotifyPrefs(prefs);
+}
+
+async function setNotifyPush(eventKey, on) {
+  if (!currentOwner) return;
+  const prefs = getMyNotifyPrefs();
+  if (!prefs[eventKey]) prefs[eventKey] = {};
+  prefs[eventKey].push = !!on;
+  await _saveMyNotifyPrefs(prefs);
+}
+
+async function setDraftClockChannel(stateKey, channel, on) {
+  if (!currentOwner) return;
+  const prefs = getMyNotifyPrefs();
+  if (!prefs.draft_clock) prefs.draft_clock = {};
+  if (!prefs.draft_clock[stateKey]) prefs.draft_clock[stateKey] = {};
+  prefs.draft_clock[stateKey][channel] = !!on;
+  await _saveMyNotifyPrefs(prefs);
+}
+
+async function _saveMyNotifyPrefs(prefs) {
+  if (typeof saveNotifyPrefsAsync !== "function" || !currentOwner) return;
+  try {
+    await saveNotifyPrefsAsync({
+      teamId: currentOwner.team_id,
+      prefs,
+      receiveAll: !!(dbGetNotifyPrefs?.(currentOwner.team_id)?.receiveAll),
+      email: (currentUser && currentUser.email) || null,
+    });
+    if (typeof showToast === "function") showToast("Saved");
+  } catch (e) {
+    alert("Couldn't save: " + (e.message || e));
+  }
+}
+
+// ---------- Web Push subscribe / unsubscribe / test ----------
+
+function _urlBase64ToUint8Array(base64String) {
+  const padding = "=".repeat((4 - base64String.length % 4) % 4);
+  const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+  const raw = window.atob(base64);
+  const out = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; ++i) out[i] = raw.charCodeAt(i);
+  return out;
+}
+
+function _setPushStateLabel(text, color) {
+  const el = document.getElementById("settings-push-state");
+  if (el) { el.textContent = text; el.style.color = color || "var(--text-dim)"; }
+}
+
+function _showPushError(msg) {
+  const el = document.getElementById("settings-push-error");
+  if (el) { el.textContent = msg; el.style.display = msg ? "block" : "none"; }
+}
+
+async function _refreshPushStateLabel() {
+  _showPushError("");
+  if (!("Notification" in window) || !("serviceWorker" in navigator) || !("PushManager" in window)) {
+    _setPushStateLabel("This browser doesn't support push notifications.", "var(--text-dim)");
+    return;
+  }
+  const reg = await navigator.serviceWorker.ready;
+  const sub = await reg.pushManager.getSubscription();
+  if (!sub) {
+    _setPushStateLabel("Not enabled on this device.", "var(--text-dim)");
+    return;
+  }
+  const known = (typeof dbHasPushSubForEndpoint === "function") ? dbHasPushSubForEndpoint(sub.endpoint) : true;
+  _setPushStateLabel(known ? "Enabled on this device." : "Subscribed locally but not synced to server.", known ? "var(--green)" : "var(--orange)");
+}
+
+async function enablePushOnThisDevice() {
+  _showPushError("");
+  try {
+    if (!("Notification" in window)) throw new Error("Notifications not supported in this browser.");
+    if (!("serviceWorker" in navigator) || !("PushManager" in window)) throw new Error("Service Worker / Push API not available.");
+    if (!VAPID_PUBLIC_KEY || VAPID_PUBLIC_KEY.startsWith("BPLACEHOLDER")) {
+      throw new Error("Web Push isn't set up yet — the commissioner needs to generate VAPID keys (see scripts/generate_vapid.py).");
+    }
+    let perm = Notification.permission;
+    if (perm === "default") perm = await Notification.requestPermission();
+    if (perm !== "granted") throw new Error("Notification permission denied.");
+    const reg = await navigator.serviceWorker.ready;
+    let sub = await reg.pushManager.getSubscription();
+    if (!sub) {
+      sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: _urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
+      });
+    }
+    const json = sub.toJSON();
+    if (typeof savePushSubscriptionAsync === "function" && currentOwner) {
+      try {
+        await savePushSubscriptionAsync({
+          teamId: currentOwner.team_id,
+          userId: currentUser.id,
+          endpoint: sub.endpoint,
+          p256dh: json.keys?.p256dh || "",
+          authKey: json.keys?.auth || "",
+          userAgent: navigator.userAgent,
+        });
+      } catch (e) {
+        if (!/duplicate/i.test(e.message || "")) throw e;
+      }
+    }
+    await _refreshPushStateLabel();
+    if (typeof showToast === "function") showToast("Push enabled on this device");
+  } catch (e) {
+    _showPushError(e.message || String(e));
+  }
+}
+
+async function disablePushOnThisDevice() {
+  _showPushError("");
+  try {
+    if (!("serviceWorker" in navigator)) return;
+    const reg = await navigator.serviceWorker.ready;
+    const sub = await reg.pushManager.getSubscription();
+    if (sub) {
+      const endpoint = sub.endpoint;
+      await sub.unsubscribe();
+      if (typeof deletePushSubscriptionAsync === "function") {
+        try { await deletePushSubscriptionAsync(endpoint); } catch {}
+      }
+    }
+    await _refreshPushStateLabel();
+    if (typeof showToast === "function") showToast("Push disabled on this device");
+  } catch (e) {
+    _showPushError(e.message || String(e));
+  }
+}
+
+// Local-only notification — no server needed. Useful for previewing how push
+// notifications will look on this device.
+async function sendTestNotification() {
+  _showPushError("");
+  try {
+    if (!("Notification" in window)) throw new Error("Notifications not supported in this browser.");
+    let perm = Notification.permission;
+    if (perm === "default") perm = await Notification.requestPermission();
+    if (perm !== "granted") throw new Error("Notification permission denied.");
+    const reg = await navigator.serviceWorker.ready;
+    await reg.showNotification("The League — test notification", {
+      body: "If you can see this, push notifications work on this device. 🎉",
+      icon: "/the-league/icons/icon-192.png",
+      badge: "/the-league/icons/icon-64.png",
+      tag: "the-league-test",
+      data: { url: "/the-league/?tab=user-settings" },
+    });
+  } catch (e) {
+    _showPushError(e.message || String(e));
   }
 }
 
@@ -4698,7 +5089,7 @@ function renderSettingsView() {
   const season = (typeof settings.currentSeason === "number") ? settings.currentSeason : DEFAULT_SEASON;
   return `
     <div style="max-width:720px">
-      <h2 style="color:var(--text-bright);margin-bottom:4px">Settings</h2>
+      <h2 style="color:var(--text-bright);margin-bottom:4px">Commissioner Tools</h2>
       <div style="color:var(--text-dim);font-size:0.82rem;margin-bottom:18px">Commissioner-only. Changes apply league-wide for everyone.</div>
 
       <div class="keeper-projection" style="margin-bottom:14px">
@@ -4938,12 +5329,22 @@ async function submitDeleteSnapshot(key, label) {
 function exportContractsCsv() {
   if (!isCommissioner()) { alert("Commissioners only."); return; }
   if (typeof applyRosterAdjustments === "function") applyRosterAdjustments();
+  const sel = (typeof dbGetKeeperSelections === "function") ? dbGetKeeperSelections() : {};
+  const priceExceptions = (typeof dbGetKeeperPriceExceptions === "function") ? dbGetKeeperPriceExceptions() : {};
+  const yn = (b) => b ? "Y" : "";
   const rows = [];
-  rows.push(["Team","Roster","Player","Year Acquired","Salary","Expiry","Status","Source"]);
+  rows.push([
+    "Team","Roster","Player","Year Acquired","Salary","Expiry",
+    "Contract Status","Contract Label","Source","Contract Type",
+    "Keeper Flag","Minor Keeper Flag","Rule 5 Flag","Trade Block Flag",
+    "Price Exception Applied","ESPN Player ID","Injury Status","Notes",
+  ]);
 
   for (const team of LEAGUE_DATA.teams) {
+    const teamFlags = sel[team.id] || {};
     const majors = (typeof getEligiblePlayers === "function") ? getEligiblePlayers(team) : [];
     for (const p of majors) {
+      const flags = teamFlags[p.name] || {};
       const expiry = (p.yearsRemaining != null) ? (CURRENT_SEASON + p.yearsRemaining) : "";
       rows.push([
         team.name,
@@ -4952,11 +5353,22 @@ function exportContractsCsv() {
         p.yearAcquired ?? "",
         p.price != null ? `$${p.price}` : "",
         String(expiry),
-        p.contractLabel || p.contractStatus || "",
-        p.source || p.contractType || "",
+        p.contractStatus || "",
+        p.contractLabel || "",
+        p.source || "",
+        p.contractType || "",
+        yn(flags.keeper),
+        yn(flags.minorKeeper),
+        yn(flags.rule5),
+        yn(flags.tradeBlock),
+        yn(p.priceExceptionApplied),
+        p.playerId ?? "",
+        p.injuryStatus || "",
+        "",
       ]);
     }
     for (const p of (team.callups || [])) {
+      const flags = teamFlags[p.name] || {};
       const ms = getMinorLeagueContractStatus(p, CURRENT_SEASON);
       const expiry = (ms.yearsRemaining != null) ? (CURRENT_SEASON + ms.yearsRemaining) : (ms.contractNote || "");
       rows.push([
@@ -4966,11 +5378,22 @@ function exportContractsCsv() {
         p.yearAcquired ?? "",
         p.price != null ? `$${p.price}` : "",
         String(expiry),
+        ms.eligibilityWarning ? "must-call-up" : "active",
         ms.eligibilityWarning ? `Must Call Up by ${ms.eligibilityWarning}` : "Active",
         "callup",
+        "callup",
+        yn(flags.keeper),
+        yn(flags.minorKeeper),
+        yn(flags.rule5),
+        yn(flags.tradeBlock),
+        yn(priceExceptions[p.name] != null),
+        "",
+        "",
+        p.sendDownCount ? `${p.sendDownCount} prior send-down(s)` : "",
       ]);
     }
     for (const p of (team.minors || [])) {
+      const flags = teamFlags[p.name] || {};
       const ms = getMinorLeagueContractStatus(p, CURRENT_SEASON);
       const expiry = (ms.yearsRemaining != null) ? (CURRENT_SEASON + ms.yearsRemaining) : (ms.contractNote || "");
       rows.push([
@@ -4980,8 +5403,18 @@ function exportContractsCsv() {
         p.yearAcquired ?? "",
         "",
         String(expiry),
+        ms.eligibilityWarning ? "must-call-up" : "active",
         ms.eligibilityWarning ? `Must Call Up by ${ms.eligibilityWarning}` : "Active",
         "minors",
+        "minors",
+        yn(flags.keeper),
+        yn(flags.minorKeeper),
+        yn(flags.rule5),
+        yn(flags.tradeBlock),
+        yn(priceExceptions[p.name] != null),
+        "",
+        "",
+        p.sendDownCount ? `${p.sendDownCount} prior send-down(s)` : "",
       ]);
     }
   }

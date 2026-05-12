@@ -23,6 +23,8 @@ const _cache = {
   settings: {},        // { currentSeason?, enforceRule5RosterSpot?, enforceMinorsRosterSpot? }
   feesPaid: {},        // { teamId: { league: bool, callup: bool } }
   keeperPriceExceptions: {}, // { playerName: truePrice } — overrides ESPN-displayed price
+  notifyPrefs: {},     // { teamId: { prefs: {...}, receive_all, email } }
+  pushSubs: [],        // [{ id, team_id, user_id, endpoint, ... }]
 };
 // Cross-conversation read state for the trade inbox: { threadId: lastReadAt }.
 // Anything in the thread newer than lastReadAt counts as unread (covers BOTH
@@ -69,7 +71,7 @@ function onDbReady(fn) {
 }
 
 async function _fetchAll() {
-  const [trades, ks, ls, co, act, props, msgs, rm] = await Promise.all([
+  const [trades, ks, ls, co, act, props, msgs, rm, np, ps] = await Promise.all([
     supabaseClient.from("trades").select("*").order("created_at", { ascending: true }),
     supabaseClient.from("keeper_selections").select("*"),
     supabaseClient.from("league_state").select("*"),
@@ -78,6 +80,8 @@ async function _fetchAll() {
     supabaseClient.from("trade_proposals").select("*").order("created_at", { ascending: false }),
     supabaseClient.from("trade_proposal_messages").select("*").order("created_at", { ascending: true }),
     supabaseClient.from("roster_moves").select("*").order("at", { ascending: true }),
+    supabaseClient.from("notification_prefs").select("*"),
+    supabaseClient.from("push_subscriptions").select("*"),
   ]);
   // Surface query errors so a transient network/RLS issue doesn't silently
   // wipe the UI to empty caches. Each table is independent — we still load
@@ -97,6 +101,17 @@ async function _fetchAll() {
   _surface("trade_proposals", props);
   _surface("trade_proposal_messages", msgs);
   _surface("roster_moves", rm);
+  _surface("notification_prefs", np);
+  _surface("push_subscriptions", ps);
+  _cache.notifyPrefs = {};
+  for (const r of (np.data || [])) {
+    _cache.notifyPrefs[r.team_id] = {
+      prefs: r.prefs || {},
+      receiveAll: !!r.receive_all,
+      email: r.email || null,
+    };
+  }
+  _cache.pushSubs = ps.data || [];
   _cache.activity = act.data || [];
   _cache.proposals = props.data || [];
   _cache.messages = msgs.data || [];
@@ -318,6 +333,10 @@ function _subscribeToChanges() {
       })
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "trade_proposal_messages" }, async () => {
         await _fetchAll();
+        // Always update the badge regardless of which tab/sub-tab the user is
+        // on — otherwise the Trades nav count goes stale on mobile (the only
+        // visible badge until you open the drawer).
+        if (typeof renderHeaderUser === "function") renderHeaderUser();
         const ae = document.activeElement;
         const userIsTyping = ae && (ae.tagName === "INPUT" || ae.tagName === "TEXTAREA" || ae.tagName === "SELECT" || ae.isContentEditable);
         if (userIsTyping) return;
@@ -447,6 +466,19 @@ function dbGetWorkaroundOverrides() { return _clone(_cache.workaroundOverrides);
 function dbGetSettings() { return _clone(_cache.settings || {}); }
 function dbGetFeesPaid() { return _clone(_cache.feesPaid || {}); }
 function dbGetKeeperPriceExceptions() { return _clone(_cache.keeperPriceExceptions || {}); }
+function dbGetNotifyPrefs(teamId) {
+  const row = (_cache.notifyPrefs || {})[teamId];
+  return row ? _clone(row) : null;
+}
+function dbGetAllNotifyPrefs() { return _clone(_cache.notifyPrefs || {}); }
+function dbGetPushSubs() { return _clone(_cache.pushSubs || []); }
+function dbCountMyPushSubs() {
+  if (typeof currentUser === "undefined" || !currentUser) return 0;
+  return (_cache.pushSubs || []).filter(s => s.user_id === currentUser.id).length;
+}
+function dbHasPushSubForEndpoint(endpoint) {
+  return (_cache.pushSubs || []).some(s => s.endpoint === endpoint);
+}
 function dbGetActivity() { return _cache.activity; }            // read-only
 function dbGetProposals() { return _cache.proposals; }          // read-only
 function dbGetMessages() { return _cache.messages; }            // read-only
@@ -665,6 +697,45 @@ async function saveKeeperDeadlineAsync(state)   { return _saveLeagueStateAsync("
 async function saveSettingsAsync(s)             { return _saveLeagueStateAsync("settings", s, "settings"); }
 async function saveFeesPaidAsync(m)             { return _saveLeagueStateAsync("fees_paid", m, "feesPaid"); }
 async function saveKeeperPriceExceptionsAsync(m){ return _saveLeagueStateAsync("keeper_price_exceptions", m, "keeperPriceExceptions"); }
+
+async function saveNotifyPrefsAsync({ teamId, prefs, receiveAll, email }) {
+  if (!teamId) throw new Error("teamId required");
+  const row = {
+    team_id: teamId,
+    prefs: prefs || {},
+    receive_all: !!receiveAll,
+    email: email || null,
+  };
+  // Optimistic cache update; revert on error.
+  const prev = _cache.notifyPrefs[teamId];
+  _cache.notifyPrefs[teamId] = { prefs: row.prefs, receiveAll: row.receive_all, email: row.email };
+  try {
+    const { error } = await supabaseClient.from("notification_prefs").upsert(row);
+    if (error) throw error;
+  } catch (e) {
+    if (prev) _cache.notifyPrefs[teamId] = prev; else delete _cache.notifyPrefs[teamId];
+    throw e;
+  }
+}
+
+async function savePushSubscriptionAsync({ teamId, userId, endpoint, p256dh, authKey, userAgent }) {
+  const row = {
+    team_id: teamId,
+    user_id: userId,
+    endpoint, p256dh, auth_key: authKey,
+    user_agent: userAgent || null,
+  };
+  const { data, error } = await supabaseClient.from("push_subscriptions").insert(row).select().single();
+  if (error) throw error;
+  _cache.pushSubs = [...(_cache.pushSubs || []), data];
+  return data;
+}
+
+async function deletePushSubscriptionAsync(endpoint) {
+  const { error } = await supabaseClient.from("push_subscriptions").delete().eq("endpoint", endpoint);
+  if (error) throw error;
+  _cache.pushSubs = (_cache.pushSubs || []).filter(s => s.endpoint !== endpoint);
+}
 async function saveConstitutionAsync(markdown) {
   const prev = _cache.constitution;
   _cache.constitution = markdown;

@@ -11,7 +11,7 @@
 // Bump CACHE_VERSION when changing the SW logic itself (not for app code —
 // that's handled by ?v=N at the script tags).
 
-const CACHE_VERSION = "the-league-v5";
+const CACHE_VERSION = "the-league-v6";
 const STATIC_ASSETS = [
   "./",
   "./index.html",
@@ -62,6 +62,44 @@ self.addEventListener("activate", (event) => {
       await self.clients.claim();
     })()
   );
+});
+
+// --- Web Push ---
+//
+// Server (scripts/notify_*.py) sends JSON payloads with shape:
+//   { title: "...", body: "...", url: "/the-league/?tab=trades&sub=inbox", tag: "..." }
+// `tag` lets a newer notification of the same kind replace an older one.
+
+self.addEventListener("push", (event) => {
+  let data = {};
+  try { data = event.data ? event.data.json() : {}; } catch { data = { body: (event.data && event.data.text()) || "" }; }
+  const title = data.title || "The League";
+  const options = {
+    body: data.body || "",
+    icon: "/the-league/icons/icon-192.png",
+    badge: "/the-league/icons/icon-64.png",
+    data: { url: data.url || "/the-league/" },
+    tag: data.tag,
+    renotify: !!data.tag,
+  };
+  event.waitUntil(self.registration.showNotification(title, options));
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const targetUrl = (event.notification.data && event.notification.data.url) || "/the-league/";
+  event.waitUntil((async () => {
+    const allClients = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+    // Re-use an open The League tab if one exists.
+    for (const c of allClients) {
+      if (c.url.includes("/the-league") && "focus" in c) {
+        await c.focus();
+        if ("navigate" in c) c.navigate(targetUrl).catch(() => {});
+        return;
+      }
+    }
+    if (self.clients.openWindow) await self.clients.openWindow(targetUrl);
+  })());
 });
 
 self.addEventListener("fetch", (event) => {
