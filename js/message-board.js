@@ -183,6 +183,7 @@
     _open = true;
     const panel = document.getElementById("msgboard-panel");
     if (panel) panel.style.display = "flex";
+    if (typeof window.lockBodyForOverlay === "function") window.lockBodyForOverlay("msgboard");
     _renderBoard();
     setTimeout(() => {
       const input = document.getElementById("msgboard-input");
@@ -194,6 +195,7 @@
     _open = false;
     const panel = document.getElementById("msgboard-panel");
     if (panel) panel.style.display = "none";
+    if (typeof window.unlockBodyForOverlay === "function") window.unlockBodyForOverlay("msgboard");
   }
 
   // Expose close so the chatbot can dismiss us when it opens.

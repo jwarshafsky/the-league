@@ -236,8 +236,10 @@
     panel.style.display = _open ? "flex" : "none";
     if (_open) {
       fab.innerHTML = "×";
+      if (typeof window.lockBodyForOverlay === "function") window.lockBodyForOverlay("rules-bot");
     } else {
       fab.innerHTML = '<img id="rules-bot-fab-icon" src="icons/commish-ai.png" alt="" style="position:absolute;top:50%;left:50%;width:135%;height:135%;transform:translate(-50%,-50%);object-fit:contain;pointer-events:none">';
+      if (typeof window.unlockBodyForOverlay === "function") window.unlockBodyForOverlay("rules-bot");
     }
     // Mutually exclusive with the message board — only one slide-up at a time.
     if (_open && typeof window.closeMessageBoard === "function") window.closeMessageBoard();

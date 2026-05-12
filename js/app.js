@@ -1,5 +1,40 @@
 // Fantasy League Manager - Main App
 
+// Body scroll lock for slide-up overlays (CommishAI, Message Board). iOS
+// Safari scrolls the body when a focused input is near the bottom of the
+// page, which yanks the overlay around as the keyboard opens. Pinning the
+// body in place while an overlay is open keeps everything stable.
+(function () {
+  const _active = new Set();
+  let _savedScrollY = 0;
+  window.lockBodyForOverlay = function (key) {
+    if (_active.has(key)) return;
+    if (_active.size === 0) {
+      _savedScrollY = window.scrollY || window.pageYOffset || 0;
+      const b = document.body;
+      b.style.position = "fixed";
+      b.style.top = `-${_savedScrollY}px`;
+      b.style.left = "0";
+      b.style.right = "0";
+      b.style.width = "100%";
+    }
+    _active.add(key);
+  };
+  window.unlockBodyForOverlay = function (key) {
+    if (!_active.has(key)) return;
+    _active.delete(key);
+    if (_active.size === 0) {
+      const b = document.body;
+      b.style.position = "";
+      b.style.top = "";
+      b.style.left = "";
+      b.style.right = "";
+      b.style.width = "";
+      window.scrollTo(0, _savedScrollY);
+    }
+  };
+})();
+
 // CURRENT_SEASON defaults to 2026 but can be overridden by the commissioner
 // via the Settings tab (stored in league_state.settings.currentSeason).
 // Kept as a `let` so existing references pick up the new value automatically
@@ -6627,7 +6662,10 @@ function renderRule5View() {
     `;
   } else {
     const team = LEAGUE_DATA.teams.find(t => t.id === cur.teamId);
-    const sortedRemaining = [...remaining].sort((a, b) => lastName(a.name).localeCompare(lastName(b.name)));
+    // Exclude players from the on-the-clock team's own roster — you can't
+    // select your own player in Rule 5.
+    const eligibleForCur = remaining.filter(p => p.originTeamId !== cur.teamId);
+    const sortedRemaining = [...eligibleForCur].sort((a, b) => lastName(a.name).localeCompare(lastName(b.name)));
     const myTeam = (typeof currentOwner !== "undefined" && currentOwner) ? currentOwner.team_id : null;
     const onTheClock = cur.teamId === myTeam;
     const canPick = commish || onTheClock;
@@ -6797,6 +6835,10 @@ function makeRule5Pick(playerName) {
   if (!poolEntry) { alert("Player not in pool"); return; }
   const pickedAlready = state.picks.some(p => p.playerName === playerName);
   if (pickedAlready) { alert("Already picked"); return; }
+  if (poolEntry.originTeamId === cur.teamId) {
+    alert("You can't draft a player from your own organization in Rule 5.");
+    return;
+  }
   // Roster spot enforcement (toggle in Settings). Rule 5 picks of MLB-eligible
   // players add to the 25-man ML roster; picks of MiLB-eligible players add to
   // the 10-man MiL roster. Check whichever bucket the player would land in.
