@@ -598,32 +598,52 @@ body {
      scroll horizontally. Numeric / short cells stay nowrap. */
   .player-table {
     width: 100%;
-    table-layout: fixed;
+    table-layout: auto;     /* let numeric cols shrink to content */
     border-collapse: collapse;
-    word-wrap: break-word;
   }
   .player-table th, .player-table td {
-    overflow: hidden;
-    text-overflow: ellipsis;
+    padding: 5px 4px;
   }
+  /* Player-name cell wraps at word boundaries (spaces). overflow-wrap
+     handles the rare case of an unbroken string longer than the column;
+     but word-break:normal stops the mid-word breaks that turned
+     "Fernando Tatis Jr." into "Fernand"/"o Tatis"/"Jr." */
   .player-table .player-name {
     white-space: normal;
-    word-break: break-word;
+    word-break: normal;
+    overflow-wrap: break-word;
+    hyphens: none;
+    -webkit-hyphens: none;
+    line-height: 1.25;
   }
-  /* Numeric / short columns stay tight on a single line. */
-  .player-table .player-year,
-  .player-table td.stat-warning,
-  .player-table td.stat-caution {
+  /* Numeric / short columns stay tight on a single line, hugging their
+     content so the Player column gets the remaining width. Skipped on
+     mobile-stack-table because those cells are display:flex rows where
+     width:1% would collapse the whole row to 3px. */
+  .player-table:not(.mobile-stack-table) .player-year,
+  .player-table:not(.mobile-stack-table) .player-price,
+  .player-table:not(.mobile-stack-table) td.stat-warning,
+  .player-table:not(.mobile-stack-table) td.stat-caution {
     white-space: nowrap;
+    width: 1%;
   }
 
-  /* Select Keepers tables: hide Source (col 2) and 2026 $ (col 3) on mobile
-     so the remaining columns (Player, 2027 $, Expiry, Rule 5, Keep, Block)
-     have room to breathe. */
+  /* Select Keepers tables: hide Source (col 2) and CURRENT-SEASON $ (col 3)
+     on mobile so Player, NEXT $, Expiry, Rule 5, Keep, Block have room. */
   .eligible-keepers-table tr > *:nth-child(2),
   .eligible-keepers-table tr > *:nth-child(3) {
     display: none;
   }
+  /* Eligible Keepers: explicit narrow widths on the trailing 5 columns so
+     Player gets every leftover pixel. Padding tightened on the 3 checkbox
+     cols since the checkbox itself is only ~16px and they're center-aligned. */
+  .eligible-keepers-table { table-layout: fixed; }
+  .eligible-keepers-table tr > *:nth-child(1) { width: auto; }          /* Player */
+  .eligible-keepers-table tr > *:nth-child(4) { width: 44px; white-space: nowrap; }   /* Next $ */
+  .eligible-keepers-table tr > *:nth-child(5) { width: 48px; white-space: nowrap; }   /* Expiry */
+  .eligible-keepers-table tr > *:nth-child(6),
+  .eligible-keepers-table tr > *:nth-child(7) { width: 34px; padding: 5px 2px; }      /* Rule 5 / Keep */
+  .eligible-keepers-table tr > *:nth-child(8) { width: 42px; padding: 5px 2px; }      /* On the Block */
 
   /* Status badges (e.g. "2027 Must Call Up", "Called up") that crowd the
      player-name cell on phone screens. Still rendered on desktop. */

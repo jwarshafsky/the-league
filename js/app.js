@@ -948,7 +948,7 @@ function renderCallupsTable(players, teamId) {
   const showSendDown = teamId && canEditTeam(teamId);
   const headerActionCol = showSendDown ? "<th></th>" : "";
   return `
-    <table class="player-table">
+    <table class="player-table mobile-stack-table">
       <thead><tr><th>Player</th><th>Drafted</th><th>Career Stats</th><th>Status</th>${headerActionCol}</tr></thead>
       <tbody>
         ${players.map(p => {
@@ -959,16 +959,16 @@ function renderCallupsTable(players, teamId) {
           const belowThreshold = (p.statType === "AB" && p.careerStat < 200) || (p.statType === "IP" && p.careerStat < 50);
           const onEspnRoster = typeof isPlayerDroppedFromEspn === "function" ? !isPlayerDroppedFromEspn(p.name) : true;
           const actionCell = showSendDown ? `
-            <td style="text-align:right">
+            <td data-label="" style="text-align:right">
               ${belowThreshold && onEspnRoster ? `<button class="trade-btn" onclick="sendDownPlayer('${escapeJsString(p.name)}','${escapeJsString(teamId)}')"
                 style="font-size:0.72rem;padding:3px 8px;background:var(--orange);color:#fff">Send Down</button>` : ""}
             </td>` : "";
           return `
             <tr>
-              <td><span class="player-name">${escapeHtml(p.name)}</span></td>
-              <td class="player-year">${p.yearAcquired}</td>
-              <td class="${statClass}">${statDisplay}</td>
-              <td><span style="color:var(--text-dim);font-size:0.8rem">${formatCallupStatus(p, ms)}</span></td>
+              <td class="notif-row-label"><span class="player-name">${escapeHtml(p.name)}</span></td>
+              <td data-label="Drafted" class="player-year">${p.yearAcquired}</td>
+              <td data-label="Career" class="${statClass}">${statDisplay}</td>
+              <td data-label="Status"><span style="color:var(--text-dim);font-size:0.8rem">${formatCallupStatus(p, ms)}</span></td>
               ${actionCell}
             </tr>
           `;
@@ -1019,7 +1019,7 @@ function renderMinorsTable(players, teamId) {
   const showCallUp = teamId && canEditTeam(teamId);
   const headerActionCol = showCallUp ? "<th></th>" : "";
   return `
-    <table class="player-table">
+    <table class="player-table mobile-stack-table">
       <thead><tr><th>Player</th><th>Drafted</th><th>Career Stats</th><th>Expiry</th><th>Status</th>${headerActionCol}</tr></thead>
       <tbody>
         ${players.map(p => {
@@ -1028,7 +1028,7 @@ function renderMinorsTable(players, teamId) {
           let statClass = "";
           if ((p.statType === "AB" && p.careerStat >= 200) || (p.statType === "IP" && p.careerStat >= 50)) statClass = "stat-warning";
           const actionCell = showCallUp ? `
-            <td style="text-align:right">
+            <td data-label="" style="text-align:right">
               <button class="trade-btn" onclick="callUpMinorPlayer('${escapeJsString(p.name)}','${escapeJsString(teamId)}')"
                 style="font-size:0.72rem;padding:3px 8px;background:var(--purple);color:#fff">Call Up</button>
             </td>` : "";
@@ -1044,11 +1044,11 @@ function renderMinorsTable(players, teamId) {
           })();
           return `
             <tr>
-              <td><span class="player-name">${escapeHtml(p.name)}</span>${p.sendDownCount ? ` <span style="color:var(--red);font-size:0.65rem;font-weight:700">$${p.sendDownCount * 10} fee</span>` : ''}</td>
-              <td class="player-year">${p.yearAcquired}</td>
-              <td class="${statClass}">${statDisplay}</td>
-              <td>${milTag}</td>
-              <td>${
+              <td class="notif-row-label"><span class="player-name">${escapeHtml(p.name)}</span>${p.sendDownCount ? ` <span style="color:var(--red);font-size:0.65rem;font-weight:700">$${p.sendDownCount * 10} fee</span>` : ''}</td>
+              <td data-label="Drafted" class="player-year">${p.yearAcquired}</td>
+              <td data-label="Career" class="${statClass}">${statDisplay}</td>
+              <td data-label="Expiry">${milTag}</td>
+              <td data-label="Status">${
                 p._teamStatus === "dropped" ? '<span style="color:var(--orange);font-size:0.8rem">Dropped</span>' :
                 p._teamStatus === "traded"  ? '<span style="color:var(--accent);font-size:0.8rem">Traded</span>' :
                 ms.eligibilityWarning ? `<span class="hide-on-mobile" style="color:var(--orange);font-size:0.8rem">${ms.eligibilityWarning}</span>` :
