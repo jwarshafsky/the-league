@@ -4969,8 +4969,6 @@ function renderUserSettingsView() {
         Manager preferences for <strong>${escapeHtml(teamName)}</strong>${myEmail ? ` · emails go to <code>${escapeHtml(myEmail)}</code>` : ""}.
       </div>
 
-      ${renderInstallSection()}
-
       <div class="keeper-projection" style="margin-bottom:14px">
         <h3 style="margin-top:0">Notifications</h3>
         <div style="color:var(--text-dim);font-size:0.82rem;margin-bottom:10px">
@@ -5027,6 +5025,8 @@ function renderUserSettingsView() {
           <span style="display:block">• <strong>iOS</strong>: install the app to the Home Screen first (Share → Add to Home Screen), then open from there.</span>
         </div>
       </div>
+
+      ${renderInstallSection()}
     </div>
   `;
 }
