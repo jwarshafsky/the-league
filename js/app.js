@@ -1034,6 +1034,40 @@ function renderMajorsTable(players) {
   `;
 }
 
+// Shared colgroup so the Callups and Minors tables line up vertically on the
+// Minors Rosters tab. Action column is only present when the viewer can edit
+// the team — both tables agree on its presence.
+function _minorsTablesColgroup(showActions) {
+  if (showActions) {
+    return `<colgroup>
+      <col style="width:32%">
+      <col style="width:11%">
+      <col style="width:12%">
+      <col style="width:14%">
+      <col style="width:21%">
+      <col style="width:10%">
+    </colgroup>`;
+  }
+  return `<colgroup>
+    <col style="width:35%">
+    <col style="width:12%">
+    <col style="width:13%">
+    <col style="width:16%">
+    <col style="width:24%">
+  </colgroup>`;
+}
+
+function _milExpiryTag(ms) {
+  if (ms.yearsRemaining === null) {
+    return ms.contractNote
+      ? `<span class="contract-tag contract-new">${escapeHtml(ms.contractNote)}</span>`
+      : '<span style="color:var(--text-dim);font-size:0.8rem">—</span>';
+  }
+  const yrs = ms.yearsRemaining;
+  const cls = yrs === 0 ? "final" : yrs === 1 ? "expiring" : "mid";
+  return `<span class="contract-tag contract-${cls}">${CURRENT_SEASON + yrs}</span>`;
+}
+
 function renderCallupsTable(players, teamId) {
   if (!players.length) return "";
   players = [...players].sort((a, b) => lastName(a.name).localeCompare(lastName(b.name)));
@@ -1043,8 +1077,9 @@ function renderCallupsTable(players, teamId) {
   const showSendDown = teamId && canEditTeam(teamId);
   const headerActionCol = showSendDown ? "<th></th>" : "";
   return `
-    <table class="player-table mobile-stack-table">
-      <thead><tr><th>Player</th><th>Drafted</th><th>AB/IP</th><th>Status</th>${headerActionCol}</tr></thead>
+    <table class="player-table mobile-stack-table" style="table-layout:fixed">
+      ${_minorsTablesColgroup(showSendDown)}
+      <thead><tr><th>Player</th><th>Drafted</th><th>AB/IP</th><th>Expiry</th><th>Status</th>${headerActionCol}</tr></thead>
       <tbody>
         ${players.map(p => {
           const ms = getMinorLeagueContractStatus(p, CURRENT_SEASON);
@@ -1063,6 +1098,7 @@ function renderCallupsTable(players, teamId) {
               <td class="notif-row-label"><span class="player-name">${escapeHtml(p.name)}</span></td>
               <td data-label="Drafted" class="player-year">${p.yearAcquired}</td>
               <td data-label="AB/IP" class="${statClass}">${statDisplay}</td>
+              <td data-label="Expiry">${_milExpiryTag(ms)}</td>
               <td data-label="Status"><span style="color:var(--text-dim);font-size:0.8rem">${formatCallupStatus(p, ms)}</span></td>
               ${actionCell}
             </tr>
@@ -1114,7 +1150,8 @@ function renderMinorsTable(players, teamId) {
   const showCallUp = teamId && canEditTeam(teamId);
   const headerActionCol = showCallUp ? "<th></th>" : "";
   return `
-    <table class="player-table mobile-stack-table">
+    <table class="player-table mobile-stack-table" style="table-layout:fixed">
+      ${_minorsTablesColgroup(showCallUp)}
       <thead><tr><th>Player</th><th>Drafted</th><th>AB/IP</th><th>Expiry</th><th>Status</th>${headerActionCol}</tr></thead>
       <tbody>
         ${players.map(p => {
@@ -1129,22 +1166,12 @@ function renderMinorsTable(players, teamId) {
               <button class="trade-btn trade-btn-cancel" onclick="dropMinorPlayer('${escapeJsString(p.name)}','${escapeJsString(teamId)}')"
                 style="font-size:0.72rem;padding:3px 8px;margin-left:4px">Drop</button>
             </td>` : "";
-          const milTag = (() => {
-            if (ms.yearsRemaining === null) {
-              return ms.contractNote
-                ? `<span class="contract-tag contract-new">${escapeHtml(ms.contractNote)}</span>`
-                : '<span style="color:var(--text-dim);font-size:0.8rem">—</span>';
-            }
-            const yrs = ms.yearsRemaining;
-            const cls = yrs === 0 ? "final" : yrs === 1 ? "expiring" : "mid";
-            return `<span class="contract-tag contract-${cls}">${CURRENT_SEASON + yrs}</span>`;
-          })();
           return `
             <tr>
               <td class="notif-row-label"><span class="player-name">${escapeHtml(p.name)}</span>${p.sendDownCount ? ` <span class="hide-on-mobile" style="color:var(--red);font-size:0.65rem;font-weight:700">$${p.sendDownCount * 10} fee</span>` : ''}</td>
               <td data-label="Drafted" class="player-year">${p.yearAcquired}</td>
               <td data-label="AB/IP" class="${statClass}">${statDisplay}</td>
-              <td data-label="Expiry">${milTag}</td>
+              <td data-label="Expiry">${_milExpiryTag(ms)}</td>
               <td data-label="Status">${
                 p._teamStatus === "dropped" ? '<span style="color:var(--orange);font-size:0.8rem">Dropped</span>' :
                 p._teamStatus === "traded"  ? '<span style="color:var(--accent);font-size:0.8rem">Traded</span>' :
@@ -4490,6 +4517,10 @@ function passCurrentPick(opts) {
   const current = getCurrentPickInfo(draft);
   if (!current) return;
   if (!draft.passed) draft.passed = [];
+  // Idempotency: server-side auto-skip (notify_draft_clock.py) and client-side
+  // auto-skip can race during the realtime echo window. Don't double-push.
+  const alreadyPassed = draft.passed.some(p => p.round === current.round && p.pickInRound === current.pickInRound);
+  if (alreadyPassed) { showDraftBoard(); return; }
   draft.passed.push({ round: current.round, pickInRound: current.pickInRound, team: current.team });
   _resetDraftClock(draft);
   saveDraft(draft);
@@ -7932,6 +7963,11 @@ function passRule5Pick(opts) {
   const state = getRule5State();
   const cur = getRule5CurrentPick(state);
   if (!cur) return;
+  // Idempotency: client and server can both auto-skip the same expired slot
+  // during the realtime echo window. The Rule 5 pick queue is positional (round
+  // + idx), so guard on that.
+  const alreadyPassed = (state.picks || []).some(p => p.round === cur.round && p.idx === cur.idx && p.pass);
+  if (alreadyPassed) { switchTab("rule5"); return; }
   state.picks.push({
     round: cur.round,
     idx: cur.idx,
@@ -7942,8 +7978,8 @@ function passRule5Pick(opts) {
   });
   _resetRule5Clock(state);
   saveRule5State(state);
-  if (auto && typeof logActivityAsync === "function") {
-    logActivityAsync("rule5_pick_auto_skipped", {
+  if (typeof logActivityAsync === "function") {
+    logActivityAsync(auto ? "rule5_pick_auto_skipped" : "rule5_pick_passed", {
       round: cur.round, idx: cur.idx + 1,
     }, { targetTeamId: cur.teamId });
   }
@@ -8060,17 +8096,31 @@ function _maybeAutoPassExpiredRule5Pick() {
 }
 
 function undoRule5Pick() {
+  // Button is commish-only in the UI, but defense-in-depth against stray calls.
+  if (!isCommissioner()) {
+    alert("Only a commissioner can undo Rule 5 picks.");
+    return;
+  }
   const state = getRule5State();
   if (!state.picks.length) return;
   if (!confirm("Undo last pick?")) return;
   const last = state.picks.pop();
   saveRule5State(state);
 
-  // Remove the corresponding trade log entry, if any.
-  if (last && last.tradeId) {
+  // Remove the corresponding trade log entry, if any. Fall back to matching by
+  // rule5PickClientId — addTradeAsync may not have resolved when undo fires,
+  // leaving tradeId null. Without this fallback the trade row is orphaned.
+  if (last) {
     if (typeof deleteTradeAsync === "function") {
-      deleteTradeAsync(last.tradeId).catch(err => console.warn("Trade undo failed:", err));
-    } else {
+      if (last.tradeId) {
+        deleteTradeAsync(last.tradeId).catch(err => console.warn("Trade undo failed:", err));
+      } else if (last.pickClientId && typeof getTrades === "function") {
+        const orphan = (getTrades() || []).find(t => t.rule5PickClientId === last.pickClientId);
+        if (orphan && orphan._id) {
+          deleteTradeAsync(orphan._id).catch(err => console.warn("Trade undo (clientId) failed:", err));
+        }
+      }
+    } else if (last.tradeId) {
       const trades = getTrades().filter(t => t._id !== last.tradeId && t.id !== last.tradeId);
       saveTrades(trades);
     }

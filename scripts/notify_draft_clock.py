@@ -169,6 +169,70 @@ def neighbor_pick(draft, current, offset):
     return None
 
 
+def rule5_current_pick(state):
+    """Mirror of getRule5CurrentPick in app.js — snake order, end-of-round termination."""
+    order = state.get("order") or []
+    n = len(order)
+    if n == 0: return None
+    picks = state.get("picks") or []
+    N = len(picks)
+    rnd = (N // n) + 1
+    idx = N % n
+    team_idx = (n - 1 - idx) if (rnd % 2 == 0) else idx
+    team_id = order[team_idx] if 0 <= team_idx < n else None
+    # End if previous full round was all passes.
+    if N >= n:
+        prev_round = picks[N - n:N]
+        if all(p.get("pass") for p in prev_round):
+            return None
+    return {"round": rnd, "idx": idx, "teamId": team_id}
+
+
+def auto_skip_rule5(key, state):
+    """Push pass entries for expired Rule 5 picks and persist."""
+    skipped = 0
+    for _ in range(50):
+        cur = rule5_current_pick(state)
+        if not cur: break
+        started, paused, expired, _rem = clock_state(state, int(datetime.now(timezone.utc).timestamp() * 1000))
+        if not started or paused or not expired: break
+        picks = state.setdefault("picks", [])
+        # Idempotency guard, matches the client-side check.
+        if any(p.get("round") == cur["round"] and p.get("idx") == cur["idx"] and p.get("pass") for p in picks):
+            break
+        picks.append({
+            "round": cur["round"], "idx": cur["idx"], "teamId": cur["teamId"],
+            "pass": True, "timestamp": int(datetime.now(timezone.utc).timestamp() * 1000),
+            "auto": True,
+        })
+        state["clock"] = {
+            "startedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+            "paused": False, "pausedAt": None,
+        }
+        try:
+            urllib.request.urlopen(urllib.request.Request(
+                f"{SUPABASE_URL}/rest/v1/activity_log",
+                method="POST",
+                data=json.dumps({
+                    "type": "rule5_pick_auto_skipped",
+                    "actor_team_id": None,
+                    "target_team_id": cur["teamId"],
+                    "payload": {"round": cur["round"], "idx": cur["idx"] + 1},
+                }).encode("utf-8"),
+                headers={
+                    "apikey": key, "Authorization": f"Bearer {key}",
+                    "Content-Type": "application/json",
+                },
+            ), timeout=10)
+        except Exception as e:
+            print(f"  ! rule5 activity_log insert failed: {e}", file=sys.stderr)
+        skipped += 1
+    if skipped:
+        upsert_league_state_row(key, "rule5", state)
+        print(f"Auto-skipped {skipped} expired Rule 5 pick(s).")
+    return skipped
+
+
 def main():
     env = load_env()
     key = env.get("SUPABASE_SERVICE_ROLE_KEY")
@@ -178,6 +242,16 @@ def main():
     vapid_sub  = env.get("VAPID_SUBJECT") or "mailto:jwarshafsky@gmail.com"
     if not key:
         print("SUPABASE_SERVICE_ROLE_KEY not set", file=sys.stderr); sys.exit(1)
+
+    # Rule 5: only auto-skip is implemented server-side. Notifications for
+    # Rule 5 picks are not yet wired in (the prefs schema doesn't carry a
+    # rule5_clock slot). Skip handles the case where no commish is on-page.
+    rule5_state = fetch_league_state_row(key, "rule5")
+    if rule5_state and rule5_state.get("started") and rule5_state.get("order"):
+        try:
+            auto_skip_rule5(key, rule5_state)
+        except Exception as e:
+            print(f"  ! rule5 auto-skip failed: {e}", file=sys.stderr)
 
     draft = fetch_league_state_row(key, "draft_2027")
     if not draft:
