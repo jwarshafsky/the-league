@@ -5289,39 +5289,15 @@ function renderSettingsView() {
 
       <div class="keeper-projection" style="margin-bottom:14px">
         <h3 style="margin-top:0">Exports</h3>
-        <div style="color:var(--text-dim);font-size:0.84rem;margin-bottom:10px">
-          Generates a multi-tab spreadsheet mirroring the league's Google Sheet:
-          <em>Minor Leagues</em>, <em>Keepers</em>, <em>Eligible Keepers</em>, and
-          <em>Rule 5 Draft</em>.
+        <div style="color:var(--text-dim);font-size:0.84rem;margin-bottom:12px">
+          Push league data to your Google Sheet (multi-tab: Minor Leagues, Trade Registry,
+          Minor League Draft, Keepers, Exceptions, Eligible Keepers, Rule 5 Draft) or
+          download a local <code>.xlsx</code> copy. First-time setup lives behind <em>Configure</em>.
         </div>
-
-        <div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:12px">
-          <div style="font-weight:700;color:var(--text-bright);margin-bottom:4px;font-size:0.9rem">Direct sync to Google Sheets</div>
-          <div style="color:var(--text-dim);font-size:0.78rem;margin-bottom:10px">
-            One-time setup: deploy a small Apps Script Web App bound to your league sheet, then paste its URL below. Clicking <em>Sync</em> overwrites the four tabs with current league data.
-          </div>
-          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:6px">
-            <input id="settings-sheets-url" type="text" placeholder="https://script.google.com/macros/s/.../exec"
-              value="${escapeHtml((dbGetSettings()?.googleSheetsWebAppUrl) || "")}"
-              style="flex:1;min-width:240px;background:var(--bg-card);color:var(--text);border:1px solid var(--border);padding:7px 10px;border-radius:6px;font-size:0.82rem">
-            <button class="trade-btn" onclick="saveGoogleSheetsUrl()" style="font-size:0.78rem">Save URL</button>
-            <span id="sheets-url-status" style="font-size:0.75rem;color:var(--text-dim)"></span>
-          </div>
-          <div style="display:flex;gap:8px;flex-wrap:wrap">
-            <button id="sync-sheets-btn" class="trade-btn trade-btn-submit" onclick="syncToGoogleSheets()" style="font-size:0.85rem">Sync to Google Sheets</button>
-            <button class="trade-btn" onclick="showAppsScriptSetup()" style="font-size:0.78rem">Apps Script setup</button>
-          </div>
-        </div>
-
-        <div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:12px">
-          <div style="font-weight:700;color:var(--text-bright);margin-bottom:4px;font-size:0.9rem">Download a copy</div>
-          <div style="color:var(--text-dim);font-size:0.78rem;margin-bottom:10px">
-            Same four tabs as a local <code>.xlsx</code> file you can upload to Sheets manually, or use offline.
-          </div>
-          <div style="display:flex;gap:8px;flex-wrap:wrap">
-            <button class="trade-btn" onclick="exportLeagueXlsx()" style="font-size:0.85rem">Export league (.xlsx)</button>
-            <button class="trade-btn trade-btn-cancel" onclick="exportContractsCsv()" style="font-size:0.78rem">Contracts only (.csv)</button>
-          </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="trade-btn" onclick="showAppsScriptSetup()" style="font-size:0.85rem">Configure</button>
+          <button id="sync-sheets-btn" class="trade-btn trade-btn-submit" onclick="syncToGoogleSheets()" style="font-size:0.85rem">Sync to Google Sheets</button>
+          <button class="trade-btn" onclick="exportLeagueXlsx()" style="font-size:0.85rem">Export League (.xlsx)</button>
         </div>
       </div>
 
@@ -5825,10 +5801,22 @@ function doGet() {
         </li>
         <li>Copy the <strong>Web app URL</strong> (ends with <code>/exec</code>) and paste it into the field below.</li>
       </ol>
-      <div style="position:relative;margin-bottom:10px">
+      <div style="position:relative;margin-bottom:12px">
         <button onclick="navigator.clipboard.writeText(document.getElementById('apps-script-code').textContent); this.textContent='Copied!'; setTimeout(()=>this.textContent='Copy',1500)" style="position:absolute;top:6px;right:6px;background:var(--accent);color:#fff;border:none;padding:4px 10px;border-radius:4px;font-size:0.78rem;cursor:pointer;z-index:1">Copy</button>
         <pre id="apps-script-code" style="background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:12px;overflow-x:auto;font-size:0.78rem;color:var(--text);max-height:280px;margin:0;white-space:pre-wrap">${escapeHtml(code)}</pre>
       </div>
+
+      <div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:10px">
+        <div style="font-weight:700;color:var(--text-bright);font-size:0.88rem;margin-bottom:6px">Web App URL</div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <input id="settings-sheets-url" type="text" placeholder="https://script.google.com/macros/s/.../exec"
+            value="${escapeHtml((dbGetSettings()?.googleSheetsWebAppUrl) || "")}"
+            style="flex:1;min-width:260px;background:var(--bg-card);color:var(--text);border:1px solid var(--border);padding:7px 10px;border-radius:6px;font-size:0.82rem">
+          <button class="trade-btn trade-btn-submit" onclick="saveGoogleSheetsUrl()" style="font-size:0.78rem">Save</button>
+          <span id="sheets-url-status" style="font-size:0.75rem;color:var(--text-dim)"></span>
+        </div>
+      </div>
+
       <div style="color:var(--text-dim);font-size:0.78rem;line-height:1.5">
         Re-deploy only if you change the script. To redeploy without changing the URL, use
         <em>Manage deployments → pencil icon → New version → Deploy</em>.
