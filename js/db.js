@@ -27,6 +27,7 @@ const _cache = {
   pushSubs: [],        // [{ id, team_id, user_id, endpoint, ... }]
   leagueMessages: [],  // [{ id, team_id, user_id, body, created_at }]
   customProspects: [], // string[] — names typed during minors picks; shared league-wide via league_state
+  espnSyncStatus: {},  // { lastSuccessAt, lastFailureAt, lastError, pushedAt } — set by the ESPN sync workflow
 };
 // Cross-conversation read state for the trade inbox: { threadId: lastReadAt }.
 // Anything in the thread newer than lastReadAt counts as unread (covers BOTH
@@ -277,6 +278,7 @@ async function _fetchAll() {
     else if (r.key === "fees_paid") _cache.feesPaid = r.state || {};
     else if (r.key === "keeper_price_exceptions") _cache.keeperPriceExceptions = r.state || {};
     else if (r.key === "custom_prospects") _cache.customProspects = Array.isArray(r.state) ? r.state : (r.state?.names || []);
+    else if (r.key === "espn_sync_status") _cache.espnSyncStatus = r.state || {};
   }
 
   _cache.callup = {};
@@ -412,6 +414,9 @@ function _subscribeToChanges() {
     _refreshTimer = setTimeout(async () => {
       _refreshTimer = null;
       await _fetchAll();
+      // Always re-render the header so the ESPN sync banner / online dot /
+      // unread badges refresh even if we don't re-render the body.
+      if (typeof renderHeaderUser === "function") renderHeaderUser();
       const ae = document.activeElement;
       const userIsTyping = ae && (ae.tagName === "INPUT" || ae.tagName === "TEXTAREA" || ae.tagName === "SELECT" || ae.isContentEditable);
       if (userIsTyping) return;
@@ -528,6 +533,7 @@ function _resetDb() {
   _cache.proposals = [];
   _cache.messages = [];
   _cache.leagueMessages = [];
+  _cache.espnSyncStatus = {};
   _cache.keeperDeadline = null;
   _cache.rosterMoves = [];
   _dbReady = false;
@@ -872,6 +878,7 @@ async function saveFeesPaidAsync(m)             { return _saveLeagueStateAsync("
 async function saveKeeperPriceExceptionsAsync(m){ return _saveLeagueStateAsync("keeper_price_exceptions", m, "keeperPriceExceptions"); }
 async function saveCustomProspectsAsync(list)   { return _saveLeagueStateAsync("custom_prospects", list, "customProspects"); }
 function dbGetCustomProspects() { return _cache.customProspects || []; }
+function dbGetEspnSyncStatus() { return _clone(_cache.espnSyncStatus || {}); }
 
 async function saveNotifyPrefsAsync({ teamId, prefs, receiveAll, email }) {
   if (!teamId) throw new Error("teamId required");

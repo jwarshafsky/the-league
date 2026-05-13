@@ -8009,6 +8009,45 @@ function openMessageBoard() {
   if (typeof toggleMessageBoard === "function") toggleMessageBoard();
 }
 
+// Commissioner-only banner that surfaces ESPN sync failures so cookies get
+// refreshed promptly. The 15-min GitHub Action writes lastSuccessAt /
+// lastFailureAt + lastError into league_state.espn_sync_status; we read it
+// here and show / hide the banner accordingly.
+function _renderEspnSyncBanner() {
+  let banner = document.getElementById("espn-sync-banner");
+  const hide = () => { if (banner) banner.style.display = "none"; };
+  if (typeof isRealCommissioner !== "function" || !isRealCommissioner()) return hide();
+  if (typeof dbGetEspnSyncStatus !== "function") return hide();
+  const s = dbGetEspnSyncStatus();
+  const lastSuccessMs = s.lastSuccessAt ? new Date(s.lastSuccessAt).getTime() : 0;
+  const lastFailureMs = s.lastFailureAt ? new Date(s.lastFailureAt).getTime() : 0;
+  const failing = lastFailureMs > lastSuccessMs && lastFailureMs > 0;
+  const STALE_MS = 90 * 60 * 1000; // 90 min — well past the 15-min cadence
+  const stale = lastSuccessMs > 0 && (Date.now() - lastSuccessMs) > STALE_MS;
+  if (!failing && !stale) return hide();
+  if (!banner) {
+    banner = document.createElement("div");
+    banner.id = "espn-sync-banner";
+    banner.style.cssText = "background:rgba(249,115,22,0.18);border-bottom:1px solid var(--orange);color:var(--text-bright);padding:8px 14px;font-size:0.82rem;display:flex;align-items:center;gap:10px;flex-wrap:wrap;line-height:1.4";
+    const stack = document.querySelector(".header-stack");
+    if (stack && stack.parentNode) stack.parentNode.insertBefore(banner, stack.nextSibling);
+    else document.body.insertBefore(banner, document.body.firstChild);
+  }
+  const when = lastFailureMs ? new Date(lastFailureMs).toLocaleString() : "—";
+  const lastErr = (s.lastError || "").split("\n").slice(-3).join(" · ").slice(0, 240);
+  banner.style.display = "flex";
+  banner.innerHTML = `
+    <span style="font-size:1rem">⚠️</span>
+    <span style="flex:1">
+      <strong>ESPN sync is failing.</strong>
+      ${failing ? `Last fail at ${escapeHtml(when)}.` : `No success in over 90 min.`}
+      Your ESPN cookies (<code>SWID</code> + <code>espn_s2</code>) probably need refresh.
+      ${lastErr ? `<span style="display:block;color:var(--text-dim);margin-top:2px;font-size:0.74rem">${escapeHtml(lastErr)}</span>` : ""}
+    </span>
+    <button onclick="this.parentElement.style.display='none'" title="Hide until next page load" style="background:rgba(0,0,0,0.25);border:1px solid rgba(255,255,255,0.2);color:#fff;padding:3px 8px;border-radius:5px;font-size:0.74rem;cursor:pointer">Dismiss</button>
+  `;
+}
+
 function renderHeaderUser() {
   let userBar = document.getElementById("user-bar");
   if (!userBar) {
@@ -8024,6 +8063,7 @@ function renderHeaderUser() {
   });
   if (!currentUser) { userBar.style.display = "none"; return; }
   userBar.style.display = "flex";
+  _renderEspnSyncBanner();
   const teamName = currentOwner
     ? (LEAGUE_DATA.teams.find(t => t.id === currentOwner.team_id)?.name || currentOwner.team_id)
     : "—";
