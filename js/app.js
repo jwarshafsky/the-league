@@ -4774,6 +4774,8 @@ function switchTab(tab) {
       // Snapshots come from a fresh DB query (not the regular cache) — load
       // them after the container is in the DOM.
       if (typeof _refreshSnapshotList === "function") _refreshSnapshotList();
+      // Show "synced X ago" on the Sync button now that it's in the DOM.
+      if (typeof _refreshSyncButtonLabel === "function") _refreshSyncButtonLabel();
       break;
     case "user-settings":
       currentView = "user-settings";
@@ -5667,41 +5669,142 @@ function exportLeagueXlsx() {
 // tab into the bound spreadsheet, overwriting existing data.
 async function syncToGoogleSheets() {
   if (!isCommissioner()) { alert("Commissioners only."); return; }
-  const settings = (typeof dbGetSettings === "function") ? dbGetSettings() : {};
-  const url = (settings.googleSheetsWebAppUrl || "").trim();
+  const url = _getSheetsSyncUrl();
   if (!url) {
     alert("Set the Apps Script Web App URL in Commissioner Tools → Exports first. Click \"Apps Script setup\" for instructions.");
     return;
   }
-  if (!/^https:\/\/script\.google(?:usercontent)?\.com\/macros\/.+\/exec/.test(url)) {
+  if (!_isValidSheetsUrl(url)) {
     alert("That doesn't look like a deployed Apps Script Web App URL. It should look like:\nhttps://script.google.com/macros/s/AKfy.../exec");
     return;
   }
   const btn = document.getElementById("sync-sheets-btn");
   if (btn) { btn.disabled = true; btn.textContent = "Syncing..."; }
   try {
-    const payload = _buildLeagueExportPayload();
-    // text/plain avoids a CORS preflight; the Apps Script reads e.postData.contents.
-    const resp = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "text/plain;charset=utf-8" },
-      body: JSON.stringify(payload),
-      redirect: "follow",
-    });
-    const text = await resp.text();
-    let data; try { data = JSON.parse(text); } catch { data = null; }
-    if (data && data.ok) {
-      alert(`Synced ${data.tabs} tab${data.tabs === 1 ? "" : "s"} to Google Sheets.`);
-    } else if (data && data.error) {
-      alert(`Apps Script error: ${data.error}`);
+    const result = await _postSheetsSync(url);
+    if (result.ok) {
+      alert(`Synced ${result.tabs} tab${result.tabs === 1 ? "" : "s"} to Google Sheets.`);
+    } else if (result.error) {
+      alert(`Apps Script error: ${result.error}`);
     } else {
-      alert(`Unexpected response from Apps Script (HTTP ${resp.status}). First 200 chars:\n\n${text.slice(0, 200)}`);
+      alert(`Unexpected response from Apps Script (HTTP ${result.status}). First 200 chars:\n\n${result.text.slice(0, 200)}`);
     }
   } catch (e) {
     alert(`Sync request failed: ${e.message}`);
   } finally {
-    if (btn) { btn.disabled = false; btn.textContent = "Sync to Google Sheets"; }
+    _refreshSyncButtonLabel();
   }
+}
+
+// --- Shared sync plumbing used by manual + auto paths -----------------------
+
+const SHEETS_SYNC_LAST_KEY = "flm_sheets_sync_last_ms";
+const SHEETS_SYNC_DEBOUNCE_MS    = 30_000;       // wait 30s after the last change before firing
+const SHEETS_SYNC_MIN_INTERVAL_MS = 60_000;      // never more than once a minute
+const SHEETS_SYNC_SAFETY_MS      = 15 * 60_000;  // 15-min belt-and-suspenders timer
+let _sheetsSyncDebounceTimer = null;
+let _sheetsSyncSafetyTimer = null;
+let _sheetsSyncInFlight = false;
+
+function _getSheetsSyncUrl() {
+  const settings = (typeof dbGetSettings === "function") ? dbGetSettings() : {};
+  return (settings.googleSheetsWebAppUrl || "").trim();
+}
+function _isValidSheetsUrl(url) {
+  return /^https:\/\/script\.google(?:usercontent)?\.com\/macros\/.+\/exec/.test(url);
+}
+function _getSheetsSyncLastMs() {
+  try { return parseInt(localStorage.getItem(SHEETS_SYNC_LAST_KEY) || "0", 10) || 0; }
+  catch { return 0; }
+}
+function _setSheetsSyncLastMs(ms) {
+  try { localStorage.setItem(SHEETS_SYNC_LAST_KEY, String(ms)); } catch {}
+}
+
+// Single round-trip to the Apps Script. Returns a result object regardless
+// of success/failure so callers can decide how loud to be about it.
+async function _postSheetsSync(url) {
+  const payload = _buildLeagueExportPayload();
+  const resp = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "text/plain;charset=utf-8" },
+    body: JSON.stringify(payload),
+    redirect: "follow",
+  });
+  const text = await resp.text();
+  let data = null; try { data = JSON.parse(text); } catch {}
+  const result = (data && typeof data === "object")
+    ? { ok: !!data.ok, tabs: data.tabs, error: data.error, status: resp.status, text }
+    : { ok: false, status: resp.status, text };
+  if (result.ok) _setSheetsSyncLastMs(Date.now());
+  return result;
+}
+
+// Public hook: any data layer write or realtime event can call this and the
+// sync will happen 30s later (or sooner if another change debounces in). No
+// alerts, no button state — just a console line on completion.
+function autoSyncSheetsScheduleSoon(reason) {
+  if (typeof isRealCommissioner !== "function" || !isRealCommissioner()) return;
+  const url = _getSheetsSyncUrl();
+  if (!url || !_isValidSheetsUrl(url)) return;
+  if (_sheetsSyncDebounceTimer) clearTimeout(_sheetsSyncDebounceTimer);
+  _sheetsSyncDebounceTimer = setTimeout(() => _autoSyncFire(reason || "debounced"),
+    SHEETS_SYNC_DEBOUNCE_MS);
+}
+
+async function _autoSyncFire(reason) {
+  _sheetsSyncDebounceTimer = null;
+  if (_sheetsSyncInFlight) return;
+  // Rate-limit: if we synced recently, push the next attempt past the min interval.
+  const since = Date.now() - _getSheetsSyncLastMs();
+  if (since < SHEETS_SYNC_MIN_INTERVAL_MS) {
+    _sheetsSyncDebounceTimer = setTimeout(() => _autoSyncFire(reason),
+      SHEETS_SYNC_MIN_INTERVAL_MS - since);
+    return;
+  }
+  const url = _getSheetsSyncUrl();
+  if (!url || !_isValidSheetsUrl(url)) return;
+  _sheetsSyncInFlight = true;
+  try {
+    const result = await _postSheetsSync(url);
+    if (result.ok) {
+      console.log(`[sheets-sync] auto (${reason}): ${result.tabs} tabs`);
+    } else {
+      console.warn(`[sheets-sync] auto (${reason}) failed:`,
+        result.error || result.text?.slice(0, 200) || `HTTP ${result.status}`);
+    }
+    _refreshSyncButtonLabel();
+  } catch (e) {
+    console.warn(`[sheets-sync] auto (${reason}) request failed:`, e.message);
+  } finally {
+    _sheetsSyncInFlight = false;
+  }
+}
+
+// 15-min safety timer — catches the case where ESPN snapshot updated (which
+// arrives via static-file commit, not Supabase realtime) and nobody clicked
+// anything in the app.
+function _startSheetsSyncSafetyTimer() {
+  if (_sheetsSyncSafetyTimer) return;
+  _sheetsSyncSafetyTimer = setInterval(
+    () => autoSyncSheetsScheduleSoon("15-min safety"),
+    SHEETS_SYNC_SAFETY_MS,
+  );
+}
+
+// Repaint the "Sync to Google Sheets" button label with a freshness hint.
+function _refreshSyncButtonLabel() {
+  const btn = document.getElementById("sync-sheets-btn");
+  if (!btn) return;
+  btn.disabled = false;
+  const ms = _getSheetsSyncLastMs();
+  if (!ms) { btn.textContent = "Sync to Google Sheets"; return; }
+  const ago = Date.now() - ms;
+  let when;
+  if (ago < 60_000) when = "just now";
+  else if (ago < 3600_000) when = `${Math.floor(ago / 60_000)}m ago`;
+  else when = `${Math.floor(ago / 3600_000)}h ago`;
+  btn.textContent = `Sync to Google Sheets · synced ${when}`;
 }
 
 // APPS_SCRIPT_SETUP — paste this into the user's Google Sheet:
@@ -8279,6 +8382,14 @@ function showAppForAuthedUser() {
   document.querySelector(".nav-tabs").style.display = "";
   renderHeaderUser();
   switchTab(currentView || "eligible");
+  // Commish-only safety net for Google Sheets auto-sync. The realtime
+  // refresh callback in db.js handles event-driven syncs; this 15-min
+  // interval covers cases where ESPN snapshot updates server-side and
+  // nobody clicks anything in the app.
+  if (typeof isRealCommissioner === "function" && isRealCommissioner()
+      && typeof _startSheetsSyncSafetyTimer === "function") {
+    _startSheetsSyncSafetyTimer();
+  }
 }
 
 function authGate(user, owner) {

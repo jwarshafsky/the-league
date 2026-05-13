@@ -417,6 +417,9 @@ function _subscribeToChanges() {
       // Always re-render the header so the ESPN sync banner / online dot /
       // unread badges refresh even if we don't re-render the body.
       if (typeof renderHeaderUser === "function") renderHeaderUser();
+      // Any realtime change is a candidate for auto-sync to Google Sheets.
+      // The schedule helper rate-limits + debounces so rapid changes batch.
+      if (typeof autoSyncSheetsScheduleSoon === "function") autoSyncSheetsScheduleSoon("realtime");
       const ae = document.activeElement;
       const userIsTyping = ae && (ae.tagName === "INPUT" || ae.tagName === "TEXTAREA" || ae.tagName === "SELECT" || ae.isContentEditable);
       if (userIsTyping) return;
