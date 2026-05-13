@@ -28,6 +28,7 @@ const _cache = {
   leagueMessages: [],  // [{ id, team_id, user_id, body, created_at }]
   customProspects: [], // string[] — names typed during minors picks; shared league-wide via league_state
   espnSyncStatus: {},  // { lastSuccessAt, lastFailureAt, lastError, pushedAt } — set by the ESPN sync workflow
+  pgCronHeartbeat: {}, // { lastFiredAt, lastWorkflow } — set by Supabase pg_cron jobs
 };
 // Cross-conversation read state for the trade inbox: { threadId: lastReadAt }.
 // Anything in the thread newer than lastReadAt counts as unread (covers BOTH
@@ -279,6 +280,7 @@ async function _fetchAll() {
     else if (r.key === "keeper_price_exceptions") _cache.keeperPriceExceptions = r.state || {};
     else if (r.key === "custom_prospects") _cache.customProspects = Array.isArray(r.state) ? r.state : (r.state?.names || []);
     else if (r.key === "espn_sync_status") _cache.espnSyncStatus = r.state || {};
+    else if (r.key === "pg_cron_heartbeat") _cache.pgCronHeartbeat = r.state || {};
   }
 
   _cache.callup = {};
@@ -537,6 +539,7 @@ function _resetDb() {
   _cache.messages = [];
   _cache.leagueMessages = [];
   _cache.espnSyncStatus = {};
+  _cache.pgCronHeartbeat = {};
   _cache.keeperDeadline = null;
   _cache.rosterMoves = [];
   _dbReady = false;
@@ -882,6 +885,7 @@ async function saveKeeperPriceExceptionsAsync(m){ return _saveLeagueStateAsync("
 async function saveCustomProspectsAsync(list)   { return _saveLeagueStateAsync("custom_prospects", list, "customProspects"); }
 function dbGetCustomProspects() { return _cache.customProspects || []; }
 function dbGetEspnSyncStatus() { return _clone(_cache.espnSyncStatus || {}); }
+function dbGetPgCronHeartbeat() { return _clone(_cache.pgCronHeartbeat || {}); }
 
 async function saveNotifyPrefsAsync({ teamId, prefs, receiveAll, email }) {
   if (!teamId) throw new Error("teamId required");

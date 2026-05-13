@@ -8242,6 +8242,13 @@ function _renderEspnSyncBanner() {
   const failing = lastFailureMs > lastSuccessMs && lastFailureMs > 0;
   const STALE_MS = 90 * 60 * 1000; // 90 min — well past the 15-min cadence
   const stale = lastSuccessMs > 0 && (Date.now() - lastSuccessMs) > STALE_MS;
+  // pg_cron heartbeat: if Supabase pg_cron is firing, it bumps this every
+  // run. If it goes stale too (no heartbeat in 30+ min) AND ESPN sync is
+  // stale, BOTH layers are down — surface that explicitly.
+  const hb = (typeof dbGetPgCronHeartbeat === "function") ? dbGetPgCronHeartbeat() : {};
+  const lastHbMs = hb.lastFiredAt ? new Date(hb.lastFiredAt).getTime() : 0;
+  const pgCronStale = lastHbMs === 0 || (Date.now() - lastHbMs) > 30 * 60 * 1000;
+  const bothLayersStale = stale && !failing && pgCronStale;
   if (!failing && !stale) return hide();
   if (!banner) {
     banner = document.createElement("div");
@@ -8261,10 +8268,16 @@ function _renderEspnSyncBanner() {
   //   - `stale`   = last success was a long time ago BUT no failure recorded
   //                 since (scheduled workflow not firing — GitHub Actions
   //                 scheduler hiccup; cookies are probably fine).
-  const headline = failing ? "ESPN sync is failing." : "ESPN sync may be delayed.";
+  const headline = failing
+    ? "ESPN sync is failing."
+    : bothLayersStale
+      ? "Both schedulers offline."
+      : "ESPN sync may be delayed.";
   const detail = failing
     ? `Last fail at ${escapeHtml(when)}. Your ESPN cookies (<code>SWID</code> + <code>espn_s2</code>) probably need refresh.`
-    : `Last successful sync was ${escapeHtml(lastSuccessWhen)} — the scheduled workflow on GitHub Actions hasn't fired recently. Cookies are likely fine; check <a href="https://github.com/jwarshafsky/the-league/actions" target="_blank" style="color:var(--accent)">the Actions tab</a>.`;
+    : bothLayersStale
+      ? `GitHub Actions hasn't fired since ${escapeHtml(lastSuccessWhen)} AND Supabase pg_cron hasn't beat in 30+ min. The pg_cron fallback should normally cover GitHub outages — both being down is unusual. Check the <a href="https://github.com/jwarshafsky/the-league/actions" target="_blank" style="color:var(--accent)">Actions tab</a> and Supabase <em>Database → Cron Jobs</em> to investigate.`
+      : `Last successful sync was ${escapeHtml(lastSuccessWhen)} — the scheduled workflow on GitHub Actions hasn't fired recently. Cookies are likely fine; check <a href="https://github.com/jwarshafsky/the-league/actions" target="_blank" style="color:var(--accent)">the Actions tab</a>.`;
   banner.innerHTML = `
     <span style="font-size:1rem">⚠️</span>
     <span style="flex:1">
