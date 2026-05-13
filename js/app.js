@@ -5477,15 +5477,108 @@ async function sendTestNotification() {
   }
 }
 
+// Walks every team's majors/callups/minors and flags any player name that
+// appears on more than one team. Two real causes:
+//   (a) Two different MLB players share a name (e.g. the Dodgers' and the
+//       Athletics' Max Muncys). Cost-basis lookups can't disambiguate without
+//       a per-record playerId, so the commish needs to manually pin contracts
+//       via Keeper Price Exceptions / commish overrides.
+//   (b) Data-entry error — the same player is in two teams' anchors by
+//       mistake (e.g. a trade not reflected in js/data.js). The commish
+//       resolves by editing data.js or dropping the wrong copy.
+function _findDuplicateNameOccurrences() {
+  const byName = new Map();
+  for (const team of LEAGUE_DATA.teams || []) {
+    const log = (where, p) => {
+      if (!byName.has(p.name)) byName.set(p.name, []);
+      byName.get(p.name).push({ teamId: team.id, teamName: team.name, where, price: p.price, year: p.yearAcquired, fromMinors: p.fromMinors });
+    };
+    (team.majors  || []).forEach(p => log("majors",  p));
+    (team.callups || []).forEach(p => log("callups", p));
+    (team.minors  || []).forEach(p => log("minors",  p));
+  }
+  const dupes = [];
+  for (const [name, hits] of byName.entries()) {
+    if (hits.length > 1) {
+      // Best-effort hint from ESPN: if multiple distinct playerIds carry the
+      // name in the ESPN snapshot, this is genuinely two players (case (a)).
+      // If only one playerId, it's likely a data-entry error (case (b)).
+      const espnIds = new Set();
+      const snap = (typeof getEspnSnapshot === "function") ? getEspnSnapshot() : null;
+      if (snap) {
+        for (const t of (snap.teams || [])) {
+          for (const r of (t.roster || [])) {
+            if (r.name === name && r.playerId != null) espnIds.add(r.playerId);
+          }
+        }
+      }
+      dupes.push({ name, hits, espnIdsCount: espnIds.size });
+    }
+  }
+  // Stable sort by name for deterministic display.
+  dupes.sort((a, b) => a.name.localeCompare(b.name));
+  return dupes;
+}
+
+function renderDuplicateNamesReview() {
+  const dupes = _findDuplicateNameOccurrences();
+  if (!dupes.length) {
+    return `<div style="color:var(--text-dim);font-size:0.84rem;font-style:italic">No duplicates detected. All player names map to a single roster.</div>`;
+  }
+  const rows = dupes.map(d => {
+    const probable = d.espnIdsCount >= 2
+      ? `<span style="color:var(--yellow);font-size:0.74rem;font-weight:700">Two different players (same name)</span>`
+      : d.espnIdsCount === 1
+        ? `<span style="color:var(--orange);font-size:0.74rem;font-weight:700">Likely data error — same player on two teams</span>`
+        : `<span style="color:var(--text-dim);font-size:0.74rem">Pure prospect (no ESPN match) — verify manually</span>`;
+    const hits = d.hits.map(h => {
+      const priceStr = (h.price != null) ? `$${h.price}` : "$TBD";
+      const yrStr = h.year != null ? `, acquired ${h.year}` : "";
+      return `<li style="margin-bottom:3px"><strong>${escapeHtml(h.teamName)}</strong> &middot; ${h.where} &middot; ${priceStr}${yrStr}</li>`;
+    }).join("");
+    return `
+      <div style="background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:10px 12px;margin-bottom:8px">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px;margin-bottom:6px">
+          <span style="font-weight:700;color:var(--text-bright)">${escapeHtml(d.name)}</span>
+          ${probable}
+        </div>
+        <ul style="margin:0 0 6px 18px;padding:0;color:var(--text);font-size:0.84rem">${hits}</ul>
+        <div style="color:var(--text-dim);font-size:0.74rem">
+          ${d.espnIdsCount >= 2
+            ? `Cost-basis lookups can't disambiguate by name alone. Use <em>Keeper Price Exceptions</em> below to pin each team's true salary, or set a <em>commish override</em> via the player's edit menu.`
+            : `If this is a stale entry, edit <code>js/data.js</code> to remove the duplicate from the wrong team.`}
+        </div>
+      </div>
+    `;
+  }).join("");
+  return rows;
+}
+
 function renderSettingsView() {
   const settings = getLeagueSettings();
   const enforceR5 = !!settings.enforceRule5RosterSpot;
   const enforceMiL = !!settings.enforceMinorsRosterSpot;
   const season = (typeof settings.currentSeason === "number") ? settings.currentSeason : DEFAULT_SEASON;
+  const dupes = _findDuplicateNameOccurrences();
+  const dupeBanner = dupes.length
+    ? `<div style="background:rgba(249,115,22,0.12);border:1px solid rgba(249,115,22,0.4);border-radius:6px;padding:10px 12px;margin-bottom:14px;color:var(--orange);font-size:0.84rem">
+        <strong>${dupes.length} duplicate player name${dupes.length === 1 ? "" : "s"} need${dupes.length === 1 ? "s" : ""} review.</strong>
+        See "Duplicate Names" below.
+      </div>`
+    : "";
   return `
     <div style="max-width:720px">
       <h2 style="color:var(--text-bright);margin-bottom:4px">Commissioner Tools</h2>
       <div style="color:var(--text-dim);font-size:0.82rem;margin-bottom:18px">Commissioner-only. Changes apply league-wide for everyone.</div>
+      ${dupeBanner}
+
+      <div class="keeper-projection" style="margin-bottom:14px">
+        <h3 style="margin-top:0">Duplicate Player Names</h3>
+        <div style="color:var(--text-dim);font-size:0.84rem;margin-bottom:10px">
+          When two players share a name (e.g. the two Max Muncys in MLB), the app's contract-lookup code can pick the wrong record because <code>js/data.js</code> doesn't track ESPN player IDs on keeper rows. Each duplicate below needs the commish to confirm the correct contract — either by using <em>Keeper Price Exceptions</em> to pin each team's real salary, or by editing <code>js/data.js</code> if it's a stale entry.
+        </div>
+        ${renderDuplicateNamesReview()}
+      </div>
 
       <div class="keeper-projection" style="margin-bottom:14px">
         <h3 style="margin-top:0">Season</h3>
