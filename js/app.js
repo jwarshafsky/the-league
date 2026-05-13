@@ -5477,6 +5477,80 @@ async function sendTestNotification() {
   }
 }
 
+// ============================================================================
+// Commissioner Review — central inbox for items the commish needs to look at.
+// Each detector returns an array of { ...item-specific fields }; the renderer
+// groups them into sub-sections and a top-banner count. Inline UI elsewhere
+// (e.g. workaround badges in Eligible Keepers) keeps working — this is just
+// a roll-up so nothing slips by.
+// ============================================================================
+
+function _findCommishWorkaroundsPending() {
+  // Players whose ESPN add was made by a commissioner-as-non-owner — the app
+  // can't tell whether it was a trade, FA add, or call-up. Each one needs the
+  // commish to confirm. The same data also drives the inline badge in
+  // Eligible Keepers (workaroundBadgeHtml).
+  const out = [];
+  for (const team of LEAGUE_DATA.teams || []) {
+    const players = (typeof getEligiblePlayers === "function") ? getEligiblePlayers(team) : [];
+    for (const p of players) {
+      const w = p.workaround;
+      if (w && w.needsConfirmation) {
+        const decisionLabels = { trade: "Trade", fa: "FA", callup: "Call-up" };
+        out.push({
+          name: p.name,
+          teamId: team.id,
+          teamName: team.name,
+          presumption: decisionLabels[w.presumption] || w.presumption,
+        });
+      }
+    }
+  }
+  return out;
+}
+
+function _findCallupsWithoutPrice() {
+  // Active call-ups whose price hasn't been set yet (commish enters this in
+  // the offseason based on the §2(e) ranking-tier ladder).
+  const out = [];
+  for (const team of LEAGUE_DATA.teams || []) {
+    for (const p of (team.callups || [])) {
+      if (p.price == null) {
+        out.push({
+          name: p.name,
+          teamId: team.id,
+          teamName: team.name,
+          yearAcquired: p.yearAcquired,
+        });
+      }
+    }
+  }
+  return out;
+}
+
+function _findMustCallUpPlayers() {
+  // MiL players who've crossed the §3(f) 300 AB / 75 IP threshold — must be
+  // called up or dropped by the end of the next MiL draft.
+  const out = [];
+  for (const team of LEAGUE_DATA.teams || []) {
+    for (const p of (team.minors || [])) {
+      const ms = (typeof getMinorLeagueContractStatus === "function")
+        ? getMinorLeagueContractStatus(p, CURRENT_SEASON) : null;
+      if (ms && ms.eligibilityWarning) {
+        out.push({
+          name: p.name,
+          teamId: team.id,
+          teamName: team.name,
+          careerStat: p.careerStat,
+          statType: p.statType,
+          warning: ms.eligibilityWarning,
+        });
+      }
+    }
+  }
+  return out;
+}
+
 // Walks every team's majors/callups/minors and flags any player name that
 // appears on more than one team. Two real causes:
 //   (a) Two different MLB players share a name (e.g. the Dodgers' and the
@@ -5520,12 +5594,14 @@ function _findDuplicateNameOccurrences() {
   return dupes;
 }
 
+function _reviewItemCard(content) {
+  return `<div style="background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:10px 12px;margin-bottom:8px">${content}</div>`;
+}
+
 function renderDuplicateNamesReview() {
   const dupes = _findDuplicateNameOccurrences();
-  if (!dupes.length) {
-    return `<div style="color:var(--text-dim);font-size:0.84rem;font-style:italic">No duplicates detected. All player names map to a single roster.</div>`;
-  }
-  const rows = dupes.map(d => {
+  if (!dupes.length) return "";
+  return dupes.map(d => {
     const probable = d.espnIdsCount >= 2
       ? `<span style="color:var(--yellow);font-size:0.74rem;font-weight:700">Two different players (same name)</span>`
       : d.espnIdsCount === 1
@@ -5536,22 +5612,92 @@ function renderDuplicateNamesReview() {
       const yrStr = h.year != null ? `, acquired ${h.year}` : "";
       return `<li style="margin-bottom:3px"><strong>${escapeHtml(h.teamName)}</strong> &middot; ${h.where} &middot; ${priceStr}${yrStr}</li>`;
     }).join("");
-    return `
-      <div style="background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:10px 12px;margin-bottom:8px">
-        <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px;margin-bottom:6px">
-          <span style="font-weight:700;color:var(--text-bright)">${escapeHtml(d.name)}</span>
-          ${probable}
-        </div>
-        <ul style="margin:0 0 6px 18px;padding:0;color:var(--text);font-size:0.84rem">${hits}</ul>
-        <div style="color:var(--text-dim);font-size:0.74rem">
-          ${d.espnIdsCount >= 2
-            ? `Cost-basis lookups can't disambiguate by name alone. Use <em>Keeper Price Exceptions</em> below to pin each team's true salary, or set a <em>commish override</em> via the player's edit menu.`
-            : `If this is a stale entry, edit <code>js/data.js</code> to remove the duplicate from the wrong team.`}
-        </div>
+    return _reviewItemCard(`
+      <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px;margin-bottom:6px">
+        <span style="font-weight:700;color:var(--text-bright)">${escapeHtml(d.name)}</span>
+        ${probable}
       </div>
-    `;
+      <ul style="margin:0 0 6px 18px;padding:0;color:var(--text);font-size:0.84rem">${hits}</ul>
+      <div style="color:var(--text-dim);font-size:0.74rem">
+        ${d.espnIdsCount >= 2
+          ? `Cost-basis lookups can't disambiguate by name alone. Use <em>Keeper Price Exceptions</em> below to pin each team's true salary, or set a <em>commish override</em> via the player's edit menu.`
+          : `If this is a stale entry, edit <code>js/data.js</code> to remove the duplicate from the wrong team.`}
+      </div>
+    `);
   }).join("");
-  return rows;
+}
+
+function renderWorkaroundConfirmations() {
+  const items = _findCommishWorkaroundsPending();
+  if (!items.length) return "";
+  return items.map(it => _reviewItemCard(`
+    <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px;margin-bottom:4px">
+      <span><strong>${escapeHtml(it.name)}</strong> &middot; <span style="color:var(--accent)">${escapeHtml(it.teamName)}</span></span>
+      <span style="color:var(--text-dim);font-size:0.74rem">presumed ${escapeHtml(it.presumption)}</span>
+    </div>
+    <div style="color:var(--text-dim);font-size:0.74rem">
+      A commissioner moved this player on ESPN; classify whether it was a Trade / FA / Call-up so contract math applies the right cost basis. Open <em>Select Keepers</em> → <em>${escapeHtml(it.teamName)}</em> and click the badge under the player's name.
+    </div>
+  `)).join("");
+}
+
+function renderCallupPriceReview() {
+  const items = _findCallupsWithoutPrice();
+  if (!items.length) return "";
+  return items.map(it => _reviewItemCard(`
+    <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px;margin-bottom:4px">
+      <span><strong>${escapeHtml(it.name)}</strong> &middot; <span style="color:var(--accent)">${escapeHtml(it.teamName)}</span></span>
+      <span style="color:var(--text-dim);font-size:0.74rem">drafted ${it.yearAcquired ?? "?"}</span>
+    </div>
+    <div style="color:var(--text-dim);font-size:0.74rem">
+      Call-up price hasn't been set. Per §2(e), the first ML kept year price is based on the player's ESPN top-200 ranking on March 1 ($1 / $3 / $5 / $10 / $15). Open <em>Select Keepers</em> → <em>${escapeHtml(it.teamName)}</em> to enter the price.
+    </div>
+  `)).join("");
+}
+
+function renderMustCallUpReview() {
+  const items = _findMustCallUpPlayers();
+  if (!items.length) return "";
+  return items.map(it => _reviewItemCard(`
+    <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px;margin-bottom:4px">
+      <span><strong>${escapeHtml(it.name)}</strong> &middot; <span style="color:var(--accent)">${escapeHtml(it.teamName)}</span></span>
+      <span style="color:var(--orange);font-size:0.74rem;font-weight:700">${escapeHtml(it.warning)}</span>
+    </div>
+    <div style="color:var(--text-dim);font-size:0.74rem">
+      ${it.careerStat ?? 0} career ${it.statType || "AB"} — past the §3(f) 300 AB / 75 IP threshold. Must be called up or dropped by end of next MiL draft.
+    </div>
+  `)).join("");
+}
+
+function renderCommissionerReviewSections() {
+  const sections = [
+    { title: "Duplicate Player Names", body: renderDuplicateNamesReview(),
+      intro: 'Two MLB players sharing a name (or a stale data-entry duplicate). Cost-basis lookups pick the first match by name, so the commish needs to pin contracts via Keeper Price Exceptions (case (a)) or clean up <code>js/data.js</code> (case (b)).' },
+    { title: "Commissioner Add — Needs Classification", body: renderWorkaroundConfirmations(),
+      intro: 'When ESPN logged a player addition by a commissioner moving someone else\'s player, the app can\'t tell whether it was a Trade, FA pickup, or Call-up. Classify each so the cost basis is right.' },
+    { title: "Call-up Prices Not Set", body: renderCallupPriceReview(),
+      intro: 'Active call-ups need a first ML-year price per §2(e). Until set, the player shows as <code>$TBD</code> and keeper math is incomplete.' },
+    { title: "MiL Players Past §3(f) Threshold", body: renderMustCallUpReview(),
+      intro: 'These minor leaguers have hit 300 AB / 75 IP — per the post-Jan-2026 amendment they must be called up or dropped by the end of the next MiL draft.' },
+  ];
+  const nonEmpty = sections.filter(s => s.body);
+  if (!nonEmpty.length) {
+    return `<div style="color:var(--text-dim);font-size:0.84rem;font-style:italic">Nothing flagged for review. ✓</div>`;
+  }
+  return nonEmpty.map(s => `
+    <div style="margin-bottom:14px">
+      <div style="font-weight:700;color:var(--text-bright);font-size:0.92rem;margin-bottom:4px">${escapeHtml(s.title)}</div>
+      <div style="color:var(--text-dim);font-size:0.78rem;margin-bottom:8px">${s.intro}</div>
+      ${s.body}
+    </div>
+  `).join("");
+}
+
+function _commishReviewTotal() {
+  return _findDuplicateNameOccurrences().length
+       + _findCommishWorkaroundsPending().length
+       + _findCallupsWithoutPrice().length
+       + _findMustCallUpPlayers().length;
 }
 
 function renderSettingsView() {
@@ -5559,25 +5705,25 @@ function renderSettingsView() {
   const enforceR5 = !!settings.enforceRule5RosterSpot;
   const enforceMiL = !!settings.enforceMinorsRosterSpot;
   const season = (typeof settings.currentSeason === "number") ? settings.currentSeason : DEFAULT_SEASON;
-  const dupes = _findDuplicateNameOccurrences();
-  const dupeBanner = dupes.length
+  const reviewTotal = _commishReviewTotal();
+  const reviewBanner = reviewTotal
     ? `<div style="background:rgba(249,115,22,0.12);border:1px solid rgba(249,115,22,0.4);border-radius:6px;padding:10px 12px;margin-bottom:14px;color:var(--orange);font-size:0.84rem">
-        <strong>${dupes.length} duplicate player name${dupes.length === 1 ? "" : "s"} need${dupes.length === 1 ? "s" : ""} review.</strong>
-        See "Duplicate Names" below.
+        <strong>${reviewTotal} item${reviewTotal === 1 ? "" : "s"} need${reviewTotal === 1 ? "s" : ""} your review.</strong>
+        See the section below.
       </div>`
     : "";
   return `
     <div style="max-width:720px">
       <h2 style="color:var(--text-bright);margin-bottom:4px">Commissioner Tools</h2>
       <div style="color:var(--text-dim);font-size:0.82rem;margin-bottom:18px">Commissioner-only. Changes apply league-wide for everyone.</div>
-      ${dupeBanner}
+      ${reviewBanner}
 
       <div class="keeper-projection" style="margin-bottom:14px">
-        <h3 style="margin-top:0">Duplicate Player Names</h3>
-        <div style="color:var(--text-dim);font-size:0.84rem;margin-bottom:10px">
-          When two players share a name (e.g. the two Max Muncys in MLB), the app's contract-lookup code can pick the wrong record because <code>js/data.js</code> doesn't track ESPN player IDs on keeper rows. Each duplicate below needs the commish to confirm the correct contract — either by using <em>Keeper Price Exceptions</em> to pin each team's real salary, or by editing <code>js/data.js</code> if it's a stale entry.
+        <h3 style="margin-top:0">Commissioner Review</h3>
+        <div style="color:var(--text-dim);font-size:0.84rem;margin-bottom:12px">
+          Items the app surfaced that need a human decision. Each one links to the place where you can resolve it.
         </div>
-        ${renderDuplicateNamesReview()}
+        ${renderCommissionerReviewSections()}
       </div>
 
       <div class="keeper-projection" style="margin-bottom:14px">
