@@ -5643,12 +5643,22 @@ function _buildLeagueExportPayload() {
   const sendDownsByTeam = (typeof getSendDownsByTeam === "function") ? getSendDownsByTeam() : {};
   const rule5State = (typeof getRule5State === "function") ? getRule5State() : { picks: [], order: [] };
   const balances = (typeof getDraftDollarBalances === "function") ? getDraftDollarBalances() : {};
+  const trades = (typeof dbGetTrades === "function") ? dbGetTrades() : [];
+  const draft = (typeof dbGetDraft === "function") ? dbGetDraft() : null;
+  const exceptions = (typeof dbGetKeeperPriceExceptions === "function") ? dbGetKeeperPriceExceptions() : {};
+  // Tab order mirrors the league's existing Google Sheet.
   return {
     tabs: [
-      { name: `${CURRENT_SEASON} Minor Leagues`,    rows: _xlsxMinorLeaguesAoa(teams, sendDownsByTeam) },
-      { name: `${CURRENT_SEASON} Keepers`,          rows: _xlsxKeepersAoa(teams, sel) },
-      { name: `${CURRENT_SEASON} Eligible Keepers`, rows: _xlsxEligibleKeepersAoa(teams, sel, balances) },
-      { name: `Rule 5 Draft ${CURRENT_SEASON}`,     rows: _xlsxRule5Aoa(teams, rule5State) },
+      { name: `${CURRENT_SEASON} Minor Leagues`,            rows: _xlsxMinorLeaguesAoa(teams, sendDownsByTeam) },
+      { name: `${CURRENT_SEASON + 1} Pre-Draft Trade Registry`, rows: _xlsxTradeRegistryAoa(trades) },
+      { name: `${CURRENT_SEASON} Minor League Draft`,       rows: _xlsxMinorLeagueDraftAoa(draft) },
+      { name: `${CURRENT_SEASON} Keepers`,                  rows: _xlsxKeepersAoa(teams, sel) },
+      { name: "Exceptions",                                  rows: _xlsxExceptionsAoa(exceptions) },
+      // Tab is named for NEXT season because it drives next-season keeper
+      // decisions, even though the inner Price column still references the
+      // current season's salary.
+      { name: `${CURRENT_SEASON + 1} Eligible Keepers`,     rows: _xlsxEligibleKeepersAoa(teams, sel, balances) },
+      { name: `Rule 5 Draft ${CURRENT_SEASON}`,             rows: _xlsxRule5Aoa(teams, rule5State) },
     ],
   };
 }
@@ -6282,6 +6292,106 @@ function _xlsxRule5Aoa(teams, rule5State) {
   }
 
   return aoa;
+}
+
+// "Pre-Draft Trade Registry" tab. One row per trade with players, picks, $
+// split out by direction. Matches the columns in the existing Google Sheet.
+function _xlsxTradeRegistryAoa(trades) {
+  const teamName = id => {
+    const t = LEAGUE_DATA.teams.find(t => t.id === id);
+    return t ? t.name : (id || "");
+  };
+  const isPlayer = a => a && (a.type === "major" || a.type === "minor" || a.type === "callup");
+  const isPick   = a => a && a.type === "milb_pick";
+  const isCash   = a => a && (a.type === "draft_dollars" || a.type === "faab");
+  const fmtList = (assets, pred) => (assets || []).filter(pred).map(a => a.value).filter(Boolean).join(", ");
+  // Excel serial date: days since 1900-01-01 (with the historic leap-year bug).
+  const toExcelDate = isoOrLabel => {
+    if (!isoOrLabel) return "";
+    const ms = new Date(isoOrLabel).getTime();
+    if (!Number.isFinite(ms)) return isoOrLabel;
+    const days = ms / 86400000;
+    return Math.round(days + 25569); // 25569 = 1970-01-01 in Excel serial days
+  };
+
+  const header = [
+    "Trade #", "Date", "Team 1", "Team 2",
+    "Plyrs Traded by T1", "Plyrs Traded by T2",
+    "Picks Traded by T1", "Picks Traded by T2",
+    "$ Traded by T1", "$ Traded by T2",
+    "Notes", "Implemented",
+  ];
+  const rows = [header];
+  trades.forEach((t, i) => {
+    // "Traded by T1" = what team1 GAVE = what team2 RECEIVES = team2Receives.
+    const t1gives = t.team2Receives || [];
+    const t2gives = t.team1Receives || [];
+    rows.push([
+      i + 1,
+      toExcelDate(t.createdAt || t.date),
+      teamName(t.team1),
+      teamName(t.team2),
+      fmtList(t1gives, isPlayer),
+      fmtList(t2gives, isPlayer),
+      fmtList(t1gives, isPick),
+      fmtList(t2gives, isPick),
+      fmtList(t1gives, isCash),
+      fmtList(t2gives, isCash),
+      t.notes || "",
+      0,
+    ]);
+  });
+  return rows;
+}
+
+// "Minor League Draft" tab. Lists every pick slot (made, passed, or pending).
+function _xlsxMinorLeagueDraftAoa(draft) {
+  const teamName = id => {
+    const t = LEAGUE_DATA.teams.find(t => t.id === id);
+    return t ? t.name : (id || "");
+  };
+  const rows = [["Round", "Pick #", "Original Pick Owner", "Team with Pick", "Player"]];
+  if (!draft || !draft.baseOrder || !draft.rounds) return rows;
+
+  const made = new Map();
+  for (const p of (draft.picks || [])) {
+    made.set(`${p.round}p${p.pickInRound}`, p);
+  }
+  const passed = new Set((draft.passed || []).map(p => `${p.round}p${p.pickInRound}`));
+
+  for (let round = 1; round <= draft.rounds; round++) {
+    for (let pickInRound = 1; pickInRound <= draft.baseOrder.length; pickInRound++) {
+      const baseOwnerId = (typeof getBaseOwner === "function")
+        ? getBaseOwner(draft, round, pickInRound)
+        : draft.baseOrder[pickInRound - 1];
+      const currentOwnerId = (typeof getPickOwner === "function")
+        ? getPickOwner(draft, round, pickInRound)
+        : baseOwnerId;
+      const key = `${round}p${pickInRound}`;
+      let player = "";
+      if (made.has(key)) {
+        const pk = made.get(key);
+        player = pk.player || pk.playerName || "";
+      } else if (passed.has(key)) {
+        player = "Pass";
+      }
+      rows.push([round, pickInRound, teamName(baseOwnerId), teamName(currentOwnerId), player]);
+    }
+  }
+  return rows;
+}
+
+// "Exceptions" tab — keeper price overrides from Commissioner Tools.
+// Two columns: Player | Salary. Sorted by salary ascending to match the
+// source sheet's ordering.
+function _xlsxExceptionsAoa(exceptions) {
+  const entries = Object.entries(exceptions || {}).map(([name, price]) => ({
+    name,
+    price: Number(price) || 0,
+  })).sort((a, b) => a.price - b.price);
+  const rows = [["Player", "Salary"]];
+  for (const e of entries) rows.push([e.name, e.price]);
+  return rows;
 }
 
 async function submitSetSeason() {
