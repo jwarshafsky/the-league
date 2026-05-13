@@ -306,11 +306,29 @@ function _moveBetweenLists(map, fromTeamId, toTeamId, name) {
     player = fromList.splice(idx, 1)[0];
     map.set(fromTeamId, fromList);
   } else {
-    // Player not in from team's current list — pull their full record from
-    // the original anchor so the destination team gets a complete entry.
-    const orig = _findOriginalMinorRecord(name);
-    if (!orig) return;
-    player = { ...orig };
+    // fromTeam's current list doesn't have the player. Two possibilities:
+    //   (a) Chained trade — player was previously moved to a third team via
+    //       an earlier trade. The recorded fromTeam is stale but the player
+    //       still exists *somewhere* in this Map. Pull them from wherever
+    //       they actually live so we don't duplicate them.
+    //   (b) Synthesis — player isn't in any current list (e.g., first time
+    //       we're seeing them after a Minors Draft pick that hasn't been
+    //       applied yet, or a recorded trade for someone never on any
+    //       roster). Fall back to the anchor snapshot.
+    let actualFromTeamId = null;
+    for (const [tid, list] of map.entries()) {
+      if (list.some(p => p.name === name)) { actualFromTeamId = tid; break; }
+    }
+    if (actualFromTeamId) {
+      const list = map.get(actualFromTeamId);
+      const j = list.findIndex(p => p.name === name);
+      player = list.splice(j, 1)[0];
+      map.set(actualFromTeamId, list);
+    } else {
+      const orig = _findOriginalMinorRecord(name);
+      if (!orig) return;
+      player = { ...orig };
+    }
   }
   const toList = map.get(toTeamId) || [];
   if (!toList.find(p => p.name === player.name)) toList.push({ ...player });
@@ -2713,24 +2731,48 @@ function setCallupPriceOverride(playerName, price, year) {
 }
 
 // Find a player's prior cost basis by name across every team's keeper sheet.
-function findKeeperCostBasis(playerName) {
+// Lookup helpers across every team's snapshot. When two MLB players share a
+// name (e.g. multiple Will Smiths historically), preferredTeamId disambiguates
+// to "the player currently on this team" instead of returning the first
+// alphabetical hit. Falls back to a cross-team scan for the trade case
+// (player started elsewhere, was traded to currentTeam, so isn't on
+// currentTeam's anchor sheet).
+function findKeeperCostBasis(playerName, preferredTeamId) {
+  if (preferredTeamId) {
+    const own = LEAGUE_DATA.teams.find(t => t.id === preferredTeamId);
+    const m = own?.majors?.find(p => p.name === playerName);
+    if (m) return { source: "keeper", originTeamId: own.id, price: m.price, yearAcquired: m.yearAcquired, fromMinors: m.fromMinors };
+  }
   for (const team of LEAGUE_DATA.teams) {
+    if (team.id === preferredTeamId) continue;
     const m = team.majors.find(p => p.name === playerName);
     if (m) return { source: "keeper", originTeamId: team.id, price: m.price, yearAcquired: m.yearAcquired, fromMinors: m.fromMinors };
   }
   return null;
 }
 
-function findCallupRecord(playerName) {
+function findCallupRecord(playerName, preferredTeamId) {
+  if (preferredTeamId) {
+    const own = LEAGUE_DATA.teams.find(t => t.id === preferredTeamId);
+    const c = own?.callups?.find(p => p.name === playerName);
+    if (c) return { originTeamId: own.id, ...c };
+  }
   for (const team of LEAGUE_DATA.teams) {
+    if (team.id === preferredTeamId) continue;
     const c = team.callups.find(p => p.name === playerName);
     if (c) return { originTeamId: team.id, ...c };
   }
   return null;
 }
 
-function findInMinors(playerName) {
+function findInMinors(playerName, preferredTeamId) {
+  if (preferredTeamId) {
+    const own = LEAGUE_DATA.teams.find(t => t.id === preferredTeamId);
+    const m = own?.minors?.find(p => p.name === playerName);
+    if (m) return { teamId: own.id, ...m };
+  }
   for (const team of LEAGUE_DATA.teams) {
+    if (team.id === preferredTeamId) continue;
     const m = team.minors.find(p => p.name === playerName);
     if (m) return { teamId: team.id, ...m };
   }
@@ -2774,7 +2816,7 @@ function setWorkaroundOverride(playerId, decision) {
 function classifyCommishAdd(playerName, playerId, currentTeamLocalId, lastAdd) {
   if (!lastAdd || !lastAdd.isCommishWorkaround) return null;
 
-  const callupRecord = findCallupRecord(playerName);
+  const callupRecord = findCallupRecord(playerName, currentTeamLocalId);
   let presumption;
   if (callupRecord && callupRecord.originTeamId === currentTeamLocalId) {
     presumption = "callup";
@@ -2836,7 +2878,7 @@ function getTradeDeadline() {
 // Resolve original cost basis (before drop/add overrides).
 function getOriginalCostBasis(playerName, currentTeamLocalId) {
   // 1. Existing keeper (price/year known from prior-year sheet)
-  const keeper = findKeeperCostBasis(playerName);
+  const keeper = findKeeperCostBasis(playerName, currentTeamLocalId);
   if (keeper) {
     return {
       price: keeper.price,
@@ -2848,7 +2890,7 @@ function getOriginalCostBasis(playerName, currentTeamLocalId) {
   }
 
   // 2. Was a minor leaguer last year, called up this season
-  const callup = findCallupRecord(playerName);
+  const callup = findCallupRecord(playerName, currentTeamLocalId);
   if (callup) {
     const overrides = getCallupPriceOverrides();
     const o = overrides[playerName];
@@ -2913,7 +2955,7 @@ function resolveCostBasis(playerName, currentTeamLocalId) {
       };
     }
     if (workaround.decision === "callup") {
-      const callup = findCallupRecord(playerName);
+      const callup = findCallupRecord(playerName, currentTeamLocalId);
       const overrides = getCallupPriceOverrides();
       const o = overrides[playerName];
       return {

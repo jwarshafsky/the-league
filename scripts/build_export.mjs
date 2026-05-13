@@ -170,9 +170,23 @@ function applyRosterAdjustments(teams, trades, callupOverrides, rosterMoves, dra
       player = fromList.splice(idx, 1)[0];
       map.set(fromId, fromList);
     } else {
-      const orig = findOriginal(name);
-      if (!orig) return;
-      player = { ...orig };
+      // Scan other current lists first (chained-trade case where the recorded
+      // fromTeam is stale). Only fall back to the anchor as a last resort, to
+      // avoid duplicating a player who's still alive on some other team.
+      let actualFromId = null;
+      for (const [tid, list] of map.entries()) {
+        if (list.some(p => p.name === name)) { actualFromId = tid; break; }
+      }
+      if (actualFromId) {
+        const list = map.get(actualFromId);
+        const j = list.findIndex(p => p.name === name);
+        player = list.splice(j, 1)[0];
+        map.set(actualFromId, list);
+      } else {
+        const orig = findOriginal(name);
+        if (!orig) return;
+        player = { ...orig };
+      }
     }
     const toList = map.get(toId) || [];
     if (!toList.find(p => p.name === player.name)) toList.push({ ...player });
@@ -479,15 +493,30 @@ function getContractStatus(player, currentSeason) {
   return { yearsKept, yearsRemaining, originalPrice, maxYears, nextYearPrice, canKeepNextYear, status, label };
 }
 
-function findKeeperCostBasis(teams, name) {
+// Lookup helpers across every team's snapshot. preferredTeamId disambiguates
+// when two MLB players share a name (the caller's team wins); falls back to
+// cross-team scan for the trade-via-keeper case.
+function findKeeperCostBasis(teams, name, preferredTeamId) {
+  if (preferredTeamId) {
+    const own = teams.find(t => t.id === preferredTeamId);
+    const m = own?.majors?.find(p => p.name === name);
+    if (m) return { source: "keeper", originTeamId: own.id, price: m.price, yearAcquired: m.yearAcquired, fromMinors: m.fromMinors };
+  }
   for (const t of teams) {
+    if (t.id === preferredTeamId) continue;
     const m = (t.majors || []).find(p => p.name === name);
     if (m) return { source: "keeper", originTeamId: t.id, price: m.price, yearAcquired: m.yearAcquired, fromMinors: m.fromMinors };
   }
   return null;
 }
-function findCallupRecord(teams, name) {
+function findCallupRecord(teams, name, preferredTeamId) {
+  if (preferredTeamId) {
+    const own = teams.find(t => t.id === preferredTeamId);
+    const c = own?.callups?.find(p => p.name === name);
+    if (c) return { originTeamId: own.id, ...c };
+  }
   for (const t of teams) {
+    if (t.id === preferredTeamId) continue;
     const c = (t.callups || []).find(p => p.name === name);
     if (c) return { originTeamId: t.id, ...c };
   }
@@ -528,7 +557,7 @@ function getTradeDeadline() { return ESPN_SNAPSHOT?.tradeDeadline || null; }
 
 function classifyCommishAdd(teams, name, playerId, currentTeamLocalId, lastAdd, workaroundOverrides) {
   if (!lastAdd || !lastAdd.isCommishWorkaround) return null;
-  const callup = findCallupRecord(teams, name);
+  const callup = findCallupRecord(teams, name, currentTeamLocalId);
   let presumption;
   if (callup && callup.originTeamId === currentTeamLocalId) presumption = "callup";
   else if (lastAdd.recentDropWithin24h) presumption = "fa";
@@ -538,7 +567,7 @@ function classifyCommishAdd(teams, name, playerId, currentTeamLocalId, lastAdd, 
 }
 
 function getOriginalCostBasis(teams, name, currentTeamLocalId, callupOverrides, currentSeason) {
-  const keeper = findKeeperCostBasis(teams, name);
+  const keeper = findKeeperCostBasis(teams, name, currentTeamLocalId);
   if (keeper) {
     return {
       price: keeper.price, yearAcquired: keeper.yearAcquired, fromMinors: keeper.fromMinors,
@@ -546,7 +575,7 @@ function getOriginalCostBasis(teams, name, currentTeamLocalId, callupOverrides, 
       contractType: "auction",
     };
   }
-  const callup = findCallupRecord(teams, name);
+  const callup = findCallupRecord(teams, name, currentTeamLocalId);
   if (callup) {
     const o = callupOverrides[name];
     return {
@@ -587,7 +616,7 @@ function resolveCostBasis(teams, name, currentTeamLocalId, callupOverrides, work
       return { price: 6, yearAcquired: currentSeason + 1, fromMinors: false, source: "fa", contractType: "fa", workaround };
     }
     if (workaround.decision === "callup") {
-      const callup = findCallupRecord(teams, name);
+      const callup = findCallupRecord(teams, name, currentTeamLocalId);
       const o = callupOverrides[name];
       return {
         price: o?.price ?? null,
