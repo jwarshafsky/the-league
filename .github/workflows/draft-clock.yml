@@ -1,0 +1,39 @@
+name: Draft Clock (auto-skip + alerts)
+
+on:
+  schedule:
+    # Every 5 minutes. The script is idempotent and uses a marker in
+    # league_state.notify_draft_marker to avoid duplicate notifications,
+    # so the slower-than-original (was */2) cadence is fine.
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: draft-clock
+  cancel-in-progress: false
+
+jobs:
+  tick:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Python dependencies
+        run: pip install --quiet pywebpush cryptography py_vapid
+
+      - name: Run draft clock notifier
+        env:
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASS: ${{ secrets.SMTP_PASS }}
+          VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}
+          VAPID_SUBJECT: ${{ secrets.VAPID_SUBJECT }}
+        run: python3 scripts/notify_draft_clock.py
