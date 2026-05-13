@@ -1,3 +1,0 @@
-0 4 * * * /Users/jwars/Desktop/Claude/fantasy-league/scripts/nightly_sync.sh >> /tmp/fantasy-league-sync.log 2>&1
-*/15 * * * * /Users/jwars/Desktop/Claude/fantasy-league/scripts/frequent_espn_sync.sh >> /tmp/fantasy-league-espn-sync.log 2>&1
-0 21 * * * /usr/bin/python3 /Users/jwars/Desktop/Claude/fantasy-league/scripts/daily_report.py >> /tmp/league-daily.log 2>&1

@@ -11,3 +11,4 @@ scripts/.env*
 *.log
 .vscode/
 .idea/
+scripts/cron-backup-*.txt
