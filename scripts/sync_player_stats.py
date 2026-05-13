@@ -74,14 +74,62 @@ def search_mlb_id(name):
     return people[0].get("id")
 
 
-def fetch_career_stats(player_id):
+def load_prev_snapshot():
+    """Parse the previous player-stats-snapshot.js so a transient API failure
+    can preserve last-known stats instead of clobbering them with zeros (which
+    would otherwise clear the "Must Call Up" eligibility warning displayed by
+    the app)."""
+    if not os.path.exists(OUT_FILE):
+        return {}
     try:
-        data = http_get(
-            f"{API_BASE}/people/{player_id}/stats?stats=career&group=hitting,pitching&sportId=1"
-        )
+        text = open(OUT_FILE).read()
+        # File body looks like `const PLAYER_STATS = {…};\n`
+        m = re.search(r"=\s*(\{[\s\S]*\});?\s*$", text)
+        if not m:
+            return {}
+        data = json.loads(m.group(1))
+        return data.get("players", {}) or {}
     except Exception as e:
-        print(f"  stats error for id={player_id}: {e}", file=sys.stderr)
+        print(f"  could not parse previous snapshot: {e}", file=sys.stderr)
+        return {}
+
+
+_PREV_SNAPSHOT = None
+
+
+def fetch_career_stats(player_id, player_name=None):
+    global _PREV_SNAPSHOT
+    if _PREV_SNAPSHOT is None:
+        _PREV_SNAPSHOT = load_prev_snapshot()
+
+    def _fallback():
+        # Preserve the previous snapshot's value if we have one — better than
+        # zeroing out and falsely clearing a player's threshold warning.
+        prev = _PREV_SNAPSHOT.get(player_name) if player_name else None
+        if prev:
+            return {
+                "careerAB": int(prev.get("careerAB") or 0),
+                "careerIP": float(prev.get("careerIP") or 0),
+                "_stale": True,
+            }
         return {"careerAB": 0, "careerIP": 0.0}
+
+    # One retry on transient errors before giving up. MLB Stats API
+    # occasionally returns 5xx during scheduled maintenance windows.
+    last_err = None
+    for attempt in range(2):
+        try:
+            data = http_get(
+                f"{API_BASE}/people/{player_id}/stats?stats=career&group=hitting,pitching&sportId=1"
+            )
+            break
+        except Exception as e:
+            last_err = e
+            if attempt == 0:
+                time.sleep(0.5)
+    else:
+        print(f"  stats error for id={player_id} ({player_name}): {last_err}", file=sys.stderr)
+        return _fallback()
 
     career_ab = 0
     career_ip = 0.0
@@ -135,11 +183,14 @@ def main():
 
     print(f"Fetching career stats for {sum(1 for n in players if n in ids)} players...")
     out_players = {}
+    stale_count = 0
     for name, stat_type in players.items():
         if name not in ids:
             continue
         mlb_id = ids[name]
-        stats = fetch_career_stats(mlb_id)
+        stats = fetch_career_stats(mlb_id, name)
+        if stats.get("_stale"):
+            stale_count += 1
         out_players[name] = {
             "mlbId": mlb_id,
             "statType": stat_type,
@@ -147,6 +198,8 @@ def main():
             "careerIP": stats["careerIP"],
         }
         time.sleep(SLEEP)
+    if stale_count:
+        print(f"  ! {stale_count} player(s) preserved at previous values (API errors)", file=sys.stderr)
 
     synced_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     snapshot = {"syncedAt": synced_at, "players": out_players}
