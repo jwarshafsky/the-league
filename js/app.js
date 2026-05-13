@@ -977,28 +977,32 @@ function getCurrentMinors(team) {
 function renderMinorsCompactTable(team) {
   // All Teams view: only show MILB-roster players. Callups (already on MLB
   // roster) live on the Eligible Keepers / individual team pages instead.
-  // table-layout:fixed + shared colgroup so columns align across all 12 team
-  // tables stacked vertically.
+  // Columns + colgroup mirror the single-team renderMinorsTable (no-actions
+  // variant) so the rosters tab feels consistent in both modes.
   const allPlayers = getCurrentMinors(team)
-    .map(p => ({ ...p, rosterType: "minors" }))
+    .map(p => ({ ...p, rosterType: "minors", _teamStatus: getMinorTeamStatus(p.name, team.id) }))
     .sort((a, b) => lastName(a.name).localeCompare(lastName(b.name)));
   if (!allPlayers.length) return "<p style='color:var(--text-dim)'>No minor league players</p>";
   return `
-    <table class="player-table" style="table-layout:fixed">
-      <colgroup>
-        <col style="width:60%">
-        <col style="width:15%">
-        <col style="width:25%">
-      </colgroup>
-      <thead><tr><th>Player</th><th>Drafted</th><th>AB/IP</th></tr></thead>
+    <table class="player-table mobile-stack-table" style="table-layout:fixed">
+      ${_minorsTablesColgroup(false)}
+      <thead><tr><th>Player</th><th>Drafted</th><th>AB/IP</th><th>Expiry</th><th>Status</th></tr></thead>
       <tbody>
         ${allPlayers.map(p => {
+          const ms = getMinorLeagueContractStatus(p, CURRENT_SEASON);
           let statClass = "";
           if ((p.statType === "AB" && p.careerStat >= 200) || (p.statType === "IP" && p.careerStat >= 50)) statClass = "stat-warning";
           return `<tr>
-            <td><span class="player-name">${escapeHtml(p.name)}</span></td>
-            <td class="player-year">${p.yearAcquired}</td>
-            <td class="${statClass}">${p.careerStat} ${p.statType}</td>
+            <td class="notif-row-label"><span class="player-name">${escapeHtml(p.name)}</span></td>
+            <td data-label="Drafted" class="player-year">${p.yearAcquired}</td>
+            <td data-label="AB/IP" class="${statClass}">${p.careerStat} ${p.statType}</td>
+            <td data-label="Expiry">${_milExpiryTag(ms)}</td>
+            <td data-label="Status">${
+              p._teamStatus === "dropped" ? '<span style="color:var(--orange);font-size:0.8rem">Dropped</span>' :
+              p._teamStatus === "traded"  ? '<span style="color:var(--accent);font-size:0.8rem">Traded</span>' :
+              ms.eligibilityWarning ? `<span class="hide-on-mobile" style="color:var(--orange);font-size:0.8rem">${ms.eligibilityWarning}</span>` :
+              '<span style="color:var(--green);font-size:0.8rem">Active</span>'
+            }</td>
           </tr>`;
         }).join("")}
       </tbody>
