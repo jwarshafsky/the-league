@@ -911,6 +911,21 @@ async function _reverseActivityEffect(entry) {
       else if (typeof saveRule5State === "function") saveRule5State(state);
       return;
     }
+    case "rule5_pick_passed":
+    case "rule5_pick_auto_skipped": {
+      // Remove the pass entry from rule5 state so the slot becomes the
+      // current pick again. Without this, undoing the log row would leave
+      // the pass in place and the draft would never re-fire.
+      const state = (typeof getRule5State === "function") ? getRule5State() : null;
+      if (!state || !state.picks) return;
+      const targetIdx0 = (typeof p.idx === "number") ? p.idx - 1 : null;
+      state.picks = state.picks.filter(pick =>
+        !(pick.round === p.round && pick.idx === targetIdx0 && pick.pass)
+      );
+      if (typeof saveRule5Async === "function") await saveRule5Async(state);
+      else if (typeof saveRule5State === "function") saveRule5State(state);
+      return;
+    }
     case "minors_pick_made":
     case "minors_pick_passed":
     case "minors_pick_auto_skipped": {
