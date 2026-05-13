@@ -911,12 +911,22 @@ async function main() {
     }
   }
 
-  const resp = await fetch(url, {
+  // Apps Script /exec returns a 302 pointing at a googleusercontent.com URL
+  // whose GET body is the doPost response. Browsers downgrade POST→GET on
+  // 302 (legacy behavior); Node's fetch preserves POST per WHATWG spec,
+  // which would hit a Drive 405. Handle the redirect ourselves.
+  const postResp = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "text/plain;charset=utf-8" },
     body: JSON.stringify(payload),
-    redirect: "follow",
+    redirect: "manual",
   });
+  let resp = postResp;
+  if (postResp.status >= 300 && postResp.status < 400) {
+    const location = postResp.headers.get("location");
+    if (!location) throw new Error(`Apps Script redirect missing Location header (HTTP ${postResp.status})`);
+    resp = await fetch(location, { method: "GET" });
+  }
   const text = await resp.text();
   let data = null;
   try { data = JSON.parse(text); } catch {}
