@@ -15,6 +15,12 @@ import os
 import sys
 from datetime import datetime, timedelta, timezone
 
+try:
+    from zoneinfo import ZoneInfo
+    _ET = ZoneInfo("America/New_York")
+except Exception:
+    _ET = timezone.utc  # Fallback; runner without tzdata will see UTC labels.
+
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _notify_db import (  # noqa: E402
     load_env, fetch_activity_since, fetch_all_owners, fetch_emails_by_user_id,
@@ -118,7 +124,10 @@ def main():
     emails_by_uid = fetch_emails_by_user_id(key)
     all_prefs = fetch_notify_prefs(key)
 
-    now_label = datetime.now(timezone.utc).astimezone().strftime("%A, %b %d, %Y")
+    # ET label so the digest matches recipients' calendars (cron fires at 01:07
+    # UTC = 9:07 PM ET the prior day; using runner-local TZ would show the next
+    # calendar day on GitHub Actions where the runner is UTC).
+    now_label = datetime.now(timezone.utc).astimezone(_ET).strftime("%A, %b %d, %Y")
     today_subtitle = f"Daily digest · {now_label}"
 
     sent = []

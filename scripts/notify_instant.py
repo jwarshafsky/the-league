@@ -51,16 +51,6 @@ CATEGORY_META = {
 }
 
 
-def fetch_target_team_for_proposal(key, proposal_id):
-    url = f"{SUPABASE_URL}/rest/v1/trade_proposals?id=eq.{proposal_id}&select=from_team_id,to_team_id"
-    rows = (urllib.request.urlopen(urllib.request.Request(url, headers={
-        "apikey": key, "Authorization": f"Bearer {key}",
-    }), timeout=10).read().decode("utf-8") or "[]")
-    try: rows = json.loads(rows)
-    except Exception: rows = []
-    return rows[0] if rows else None
-
-
 def recipients_for_activity(activity, all_prefs, channel):
     """Return list of team_ids that should be notified for this event on
     the given channel ('email' or 'push'). Builds a small set keyed by team_id

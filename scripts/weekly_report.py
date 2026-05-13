@@ -10,6 +10,12 @@ import os
 import sys
 from datetime import datetime, timedelta, timezone
 
+try:
+    from zoneinfo import ZoneInfo
+    _ET = ZoneInfo("America/New_York")
+except Exception:
+    _ET = timezone.utc  # Fallback; runner without tzdata will see UTC labels.
+
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _notify_db import (
     load_env, fetch_activity_since, fetch_all_owners, fetch_emails_by_user_id,
@@ -37,7 +43,9 @@ def main():
     emails_by_uid = fetch_emails_by_user_id(key)
     all_prefs = fetch_notify_prefs(key)
 
-    label = datetime.now(timezone.utc).astimezone().strftime("week ending %b %d, %Y")
+    # ET label so "week ending" matches recipients' calendars (cron fires at
+    # 01:07 UTC Monday = 9:07 PM ET Sunday).
+    label = datetime.now(timezone.utc).astimezone(_ET).strftime("week ending %b %d, %Y")
 
     sent = []
     for owner in owners:
