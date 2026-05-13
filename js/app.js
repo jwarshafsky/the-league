@@ -5513,18 +5513,20 @@ function _findCommishWorkaroundsPending() {
 
 function _findCallupsWithoutPrice() {
   // Active call-ups whose price hasn't been set yet (commish enters this in
-  // the offseason based on the §2(e) ranking-tier ladder).
+  // the offseason based on the §2(e) ranking-tier ladder). Excludes callups
+  // who are no longer on any ESPN roster (dropped) — those are dead entries
+  // that don't need a price set.
   const out = [];
   for (const team of LEAGUE_DATA.teams || []) {
     for (const p of (team.callups || [])) {
-      if (p.price == null) {
-        out.push({
-          name: p.name,
-          teamId: team.id,
-          teamName: team.name,
-          yearAcquired: p.yearAcquired,
-        });
-      }
+      if (p.price != null) continue;
+      if (typeof isPlayerDroppedFromEspn === "function" && isPlayerDroppedFromEspn(p.name)) continue;
+      out.push({
+        name: p.name,
+        teamId: team.id,
+        teamName: team.name,
+        yearAcquired: p.yearAcquired,
+      });
     }
   }
   return out;
@@ -5757,13 +5759,15 @@ function renderMustCallUpReview() {
 }
 
 function renderCommissionerReviewSections() {
+  const callupItems = _findCallupsWithoutPrice();
   const sections = [
     { title: "Duplicate Player Names", body: renderDuplicateNamesReview(),
       intro: 'Two MLB players sharing a name (or a stale data-entry duplicate). Cost-basis lookups pick the first match by name, so the commish needs to pin contracts via Keeper Price Exceptions (case (a)) or clean up <code>js/data.js</code> (case (b)).' },
     { title: "Commissioner Add — Needs Classification", body: renderWorkaroundConfirmations(),
       intro: 'When ESPN logged a player addition by a commissioner moving someone else\'s player, the app can\'t tell whether it was a Trade, FA pickup, or Call-up. Classify each so the cost basis is right.' },
     { title: "Call-up Prices Not Set", body: renderCallupPriceReview(),
-      intro: 'Active call-ups need a first ML-year price per §2(e). Until set, the player shows as <code>$TBD</code> and keeper math is incomplete.' },
+      intro: 'Active call-ups need a first ML-year price per §2(e). Until set, the player shows as <code>$TBD</code> and keeper math is incomplete.',
+      collapsible: true, count: callupItems.length },
     { title: "MiL Players Past §3(f) Threshold", body: renderMustCallUpReview(),
       intro: 'These minor leaguers have hit 300 AB / 75 IP — per the post-Jan-2026 amendment they must be called up or dropped by the end of the next MiL draft.' },
   ];
@@ -5771,13 +5775,28 @@ function renderCommissionerReviewSections() {
   if (!nonEmpty.length) {
     return `<div style="color:var(--text-dim);font-size:0.84rem;font-style:italic">Nothing flagged for review. ✓</div>`;
   }
-  return nonEmpty.map(s => `
-    <div style="margin-bottom:14px">
-      <div style="font-weight:700;color:var(--text-bright);font-size:0.92rem;margin-bottom:4px">${escapeHtml(s.title)}</div>
-      <div style="color:var(--text-dim);font-size:0.78rem;margin-bottom:8px">${s.intro}</div>
-      ${s.body}
-    </div>
-  `).join("");
+  return nonEmpty.map(s => {
+    if (s.collapsible) {
+      // <details> keeps the long list off-screen until the commish wants it.
+      return `
+        <details style="margin-bottom:14px">
+          <summary style="cursor:pointer;font-weight:700;color:var(--text-bright);font-size:0.92rem;margin-bottom:4px;padding:4px 0">
+            ${escapeHtml(s.title)}
+            <span style="color:var(--orange);font-weight:700;font-size:0.78rem;margin-left:4px">(${s.count})</span>
+          </summary>
+          <div style="color:var(--text-dim);font-size:0.78rem;margin:8px 0">${s.intro}</div>
+          ${s.body}
+        </details>
+      `;
+    }
+    return `
+      <div style="margin-bottom:14px">
+        <div style="font-weight:700;color:var(--text-bright);font-size:0.92rem;margin-bottom:4px">${escapeHtml(s.title)}</div>
+        <div style="color:var(--text-dim);font-size:0.78rem;margin-bottom:8px">${s.intro}</div>
+        ${s.body}
+      </div>
+    `;
+  }).join("");
 }
 
 function _commishReviewTotal() {
