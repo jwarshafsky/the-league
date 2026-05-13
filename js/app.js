@@ -6305,7 +6305,13 @@ function _xlsxEligibleKeepersAoa(teams, sel, balances) {
   teams.forEach((t, i) => { rMinLabel[i * blockCols + 2] = "Minors"; });
   aoa.push(rMinLabel);
 
-  const minorsLists = teams.map(t => [...(t.minors || []), ...(t.callups || [])]);
+  // Minors section lists ONLY current MiLB players. Callups have been
+  // promoted to MLB and belong in the Majors section above (which already
+  // picks them up via the ESPN roster). Including them here would re-list
+  // them as minors and would also surface dropped-from-MLB callups (e.g.
+  // a player called up then released to FA) that aren't on any roster
+  // at all.
+  const minorsLists = teams.map(t => (t.minors || []));
   const maxMinorsAll = Math.max(0, ...minorsLists.map(l => l.length));
   for (let row = 0; row < maxMinorsAll; row++) {
     const r = blank();

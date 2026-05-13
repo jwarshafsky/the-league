@@ -985,7 +985,12 @@ function aoaEligibleKeepers(teams, keeperSel, balances, currentSeason, allTeams,
   teams.forEach((_t, i) => { rMinLabel[i * blockCols + 2] = "Minors"; });
   aoa.push(rMinLabel);
 
-  const minorsLists = teams.map(t => [...(t.minors || []), ...(t.callups || [])]);
+  // Minors-only here. Callups have been promoted to MLB and belong in
+  // the Majors section (sourced from ESPN roster). Including callups
+  // here would re-list them as minors and would surface
+  // dropped-from-MLB callups (e.g. a player called up then released)
+  // that aren't on any roster at all.
+  const minorsLists = teams.map(t => (t.minors || []));
   const maxMinorsAll = Math.max(0, ...minorsLists.map(l => l.length));
   for (let row = 0; row < maxMinorsAll; row++) {
     const r = blank();
