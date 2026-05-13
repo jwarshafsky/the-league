@@ -16,38 +16,28 @@ triggers a new push.
 """
 
 import argparse
-import json
 import os
 import sys
-import urllib.request
 from datetime import datetime, timezone
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from _notify_db import load_env, http_get, SUPABASE_URL  # noqa: E402
+from _notify_db import (  # noqa: E402
+    load_env, http_get, SUPABASE_URL,
+    fetch_league_state_row, upsert_league_state_row,
+)
 
 STATE_KEY = "espn_sync_status"
 
 
 def _patch_state(key, state):
-    url = f"{SUPABASE_URL}/rest/v1/league_state?on_conflict=key"
-    headers = {
-        "apikey": key,
-        "Authorization": f"Bearer {key}",
-        "Content-Type": "application/json",
-        "Prefer": "resolution=merge-duplicates,return=minimal",
-    }
-    body = json.dumps([{"key": STATE_KEY, "state": state}]).encode("utf-8")
-    req = urllib.request.Request(url, data=body, method="POST", headers=headers)
-    with urllib.request.urlopen(req, timeout=10) as r:
-        r.read()
+    upsert_league_state_row(key, STATE_KEY, state)
 
 
 def _read_state(key):
-    rows = http_get(f"{SUPABASE_URL}/rest/v1/league_state?key=eq.{STATE_KEY}&select=state", key)
-    if not rows:
+    state = fetch_league_state_row(key, STATE_KEY)
+    if not state or not isinstance(state, dict):
         return {}
-    state = rows[0].get("state") or {}
-    return state if isinstance(state, dict) else {}
+    return state
 
 
 def _push_commissioners(env, message):
