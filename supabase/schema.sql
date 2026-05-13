@@ -758,6 +758,38 @@ grant all on public.league_messages to service_role;
 
 
 -- ============================================================================
+-- Realtime publication — tables the client subscribes to. Idempotent. The
+-- subscribe handlers in js/db.js silently no-op if a table isn't published,
+-- so missing entries here would not raise an error but would break live
+-- updates (message board, trades, keeper picks, etc.) on a fresh project.
+-- ============================================================================
+do $$
+declare
+  t text;
+  realtime_tables text[] := array[
+    'trades',
+    'keeper_selections',
+    'league_state',
+    'callup_overrides',
+    'activity_log',
+    'notification_prefs',
+    'league_messages'
+  ];
+begin
+  foreach t in array realtime_tables loop
+    if not exists (
+      select 1 from pg_publication_tables
+      where pubname = 'supabase_realtime'
+        and schemaname = 'public'
+        and tablename = t
+    ) then
+      execute format('alter publication supabase_realtime add table public.%I', t);
+    end if;
+  end loop;
+end $$;
+
+
+-- ============================================================================
 -- BOOTSTRAP — run AFTER Jeff has logged in once via magic link.
 -- This claims 'jeff' as Jeff's team and makes him a commissioner.
 -- ============================================================================
