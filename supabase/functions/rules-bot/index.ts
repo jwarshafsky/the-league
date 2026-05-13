@@ -116,6 +116,14 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders(origin) });
   if (req.method !== "POST") return jsonResponse({ error: "method not allowed" }, 405, origin);
 
+  // Reject unknown origins before doing any work. The browser would block the
+  // response anyway (Allow-Origin mismatch), but processing the request still
+  // burns Groq tokens against the daily cap. Origin is null for same-origin
+  // requests and for server-to-server callers (curl, scripts) — allow those.
+  if (origin && !ALLOWED_ORIGINS.includes(origin)) {
+    return jsonResponse({ error: "forbidden origin" }, 403, origin);
+  }
+
   const authHeader = req.headers.get("Authorization") || req.headers.get("authorization");
   if (!authHeader) return jsonResponse({ error: "unauthenticated" }, 401, origin);
 
@@ -165,7 +173,12 @@ Deno.serve(async (req) => {
   if (!question) return jsonResponse({ error: "empty question" }, 400, origin);
   if (question.length > 2000) return jsonResponse({ error: "question too long (max 2000 chars)" }, 400, origin);
   // Last 4 turns is enough conversational context — older turns blow up the prompt.
-  const history = (payload.history || []).slice(-4).filter(m => m && typeof m.content === "string");
+  // Cap each turn's content too so a client can't balloon the prompt by stuffing
+  // history (the daily token cap is the second line of defense).
+  const MAX_HISTORY_CHARS = 4000;
+  const history = (payload.history || []).slice(-4)
+    .filter(m => m && typeof m.content === "string")
+    .map(m => ({ role: m.role, content: m.content.slice(0, MAX_HISTORY_CHARS) }));
   // Only trust the client-supplied roster if its team_id matches the asker's
   // verified team (or the asker is a commish — they can ask about anyone).
   const myRoster = payload.myRoster &&
@@ -282,6 +295,11 @@ Deno.serve(async (req) => {
 
   for (const model of MODELS) {
     let resp: Response;
+    // 30s timeout per model attempt — a hanging Groq call would otherwise
+    // consume the entire edge function runtime quota and time out the
+    // function (which returns an opaque 500 to the client).
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 30000);
     try {
       resp = await fetch("https://api.groq.com/openai/v1/chat/completions", {
         method: "POST",
@@ -295,10 +313,13 @@ Deno.serve(async (req) => {
           temperature: 0.2,
           max_tokens: 1024,
         }),
+        signal: ctrl.signal,
       });
     } catch (e) {
       errors.push(`${model}: fetch failed: ${(e as Error).message}`);
       continue;
+    } finally {
+      clearTimeout(timer);
     }
 
     // Fall through on retryable conditions: 429 (TPM/RPD quota), 413 (request
@@ -343,12 +364,15 @@ Deno.serve(async (req) => {
     return jsonResponse({ error: maskError("all groq models exhausted: " + errors.join(" | ")) }, 502, origin);
   }
 
-  // Persist updated usage. Don't block the response on this — fire and forget.
+  // Persist updated usage. Await so a transient DB error surfaces rather than
+  // silently letting the cap state go stale (which would allow future requests
+  // to bypass the cap until the next successful write).
   if (dailyCap > 0) {
-    admin.from("league_state")
-      .upsert({ key: "commishai_usage", state: usageState })
-      .then(() => {})
-      .catch(() => {});
+    try {
+      await admin.from("league_state").upsert({ key: "commishai_usage", state: usageState });
+    } catch (e) {
+      console.warn("commishai_usage upsert failed:", (e as Error).message);
+    }
   }
 
   return jsonResponse({
