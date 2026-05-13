@@ -1,0 +1,37 @@
+name: Google Sheets Sync
+
+on:
+  schedule:
+    # Every 5 minutes. The Node script reads league_state.settings to find
+    # the saved Apps Script URL; if no URL is set, it no-ops.
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+    inputs:
+      debug:
+        description: 'Log per-tab row counts'
+        required: false
+        default: 'false'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sheets-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Build payload + POST to Apps Script
+        env:
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SHEETS_DEBUG: ${{ inputs.debug == 'true' && '1' || '' }}
+        run: node scripts/build_export.mjs
