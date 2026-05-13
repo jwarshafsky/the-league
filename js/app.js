@@ -3165,6 +3165,10 @@ function renderKeeperLockCommishControls() {
   `;
 }
 async function toggleKeeperLock() {
+  // Button is commish-only in the UI, but defense-in-depth — Supabase RLS on
+  // league_state would reject a non-commish write, but we should fail early
+  // before the user sees a confirm dialog.
+  if (!isCommissioner()) { alert("Commissioners only."); return; }
   const wasLocked = isKeeperLockoutActive();
   if (wasLocked && !confirm("Unlock keepers? Owners will be able to edit again.")) return;
   if (!wasLocked && !confirm("Lock keeper selections for everyone except commissioners?")) return;
