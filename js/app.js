@@ -5499,9 +5499,11 @@ function _findCommishWorkaroundsPending() {
         const decisionLabels = { trade: "Trade", fa: "FA", callup: "Call-up" };
         out.push({
           name: p.name,
+          playerId: p.playerId,
           teamId: team.id,
           teamName: team.name,
-          presumption: decisionLabels[w.presumption] || w.presumption,
+          presumption: w.presumption,
+          presumptionLabel: decisionLabels[w.presumption] || w.presumption,
         });
       }
     }
@@ -5598,6 +5600,57 @@ function _reviewItemCard(content) {
   return `<div style="background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:10px 12px;margin-bottom:8px">${content}</div>`;
 }
 
+// Re-render the Settings tab after any in-page review action resolves an
+// item — the underlying detector re-runs, the count drops, and the resolved
+// card disappears.
+function _refreshReviewTab() {
+  if (typeof currentView !== "undefined" && currentView === "settings") {
+    if (typeof switchTab === "function") switchTab("settings");
+  }
+}
+
+// --- Action handlers wired to inline review buttons ---
+
+async function reviewDropPlayer(playerName, teamId) {
+  // dropMinorPlayer already calls _refreshAfterRosterMove which re-renders
+  // the current tab (settings, in this case).
+  if (typeof dropMinorPlayer === "function") {
+    await dropMinorPlayer(playerName, teamId);
+  }
+}
+
+async function reviewClassifyWorkaround(playerId, decision) {
+  if (typeof setWorkaroundOverride === "function") {
+    setWorkaroundOverride(playerId, decision);
+  }
+  // setWorkaroundOverride saves async; wait briefly for the cache write to
+  // settle so the detector picks up the change on re-render.
+  await new Promise(r => setTimeout(r, 250));
+  _refreshReviewTab();
+}
+
+async function reviewSetCallupPrice(playerName) {
+  const input = document.getElementById(`rev-callup-price-${CSS.escape(playerName)}`);
+  if (!input) return;
+  const price = parseInt(input.value, 10);
+  if (!Number.isFinite(price) || price < 0) {
+    alert("Enter a valid non-negative integer price.");
+    input.focus();
+    return;
+  }
+  if (typeof setCallupPriceOverride === "function") {
+    setCallupPriceOverride(playerName, price, CURRENT_SEASON);
+  }
+  await new Promise(r => setTimeout(r, 250));
+  _refreshReviewTab();
+}
+
+async function reviewCallUp(playerName, teamId) {
+  if (typeof callUpMinorPlayer === "function") {
+    await callUpMinorPlayer(playerName, teamId);
+  }
+}
+
 function renderDuplicateNamesReview() {
   const dupes = _findDuplicateNameOccurrences();
   if (!dupes.length) return "";
@@ -5610,18 +5663,21 @@ function renderDuplicateNamesReview() {
     const hits = d.hits.map(h => {
       const priceStr = (h.price != null) ? `$${h.price}` : "$TBD";
       const yrStr = h.year != null ? `, acquired ${h.year}` : "";
-      return `<li style="margin-bottom:3px"><strong>${escapeHtml(h.teamName)}</strong> &middot; ${h.where} &middot; ${priceStr}${yrStr}</li>`;
+      const action = (h.where !== "majors")
+        ? `<button class="trade-btn trade-btn-cancel" style="font-size:0.72rem;padding:2px 8px;margin-left:8px" onclick="reviewDropPlayer('${escapeJsString(d.name)}','${escapeJsString(h.teamId)}')">Drop from ${escapeHtml(h.teamName)}</button>`
+        : `<span style="margin-left:8px;color:var(--text-dim);font-size:0.7rem">(majors — edit data.js)</span>`;
+      return `<li style="margin-bottom:4px"><strong>${escapeHtml(h.teamName)}</strong> &middot; ${h.where} &middot; ${priceStr}${yrStr}${action}</li>`;
     }).join("");
     return _reviewItemCard(`
       <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px;margin-bottom:6px">
         <span style="font-weight:700;color:var(--text-bright)">${escapeHtml(d.name)}</span>
         ${probable}
       </div>
-      <ul style="margin:0 0 6px 18px;padding:0;color:var(--text);font-size:0.84rem">${hits}</ul>
+      <ul style="margin:0 0 6px 18px;padding:0;color:var(--text);font-size:0.84rem;list-style:none">${hits}</ul>
       <div style="color:var(--text-dim);font-size:0.74rem">
         ${d.espnIdsCount >= 2
-          ? `Cost-basis lookups can't disambiguate by name alone. Use <em>Keeper Price Exceptions</em> below to pin each team's true salary, or set a <em>commish override</em> via the player's edit menu.`
-          : `If this is a stale entry, edit <code>js/data.js</code> to remove the duplicate from the wrong team.`}
+          ? `Two different players with the same name. Drop the duplicate from the wrong team and re-add with the correct contract via Keeper Price Exceptions below.`
+          : `If this is a stale entry, drop it from the team that no longer owns the player.`}
       </div>
     `);
   }).join("");
@@ -5630,41 +5686,72 @@ function renderDuplicateNamesReview() {
 function renderWorkaroundConfirmations() {
   const items = _findCommishWorkaroundsPending();
   if (!items.length) return "";
-  return items.map(it => _reviewItemCard(`
-    <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px;margin-bottom:4px">
-      <span><strong>${escapeHtml(it.name)}</strong> &middot; <span style="color:var(--accent)">${escapeHtml(it.teamName)}</span></span>
-      <span style="color:var(--text-dim);font-size:0.74rem">presumed ${escapeHtml(it.presumption)}</span>
-    </div>
-    <div style="color:var(--text-dim);font-size:0.74rem">
-      A commissioner moved this player on ESPN; classify whether it was a Trade / FA / Call-up so contract math applies the right cost basis. Open <em>Select Keepers</em> → <em>${escapeHtml(it.teamName)}</em> and click the badge under the player's name.
-    </div>
-  `)).join("");
+  return items.map(it => {
+    const mkBtn = (val, label, color) => `
+      <button onclick="reviewClassifyWorkaround(${JSON.stringify(it.playerId)}, '${val}')"
+              style="background:${val === it.presumption ? color : 'transparent'};
+                     color:${val === it.presumption ? '#fff' : color};
+                     border:1px solid ${color};
+                     border-radius:4px;font-size:0.7rem;padding:3px 8px;margin-right:4px;cursor:pointer">
+        ${label}${val === it.presumption ? ' (presumed)' : ''}
+      </button>`;
+    return _reviewItemCard(`
+      <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px;margin-bottom:6px">
+        <span><strong>${escapeHtml(it.name)}</strong> &middot; <span style="color:var(--accent)">${escapeHtml(it.teamName)}</span></span>
+      </div>
+      <div style="margin-bottom:6px">
+        ${mkBtn('trade', 'Trade', 'var(--accent)')}
+        ${mkBtn('fa', 'FA $6', 'var(--yellow)')}
+        ${mkBtn('callup', 'Call-up', 'var(--purple)')}
+      </div>
+      <div style="color:var(--text-dim);font-size:0.74rem">
+        Click to classify so cost basis applies correctly. ESPN logged the move under a commissioner account, not the team's owner.
+      </div>
+    `);
+  }).join("");
 }
 
 function renderCallupPriceReview() {
   const items = _findCallupsWithoutPrice();
   if (!items.length) return "";
-  return items.map(it => _reviewItemCard(`
-    <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px;margin-bottom:4px">
-      <span><strong>${escapeHtml(it.name)}</strong> &middot; <span style="color:var(--accent)">${escapeHtml(it.teamName)}</span></span>
-      <span style="color:var(--text-dim);font-size:0.74rem">drafted ${it.yearAcquired ?? "?"}</span>
-    </div>
-    <div style="color:var(--text-dim);font-size:0.74rem">
-      Call-up price hasn't been set. Per §2(e), the first ML kept year price is based on the player's ESPN top-200 ranking on March 1 ($1 / $3 / $5 / $10 / $15). Open <em>Select Keepers</em> → <em>${escapeHtml(it.teamName)}</em> to enter the price.
-    </div>
-  `)).join("");
+  return items.map(it => {
+    // Use a base64 ID to safely round-trip names with spaces/quotes through DOM ids.
+    const safeId = btoa(encodeURIComponent(it.name)).replace(/=/g, "");
+    return _reviewItemCard(`
+      <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px;margin-bottom:6px">
+        <span><strong>${escapeHtml(it.name)}</strong> &middot; <span style="color:var(--accent)">${escapeHtml(it.teamName)}</span></span>
+        <span style="color:var(--text-dim);font-size:0.74rem">drafted ${it.yearAcquired ?? "?"}</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;flex-wrap:wrap">
+        <label style="color:var(--text);font-size:0.78rem">First ML-year price:</label>
+        <input type="number" id="rev-callup-price-${escapeHtml(it.name)}" min="0" max="60" placeholder="$"
+          style="width:80px;background:var(--bg-card);color:var(--text);border:1px solid var(--border);padding:5px 8px;border-radius:5px;font-size:0.85rem">
+        <button class="trade-btn trade-btn-submit" style="font-size:0.78rem;padding:4px 10px"
+          onclick="reviewSetCallupPrice('${escapeJsString(it.name)}')">Save</button>
+      </div>
+      <div style="color:var(--text-dim);font-size:0.7rem">
+        §2(e) tiers based on ESPN top-200 ranking March 1: outside top 200 = $1 · 100-199 = $3 · 50-99 = $5 · 20-49 = $10 · top 19 = $15.
+      </div>
+    `);
+  }).join("");
 }
 
 function renderMustCallUpReview() {
   const items = _findMustCallUpPlayers();
   if (!items.length) return "";
   return items.map(it => _reviewItemCard(`
-    <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px;margin-bottom:4px">
+    <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px;margin-bottom:6px">
       <span><strong>${escapeHtml(it.name)}</strong> &middot; <span style="color:var(--accent)">${escapeHtml(it.teamName)}</span></span>
       <span style="color:var(--orange);font-size:0.74rem;font-weight:700">${escapeHtml(it.warning)}</span>
     </div>
-    <div style="color:var(--text-dim);font-size:0.74rem">
-      ${it.careerStat ?? 0} career ${it.statType || "AB"} — past the §3(f) 300 AB / 75 IP threshold. Must be called up or dropped by end of next MiL draft.
+    <div style="color:var(--text-dim);font-size:0.78rem;margin-bottom:6px">
+      ${it.careerStat ?? 0} career ${it.statType || "AB"} — past the §3(f) 300 AB / 75 IP threshold.
+    </div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap">
+      <button class="trade-btn" style="font-size:0.78rem;padding:4px 10px;background:var(--purple);color:#fff"
+        onclick="reviewCallUp('${escapeJsString(it.name)}','${escapeJsString(it.teamId)}')">Call Up</button>
+      <button class="trade-btn trade-btn-cancel" style="font-size:0.78rem;padding:4px 10px"
+        onclick="reviewDropPlayer('${escapeJsString(it.name)}','${escapeJsString(it.teamId)}')">Drop</button>
     </div>
   `)).join("");
 }
@@ -6986,7 +7073,16 @@ async function submitSetSeason() {
     return;
   }
   if (n === CURRENT_SEASON) return;
-  if (!confirm(`Set the current season to ${n}? This changes Expiry calculations league-wide.`)) return;
+  const delta = n - CURRENT_SEASON;
+  const priceShiftWarn = delta !== 0
+    ? `\n\nAll keeper prices will shift ${delta > 0 ? "UP" : "DOWN"} by $${Math.abs(delta) * 2} (per §2(b) +$2/yr).`
+    : "";
+  if (!confirm(
+    `Set the current season to ${n} (currently ${CURRENT_SEASON})?` +
+    priceShiftWarn +
+    `\n\nAlso affects: Expiry calculations, Must-Call-Up thresholds, draft/Rule 5 windows, and luxury tax calculations.` +
+    `\n\nTip: take a snapshot in "Rollback League State" below before doing this if you want a quick revert.`
+  )) return;
   const prev = CURRENT_SEASON;
   const settings = { ...getLeagueSettings(), currentSeason: n };
   try {
