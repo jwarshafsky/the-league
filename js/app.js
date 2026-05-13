@@ -5288,12 +5288,7 @@ function renderSettingsView() {
       </div>
 
       <div class="keeper-projection" style="margin-bottom:14px">
-        <h3 style="margin-top:0">Exports</h3>
-        <div style="color:var(--text-dim);font-size:0.84rem;margin-bottom:12px">
-          Push league data to your Google Sheet (multi-tab: Minor Leagues, Trade Registry,
-          Minor League Draft, Keepers, Exceptions, Eligible Keepers, Rule 5 Draft) or
-          download a local <code>.xlsx</code> copy. First-time setup lives behind <em>Configure</em>.
-        </div>
+        <h3 style="margin-top:0;margin-bottom:12px">Export/Sync League Data</h3>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
           <button class="trade-btn" onclick="showAppsScriptSetup()" style="font-size:0.85rem">Configure</button>
           <button id="sync-sheets-btn" class="trade-btn trade-btn-submit" onclick="syncToGoogleSheets()" style="font-size:0.85rem">Sync to Google Sheets</button>
