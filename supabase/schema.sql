@@ -371,7 +371,7 @@ create table if not exists public.roster_moves (
   team_id      text not null,
   created_by   uuid references auth.users(id),
   at           timestamptz not null default now(),
-  constraint roster_moves_kind_check check (kind in ('callup', 'demote'))
+  constraint roster_moves_kind_check check (kind in ('callup', 'demote', 'drop'))
 );
 create index if not exists idx_roster_moves_team_at
   on public.roster_moves (team_id, at);

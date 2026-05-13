@@ -136,7 +136,7 @@ const ESPN_ABBREV_TO_LOCAL = {
 // produce the up-to-date minors / callups arrays for each team.
 // Mutates teams in place (matching app.js behavior).
 // ---------------------------------------------------------------------------
-function applyRosterAdjustments(teams, trades, callupOverrides, rosterMoves) {
+function applyRosterAdjustments(teams, trades, callupOverrides, rosterMoves, draft) {
   // Capture original anchors from data.js before any mutation. Recompute
   // each call so re-runs in the same process produce identical output.
   const original = new Map(teams.map(t => [t.id, {
@@ -212,7 +212,7 @@ function applyRosterAdjustments(teams, trades, callupOverrides, rosterMoves) {
     }
   }
 
-  // 3. roster_moves: explicit callup / demote, time-ordered
+  // 3. roster_moves: explicit callup / demote / drop, time-ordered
   const sortedMoves = [...rosterMoves].sort((a, b) => new Date(a.at || 0) - new Date(b.at || 0));
   for (const m of sortedMoves) {
     if (!m || !m.player_name || !m.team_id) continue;
@@ -241,6 +241,47 @@ function applyRosterAdjustments(teams, trades, callupOverrides, rosterMoves) {
         }
         teamMinors.set(m.team_id, minors);
       }
+    } else if (m.kind === "drop") {
+      // Drop from MiL: remove from minors AND callups (covers dropping a
+      // player whether they're in MiL or already promoted to MLB).
+      const minors = teamMinors.get(m.team_id) || [];
+      const mIdx = minors.findIndex(p => p.name === m.player_name);
+      if (mIdx !== -1) {
+        minors.splice(mIdx, 1);
+        teamMinors.set(m.team_id, minors);
+      }
+      const callups = teamCallups.get(m.team_id) || [];
+      const cIdx = callups.findIndex(p => p.name === m.player_name);
+      if (cIdx !== -1) {
+        callups.splice(cIdx, 1);
+        teamCallups.set(m.team_id, callups);
+      }
+    }
+  }
+
+  // 4. Minors-draft picks → add to picking team's minors with
+  //    yearAcquired = draft.year. Skip players already on any roster so
+  //    we don't double-count if data.js was previously updated by hand.
+  if (draft && Array.isArray(draft.picks) && draft.year) {
+    const onAnyRoster = new Set();
+    for (const arr of teamMinors.values()) for (const p of arr) onAnyRoster.add(p.name);
+    for (const arr of teamCallups.values()) for (const p of arr) onAnyRoster.add(p.name);
+    const picksInOrder = [...draft.picks].sort((a, b) =>
+      (a.round - b.round) || (a.pickInRound - b.pickInRound) || ((a.timestamp || 0) - (b.timestamp || 0)));
+    for (const pick of picksInOrder) {
+      if (!pick.team || !pick.player) continue;
+      if (onAnyRoster.has(pick.player)) continue;
+      const stats = PLAYER_STATS?.players?.[pick.player];
+      const minors = teamMinors.get(pick.team) || [];
+      minors.push({
+        name: pick.player,
+        yearAcquired: draft.year,
+        careerStat: 0,                      // applyLivePlayerStats overlays this
+        statType: stats?.statType || "AB",
+        fromDraft: true,
+      });
+      teamMinors.set(pick.team, minors);
+      onAnyRoster.add(pick.player);
     }
   }
 
@@ -1160,7 +1201,7 @@ async function main() {
   }));
 
   applyPriceShift(teams, currentSeason);
-  applyRosterAdjustments(teams, state.trades, state.callup, state.rosterMoves);
+  applyRosterAdjustments(teams, state.trades, state.callup, state.rosterMoves, state.draft);
   applyLivePlayerStats(teams);
 
   const ordered = getDisplayOrderedTeams(teams);

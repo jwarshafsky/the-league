@@ -4,9 +4,17 @@ league's published Google Sheet, rewrite the `minors` and `callups` arrays
 in js/data.js. Leaves `majors` arrays alone (those are keepers, edited by
 hand and not in this sheet).
 
-The sheet is the source of truth. Career AB/IP are NOT pulled from the
-sheet (sometimes stale) — careerStat defaults to 0 and is overlaid at
-runtime by applyLivePlayerStats() from PLAYER_STATS. statType comes from
+⚠️  MANUAL / AD-HOC USE ONLY as of May 2026. ⚠️
+The app is now the source of truth for MiL state — minors-draft picks,
+callup/demote/drop roster_moves, and MiL trades are all reconciled live
+by applyRosterAdjustments() in js/app.js + scripts/build_export.mjs.
+The Sheet is now a one-way mirror of the app (populated by
+sheets-sync.yml). This script is kept for emergency re-import only —
+e.g., restoring data.js from a known-good Sheet snapshot.
+
+Career AB/IP are NOT pulled from the sheet (sometimes stale) —
+careerStat defaults to 0 and is overlaid at runtime by
+applyLivePlayerStats() from PLAYER_STATS. statType comes from
 PLAYER_STATS when available, else falls back to existing data.js, else
 defaults to "AB".
 

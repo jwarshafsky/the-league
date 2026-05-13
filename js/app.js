@@ -354,9 +354,10 @@ function applyRosterAdjustments() {
       }
     }
   }
-  // 3. roster_moves: explicit call-up (minors→callups) and demote
-  //    (callups→minors) actions, processed in time order so the latest move
-  //    wins. Demotes here override anything the callup_overrides loop did.
+  // 3. roster_moves: explicit call-up (minors→callups), demote
+  //    (callups→minors), and drop (removed from minors entirely). Time-
+  //    ordered so the latest move wins; demotes here override anything
+  //    the callup_overrides loop did.
   const moves = (typeof dbGetRosterMoves === "function") ? dbGetRosterMoves() : [];
   const sortedMoves = [...moves].sort((a, b) => new Date(a.at || 0) - new Date(b.at || 0));
   for (const m of sortedMoves) {
@@ -386,8 +387,56 @@ function applyRosterAdjustments() {
         }
         teamMinors.set(m.team_id, minors);
       }
+    } else if (m.kind === "drop") {
+      // Remove the player from MiL entirely. Search across the team's
+      // minors AND callups so the drop works regardless of where the
+      // player currently sits (a callup can be dropped without first
+      // demoting).
+      const minors = teamMinors.get(m.team_id) || [];
+      const mIdx = minors.findIndex(p => p.name === m.player_name);
+      if (mIdx !== -1) {
+        minors.splice(mIdx, 1);
+        teamMinors.set(m.team_id, minors);
+      }
+      const callups = teamCallups.get(m.team_id) || [];
+      const cIdx = callups.findIndex(p => p.name === m.player_name);
+      if (cIdx !== -1) {
+        callups.splice(cIdx, 1);
+        teamCallups.set(m.team_id, callups);
+      }
     }
   }
+  // 4. Minors-draft picks: each pick adds the player to the picking team's
+  //    minors with yearAcquired = draft.year. We only add players who
+  //    aren't already on SOME team's roster (covers the case where the
+  //    Sheet sync previously imported them into data.js, so we don't
+  //    duplicate). This is what makes the in-app Minors Draft the source
+  //    of truth — picks flow into team.minors automatically instead of
+  //    requiring sync_minors_from_sheet.py.
+  const draft = (typeof dbGetDraft === "function") ? dbGetDraft() : null;
+  if (draft && Array.isArray(draft.picks) && draft.year) {
+    const onAnyRoster = new Set();
+    for (const arr of teamMinors.values()) for (const p of arr) onAnyRoster.add(p.name);
+    for (const arr of teamCallups.values()) for (const p of arr) onAnyRoster.add(p.name);
+    const picksInOrder = [...draft.picks].sort((a, b) =>
+      (a.round - b.round) || (a.pickInRound - b.pickInRound) || ((a.timestamp || 0) - (b.timestamp || 0)));
+    for (const pick of picksInOrder) {
+      if (!pick.team || !pick.player) continue;
+      if (onAnyRoster.has(pick.player)) continue;
+      const stats = (typeof PLAYER_STATS !== "undefined") ? PLAYER_STATS.players?.[pick.player] : null;
+      const minors = teamMinors.get(pick.team) || [];
+      minors.push({
+        name: pick.player,
+        yearAcquired: draft.year,
+        careerStat: 0,                       // applyLivePlayerStats overlays this
+        statType: stats?.statType || "AB",
+        fromDraft: true,
+      });
+      teamMinors.set(pick.team, minors);
+      onAnyRoster.add(pick.player);
+    }
+  }
+
   // Mutate LEAGUE_DATA in place so existing call sites keep reading the
   // up-to-date arrays without code changes.
   for (const team of LEAGUE_DATA.teams) {
@@ -694,6 +743,31 @@ async function sendDownPlayer(playerName, teamId) {
     _refreshAfterRosterMove();
   } catch (e) {
     alert("Couldn't send down: " + (e.message || e));
+  }
+}
+
+// Drop a player from MiL entirely. Removes them from this team's minors
+// (and callups, if they were sitting there). Writes a roster_move with
+// kind="drop" so applyRosterAdjustments can reconstruct the roster on
+// every render. Replaces the old "edit the Google Sheet" workflow.
+async function dropMinorPlayer(playerName, teamId) {
+  if (!canEditTeam(teamId)) {
+    alert("Only the team owner or a commissioner can drop players on this team.");
+    return;
+  }
+  if (!confirm(`Drop ${playerName} from minors? This forfeits the slot — they can be picked back up via FA only.`)) return;
+  try {
+    let moveId = null;
+    if (typeof appendRosterMoveAsync === "function") {
+      const move = await appendRosterMoveAsync({ kind: "drop", player_name: playerName, team_id: teamId });
+      moveId = move?.id || null;
+    }
+    if (typeof logActivityAsync === "function") {
+      logActivityAsync("minor_player_dropped", { player_name: playerName, move_id: moveId }, { targetTeamId: teamId });
+    }
+    _refreshAfterRosterMove();
+  } catch (e) {
+    alert("Couldn't drop: " + (e.message || e));
   }
 }
 
@@ -1049,9 +1123,11 @@ function renderMinorsTable(players, teamId) {
           let statClass = "";
           if ((p.statType === "AB" && p.careerStat >= 200) || (p.statType === "IP" && p.careerStat >= 50)) statClass = "stat-warning";
           const actionCell = showCallUp ? `
-            <td data-label="" style="text-align:right">
+            <td data-label="" style="text-align:right;white-space:nowrap">
               <button class="trade-btn" onclick="callUpMinorPlayer('${escapeJsString(p.name)}','${escapeJsString(teamId)}')"
                 style="font-size:0.72rem;padding:3px 8px;background:var(--purple);color:#fff">Call Up</button>
+              <button class="trade-btn trade-btn-cancel" onclick="dropMinorPlayer('${escapeJsString(p.name)}','${escapeJsString(teamId)}')"
+                style="font-size:0.72rem;padding:3px 8px;margin-left:4px">Drop</button>
             </td>` : "";
           const milTag = (() => {
             if (ms.yearsRemaining === null) {
