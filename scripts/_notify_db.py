@@ -24,16 +24,24 @@ TEAM_NAMES = {
 
 
 def load_env():
+    """Read scripts/.env if present, then overlay process environment so the
+    same scripts work under cron (reading the file) and under GitHub Actions
+    (where secrets arrive as env vars and no .env file exists)."""
     env = {}
-    if not os.path.exists(ENV_FILE):
-        print(f"Missing {ENV_FILE}", file=sys.stderr); sys.exit(1)
-    with open(ENV_FILE) as f:
-        for line in f:
-            line = line.strip()
-            if not line or line.startswith("#") or "=" not in line:
-                continue
-            k, v = line.split("=", 1)
-            env[k.strip()] = v.strip()
+    if os.path.exists(ENV_FILE):
+        with open(ENV_FILE) as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                k, v = line.split("=", 1)
+                env[k.strip()] = v.strip()
+    for k, v in os.environ.items():
+        env.setdefault(k, v)
+    if not env.get("SUPABASE_SERVICE_ROLE_KEY"):
+        print(f"SUPABASE_SERVICE_ROLE_KEY not set (looked in {ENV_FILE} + process env)",
+              file=sys.stderr)
+        sys.exit(1)
     return env
 
 

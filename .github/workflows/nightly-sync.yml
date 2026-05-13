@@ -1,0 +1,47 @@
+name: Nightly Sync (ESPN + MLB stats)
+
+on:
+  schedule:
+    # 08:07 UTC daily = 4:07am EDT / 3:07am EST. Off the hour by a few
+    # minutes to avoid the runner contention spike at :00.
+    - cron: '7 8 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Pull ESPN snapshot
+        env:
+          ESPN_SWID: ${{ secrets.ESPN_SWID }}
+          ESPN_S2: ${{ secrets.ESPN_S2 }}
+          ESPN_LEAGUE_ID: '1200'
+          ESPN_SEASON: '2026'
+        run: bash scripts/sync_espn.sh
+
+      - name: Refresh MLB career stats
+        run: python3 scripts/sync_player_stats.py
+
+      - name: Commit if changed
+        run: |
+          if [[ -z "$(git status --porcelain)" ]]; then
+            echo "No changes to commit."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add js/espn-snapshot.js js/player-stats-snapshot.js scripts/mlb_ids.json
+          git commit -m "Nightly snapshot sync"
+          git push || (git pull --rebase && git push)

@@ -1,0 +1,48 @@
+name: ESPN Sync
+
+on:
+  schedule:
+    # Every 15 minutes. GitHub Actions schedules are best-effort during peak
+    # load; expect occasional 5-10 min delays.
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: espn-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # We push commits back, so use a token with write access. The
+          # default GITHUB_TOKEN works because permissions: contents: write
+          # is set above.
+          persist-credentials: true
+
+      - name: Pull ESPN snapshot
+        env:
+          ESPN_SWID: ${{ secrets.ESPN_SWID }}
+          ESPN_S2: ${{ secrets.ESPN_S2 }}
+          ESPN_LEAGUE_ID: '1200'
+          ESPN_SEASON: '2026'
+        run: bash scripts/sync_espn.sh
+
+      - name: Commit if changed
+        run: |
+          if [[ -z "$(git status --porcelain js/espn-snapshot.js)" ]]; then
+            echo "No ESPN changes."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add js/espn-snapshot.js
+          git commit -m "ESPN sync (auto)"
+          # Retry once if a concurrent push beat us to it.
+          git push || (git pull --rebase && git push)
