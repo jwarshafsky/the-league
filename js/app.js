@@ -977,12 +977,19 @@ function getCurrentMinors(team) {
 function renderMinorsCompactTable(team) {
   // All Teams view: only show MILB-roster players. Callups (already on MLB
   // roster) live on the Eligible Keepers / individual team pages instead.
+  // table-layout:fixed + shared colgroup so columns align across all 12 team
+  // tables stacked vertically.
   const allPlayers = getCurrentMinors(team)
     .map(p => ({ ...p, rosterType: "minors" }))
     .sort((a, b) => lastName(a.name).localeCompare(lastName(b.name)));
   if (!allPlayers.length) return "<p style='color:var(--text-dim)'>No minor league players</p>";
   return `
-    <table class="player-table">
+    <table class="player-table" style="table-layout:fixed">
+      <colgroup>
+        <col style="width:60%">
+        <col style="width:15%">
+        <col style="width:25%">
+      </colgroup>
       <thead><tr><th>Player</th><th>Drafted</th><th>AB/IP</th></tr></thead>
       <tbody>
         ${allPlayers.map(p => {
