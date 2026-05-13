@@ -6183,7 +6183,12 @@ function _xlsxEligibleKeepersAoa(teams, sel, balances) {
       const yearsRemaining = p.yearsRemaining;
       const isEligible = p.canKeepNextYear !== false && yearsRemaining != null;
       const finalYear = isEligible ? CURRENT_SEASON + yearsRemaining : (p.contractStatus === "expired" ? "Expired" : "Ineligible");
-      const priceCell = isEligible ? (p.price ?? "") : (p.contractStatus === "expired" ? "Expired" : "Ineligible");
+      // Call-ups don't have a 2027 salary set until the offseason — surface
+      // that as "TBD" instead of a blank cell so it's obvious in the export.
+      const priceTbd = isEligible && p.price == null && p.contractType === "callup";
+      const priceCell = isEligible
+        ? (priceTbd ? "TBD" : (p.price ?? ""))
+        : (p.contractStatus === "expired" ? "Expired" : "Ineligible");
       const firstYearCell = isEligible ? (p.yearAcquired ?? "") : (p.contractStatus === "expired" ? p.yearAcquired ?? "" : "Ineligible");
 
       if (flags.rule5) r5Counters[i] += 1;
