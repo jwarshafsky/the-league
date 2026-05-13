@@ -3361,8 +3361,18 @@ function updateEligibleKeepersView() {
   const totalKeeperCost = selectedKeepers.reduce((s, p) => s + (p.nextYearPrice || 0), 0);
   // Draft Dollars are static: $260 ± net trades. Keeper cost is shown separately.
   const draftDollars = getDraftDollarBalances()[teamId] ?? 260;
-  const minorKeeperCount = Object.values(teamSelections).filter(s => s.minorKeeper).length;
-  const rule5Count = Object.values(teamSelections).filter(s => s.rule5).length;
+  // Cap counters: limit to players actually on this team's current roster.
+  // keeper_selections rows persist after trades, so a stale row (player
+  // traded away but still flagged) would otherwise inflate the count.
+  const milNames = new Set([
+    ...(team.minors || []).map(p => p.name),
+    ...(team.callups || []).map(p => p.name),
+  ]);
+  const allRosterNames = new Set([...players.map(p => p.name), ...milNames]);
+  const minorKeeperCount = Object.entries(teamSelections)
+    .filter(([name, s]) => s.minorKeeper && milNames.has(name)).length;
+  const rule5Count = Object.entries(teamSelections)
+    .filter(([name, s]) => s.rule5 && allRosterNames.has(name)).length;
 
   const colorForCap = (cur, cap) => cur > cap ? 'var(--red)' : cur === cap ? 'var(--green)' : 'var(--yellow)';
 
