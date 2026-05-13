@@ -370,10 +370,13 @@
             });
           } else if (!pick) {
             // No draft pick → likely FA pickup. §2(b): keepable at $6 first yr.
+            // yearAcquired = CURRENT_SEASON + 1 to match resolveCostBasis; this
+            // tells getContractStatus the price is already the first-kept-year
+            // salary, so the +$2/yr step doesn't double-apply on next-year price.
             synthesized.push({
               name: ep.name,
               price: 6,
-              yearAcquired: CURRENT_SEASON,
+              yearAcquired: CURRENT_SEASON + 1,
               source: "fa",
               fromMinors: false,
             });
@@ -437,8 +440,15 @@
             for (const ep of (espnTeam.roster || [])) {
               if (dataJsNames.has(ep.name) || callupNames.has(ep.name) || minorNames.has(ep.name)) continue;
               const pick = picksByPlayerId[ep.playerId];
+              // Auction picks: price = bid, yearAcquired = currentSeason (auction year).
+              // FA pickups (no pick): price = $6 (first kept year), yearAcquired = next
+              // season so getContractStatus's pre-contract branch returns the right
+              // yearsRemaining/nextYearPrice.
               const price = pick ? pick.bidAmount : 6;
-              const synth = { name: ep.name, price, yearAcquired: CURRENT_SEASON, fromMinors: false };
+              const synth = {
+                name: ep.name, price, fromMinors: false,
+                yearAcquired: pick ? CURRENT_SEASON : CURRENT_SEASON + 1,
+              };
               try {
                 const cs = getContractStatus(synth, CURRENT_SEASON);
                 majors.push(`${ep.name}$${price}→${ySuffix(CURRENT_SEASON + cs.yearsRemaining)}`);

@@ -185,12 +185,22 @@ function getOriginalDraftPrice(currentPrice, yearAcquired, currentSeason) {
 }
 
 function getContractStatus(player, currentSeason) {
-  const yearsKept = getContractYearsKept(player.yearAcquired, currentSeason);
-  const originalPrice = getOriginalDraftPrice(player.price, player.yearAcquired, currentSeason);
+  const rawYearsKept = getContractYearsKept(player.yearAcquired, currentSeason);
+
+  // FA pickup whose contract starts NEXT year — resolveCostBasis returns
+  // `{ price: 6, yearAcquired: currentSeason + 1 }` for these. The salary
+  // clock hasn't started, so yearsKept clamps to 0 and the "+$2/yr" step
+  // hasn't happened yet (player.price is already the first kept-year
+  // salary, not this year's).
+  const preContract = rawYearsKept < 0;
+  const yearsKept = preContract ? 0 : rawYearsKept;
+  const originalPrice = preContract
+    ? player.price
+    : getOriginalDraftPrice(player.price, player.yearAcquired, currentSeason);
   const maxYears = getMaxKeepYears(originalPrice, player.fromMinors);
 
   const yearsRemaining = maxYears - yearsKept;
-  const nextYearPrice = player.price + 2;
+  const nextYearPrice = preContract ? player.price : player.price + 2;
   const canKeepNextYear = yearsRemaining > 0;
 
   let status, label;

@@ -458,11 +458,18 @@ function getOriginalDraftPrice(currentPrice, yearAcquired, currentSeason) {
   return currentPrice - (currentSeason - yearAcquired) * 2;
 }
 function getContractStatus(player, currentSeason) {
-  const yearsKept = getContractYearsKept(player.yearAcquired, currentSeason);
-  const originalPrice = getOriginalDraftPrice(player.price, player.yearAcquired, currentSeason);
+  // Mirror of js/app.js getContractStatus. FA pickup case (yearAcquired =
+  // currentSeason+1) has the salary clock not started yet — clamp yearsKept
+  // to 0 and use price as-is for nextYearPrice (already first kept-year salary).
+  const rawYearsKept = getContractYearsKept(player.yearAcquired, currentSeason);
+  const preContract = rawYearsKept < 0;
+  const yearsKept = preContract ? 0 : rawYearsKept;
+  const originalPrice = preContract
+    ? player.price
+    : getOriginalDraftPrice(player.price, player.yearAcquired, currentSeason);
   const maxYears = getMaxKeepYears(originalPrice, player.fromMinors);
   const yearsRemaining = maxYears - yearsKept;
-  const nextYearPrice = player.price + 2;
+  const nextYearPrice = preContract ? player.price : player.price + 2;
   const canKeepNextYear = yearsRemaining > 0;
   let status, label;
   if (yearsRemaining <= 0) { status = "final";    label = "Final Year"; }
