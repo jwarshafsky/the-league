@@ -6408,7 +6408,15 @@ function _xlsxEligibleKeepersAoa(teams, sel, balances) {
 
   const r4 = blank();
   teams.forEach((t, i) => {
-    const r5Count = Object.values(keeperFlags[i]).filter(f => f && f.rule5).length;
+    // Filter to players actually on this team's current roster so a stale
+    // rule5-flagged row (player traded away) doesn't inflate the count.
+    const rosterNames = new Set([
+      ...((t.majors || []).map(p => p.name)),
+      ...((t.minors || []).map(p => p.name)),
+      ...((t.callups || []).map(p => p.name)),
+    ]);
+    const r5Count = Object.entries(keeperFlags[i])
+      .filter(([name, f]) => f && f.rule5 && rosterNames.has(name)).length;
     r4[i * blockCols + 2] = "Rule 5 Protections:";
     r4[i * blockCols + 3] = r5Count;
   });
