@@ -520,7 +520,13 @@ function renderMinorsKeepersTable(minors) {
   if (!minors.length) return '<p style="color:var(--text-dim)">No minor league keepers</p>';
   const sorted = [...minors].sort((a, b) => lastName(a.name).localeCompare(lastName(b.name)));
   return `
-    <table class="player-table">
+    <table class="player-table keepers-aligned-table" style="table-layout:fixed">
+      <colgroup>
+        <col style="width:42%">
+        <col style="width:14%">
+        <col style="width:22%">
+        <col style="width:22%">
+      </colgroup>
       <thead>
         <tr><th>Player</th><th>Drafted</th><th>AB/IP</th><th>Expiry</th></tr>
       </thead>
@@ -917,7 +923,13 @@ function renderMajorsTable(players) {
   if (!players.length) return "<p style='color:var(--text-dim)'>No major league keepers</p>";
   players = [...players].sort((a, b) => lastName(a.name).localeCompare(lastName(b.name)));
   return `
-    <table class="player-table">
+    <table class="player-table keepers-aligned-table" style="table-layout:fixed">
+      <colgroup>
+        <col style="width:42%">
+        <col style="width:14%">
+        <col style="width:22%">
+        <col style="width:22%">
+      </colgroup>
       <thead>
         <tr><th>Player</th><th>${CURRENT_SEASON} $</th><th>Acquired</th><th>Expiry</th></tr>
       </thead>
