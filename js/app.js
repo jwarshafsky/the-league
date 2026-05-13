@@ -2237,6 +2237,11 @@ async function toggleFeePaid(teamId, kind, checked) {
   }
 }
 
+// §1b "Max $290 entering draft ($260+$30 acquired)" — informational red flag
+// only. We don't block trades that exceed it; the cap is enforced at draft
+// time and any overage is sorted out manually.
+const DRAFT_DOLLAR_CAP = 290;
+
 function renderDraftDollarsPanel() {
   const balances = getDraftDollarBalances();
   const rows = getDisplayOrderedTeams().map(t => ({ ...t, balance: balances[t.id] ?? 260 }));
@@ -2248,11 +2253,14 @@ function renderDraftDollarsPanel() {
         const diff = t.balance - 260;
         const diffStr = diff > 0 ? `+$${diff}` : diff < 0 ? `-$${Math.abs(diff)}` : "";
         const diffColor = diff > 0 ? "var(--green)" : diff < 0 ? "var(--red)" : "var(--text-dim)";
-        return `<div style="display:flex;justify-content:space-between;align-items:baseline;padding:7px 10px;background:var(--bg);border:1px solid var(--border);border-radius:6px;font-size:0.85rem">
+        const overCap = t.balance > DRAFT_DOLLAR_CAP;
+        const balanceColor = overCap ? "var(--red)" : "var(--text-bright)";
+        const overTip = overCap ? ` title="Over $${DRAFT_DOLLAR_CAP} §1b cap — adjust before draft"` : "";
+        return `<div style="display:flex;justify-content:space-between;align-items:baseline;padding:7px 10px;background:var(--bg);border:1px solid var(--border);border-radius:6px;font-size:0.85rem"${overTip}>
           <span style="color:var(--text)">${escapeHtml(t.name)}</span>
           <span style="display:flex;align-items:baseline;gap:6px">
             ${diffStr ? `<span style="color:${diffColor};font-size:0.72rem">${diffStr}</span>` : ""}
-            <span style="color:var(--text-bright);font-weight:700">$${t.balance}</span>
+            <span style="color:${balanceColor};font-weight:700">$${t.balance}</span>
           </span>
         </div>`;
       }).join("")}
@@ -3414,7 +3422,7 @@ function updateEligibleKeepersView() {
         <div class="summary-label">Keeper Cost</div>
       </div>
       <div class="summary-item">
-        <div class="summary-value" id="ek-draft-budget" style="color:var(--accent)">$${draftDollars}</div>
+        <div class="summary-value" id="ek-draft-budget" style="color:${draftDollars > DRAFT_DOLLAR_CAP ? 'var(--red)' : 'var(--accent)'}" ${draftDollars > DRAFT_DOLLAR_CAP ? `title="Over $${DRAFT_DOLLAR_CAP} §1b cap — adjust before draft"` : ''}>$${draftDollars}</div>
         <div class="summary-label">Draft Dollars</div>
       </div>
     </div>
@@ -3783,7 +3791,7 @@ function renderAllTeamsEligibleSummary(container) {
         ${keepers.length ? `
           <div style="font-size:0.82rem;color:var(--text-dim);margin-bottom:4px">
             <span style="color:var(--green);font-weight:600">$${keeperCost}</span> keeper cost
-            &middot; <span style="color:var(--accent);font-weight:600">$${draftDollars}</span> draft dollars
+            &middot; <span style="color:${draftDollars > DRAFT_DOLLAR_CAP ? 'var(--red)' : 'var(--accent)'};font-weight:600"${draftDollars > DRAFT_DOLLAR_CAP ? ` title="Over $${DRAFT_DOLLAR_CAP} §1b cap"` : ''}>$${draftDollars}</span> draft dollars
           </div>
           <div style="display:flex;flex-wrap:wrap;gap:4px;align-items:center;margin-top:6px">
             <span style="font-size:0.7rem;color:var(--text-dim);font-weight:700;text-transform:uppercase;letter-spacing:0.05em">Keepers:</span>
