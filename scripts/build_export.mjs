@@ -375,20 +375,30 @@ function getSendDownsByTeam(rosterMoves) {
 // Draft-dollar balances. Each team starts at $260; trades shift $.
 // Port of getDraftDollarBalances.
 // ---------------------------------------------------------------------------
+function parseDraftDollarsAmount(a) {
+  if (a && a.amount != null) return Number(a.amount) || 0;
+  // Legacy rows without the numeric amount field — parse "$10 draft dollars".
+  const v = String(a?.value || "");
+  const m = v.match(/\$?\s*(\d+)/);
+  return m ? parseInt(m[1], 10) : 0;
+}
+
 function getDraftDollarBalances(teams, trades) {
   const out = {};
   for (const t of teams) out[t.id] = 260;
   for (const tr of (trades || [])) {
     for (const a of (tr.team1Receives || [])) {
       if (a.type === "draft_dollars") {
-        out[tr.team1] = (out[tr.team1] || 260) + (a.amount || 0);
-        out[tr.team2] = (out[tr.team2] || 260) - (a.amount || 0);
+        const amt = parseDraftDollarsAmount(a);
+        out[tr.team1] = (out[tr.team1] || 260) + amt;
+        out[tr.team2] = (out[tr.team2] || 260) - amt;
       }
     }
     for (const a of (tr.team2Receives || [])) {
       if (a.type === "draft_dollars") {
-        out[tr.team2] = (out[tr.team2] || 260) + (a.amount || 0);
-        out[tr.team1] = (out[tr.team1] || 260) - (a.amount || 0);
+        const amt = parseDraftDollarsAmount(a);
+        out[tr.team2] = (out[tr.team2] || 260) + amt;
+        out[tr.team1] = (out[tr.team1] || 260) - amt;
       }
     }
   }
