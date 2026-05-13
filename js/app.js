@@ -232,9 +232,18 @@ function getMinorLeagueContractStatus(player, currentSeason) {
   let eligibilityWarning = null;
   // Years remaining always reflects the raw contract length. The "must call
   // up" status is signaled via eligibilityWarning, displayed as a badge.
+  //
+  // Two thresholds in the constitution and they're easy to conflate:
+  //   §3(c) — DRAFT-eligibility cap (must be < 200 AB / < 50 IP to be
+  //           drafted into MiL in the first place). Used elsewhere in the
+  //           UI as the "send-down still allowed" boundary.
+  //   §3(f) — MUST-CALL-UP trigger (post-Jan-2026 amendment): a player
+  //           who has hit 300 AB or 75 IP must be called up or dropped
+  //           by the end of the next MiL draft. THIS is the threshold
+  //           that fires the "Must Call Up" badge.
   if (
-    (player.statType === "AB" && player.careerStat >= 200) ||
-    (player.statType === "IP" && player.careerStat >= 50)
+    (player.statType === "AB" && player.careerStat >= 300) ||
+    (player.statType === "IP" && player.careerStat >= 75)
   ) {
     eligibilityWarning = callUpYearLabel;
   }
