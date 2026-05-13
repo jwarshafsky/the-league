@@ -5791,7 +5791,6 @@ function renderSettingsView() {
   const settings = getLeagueSettings();
   const enforceR5 = !!settings.enforceRule5RosterSpot;
   const enforceMiL = !!settings.enforceMinorsRosterSpot;
-  const season = (typeof settings.currentSeason === "number") ? settings.currentSeason : DEFAULT_SEASON;
   const reviewTotal = _commishReviewTotal();
   const reviewBanner = reviewTotal
     ? `<div style="background:rgba(249,115,22,0.12);border:1px solid rgba(249,115,22,0.4);border-radius:6px;padding:10px 12px;margin-bottom:14px;color:var(--orange);font-size:0.84rem">
@@ -5816,13 +5815,11 @@ function renderSettingsView() {
       <div class="keeper-projection" style="margin-bottom:14px">
         <h3 style="margin-top:0">Season</h3>
         <div style="color:var(--text-dim);font-size:0.84rem;margin-bottom:10px">
-          The current season drives contract math everywhere (Expiry years, keeper eligibility, etc.). Set this once at the start of each year.
+          The current season drives contract math everywhere (Expiry years, keeper eligibility, etc.). Click once at the start of each new year. Take a snapshot below first if you want a quick revert.
         </div>
         <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-          <label style="color:var(--text);font-size:0.88rem">Current season:</label>
-          <input type="number" id="settings-season" value="${season}" min="2020" max="2100" style="background:var(--bg);color:var(--text);border:1px solid var(--border);padding:8px 10px;border-radius:6px;font-size:0.95rem;width:110px">
-          <button class="trade-btn trade-btn-submit" onclick="submitSetSeason()" style="font-size:0.85rem">Set Year</button>
-          <span style="color:var(--text-dim);font-size:0.72rem">(currently ${CURRENT_SEASON})</span>
+          <span style="color:var(--text);font-size:0.88rem">Current season: <strong style="color:var(--text-bright)">${CURRENT_SEASON}</strong></span>
+          <button class="trade-btn trade-btn-submit" onclick="submitAdvanceSeason()" style="font-size:0.85rem">Advance to ${CURRENT_SEASON + 1}</button>
         </div>
       </div>
 
@@ -7064,31 +7061,21 @@ function _xlsxExceptionsAoa(exceptions) {
   return rows;
 }
 
-async function submitSetSeason() {
+async function submitAdvanceSeason() {
   if (!isCommissioner()) { alert("Commissioners only."); return; }
-  const el = document.getElementById("settings-season");
-  const n = parseInt(el?.value || "", 10);
-  if (!Number.isFinite(n) || n < 2020 || n > 2100) {
-    alert("Enter a valid year between 2020 and 2100.");
-    return;
-  }
-  if (n === CURRENT_SEASON) return;
-  const delta = n - CURRENT_SEASON;
-  const priceShiftWarn = delta !== 0
-    ? `\n\nAll keeper prices will shift ${delta > 0 ? "UP" : "DOWN"} by $${Math.abs(delta) * 2} (per §2(b) +$2/yr).`
-    : "";
-  if (!confirm(
-    `Set the current season to ${n} (currently ${CURRENT_SEASON})?` +
-    priceShiftWarn +
-    `\n\nAlso affects: Expiry calculations, Must-Call-Up thresholds, draft/Rule 5 windows, and luxury tax calculations.` +
-    `\n\nTip: take a snapshot in "Rollback League State" below before doing this if you want a quick revert.`
-  )) return;
   const prev = CURRENT_SEASON;
-  const settings = { ...getLeagueSettings(), currentSeason: n };
+  const next = prev + 1;
+  if (!confirm(
+    `Advance to ${next}?` +
+    `\n\nAll keeper prices will shift UP by $2 (per §2(b) +$2/yr).` +
+    `\n\nAlso affects: Expiry calculations, Must-Call-Up thresholds, draft/Rule 5 windows, and luxury tax calculations.` +
+    `\n\nTip: take a snapshot in "Rollback League State" below first if you want a quick revert.`
+  )) return;
+  const settings = { ...getLeagueSettings(), currentSeason: next };
   try {
     await saveSettingsAsync(settings);
     _applySettingsFromCache();
-    if (typeof logActivityAsync === "function") logActivityAsync("season_set", { from: prev, to: n });
+    if (typeof logActivityAsync === "function") logActivityAsync("season_set", { from: prev, to: next });
     switchTab("settings");
   } catch (e) {
     alert("Couldn't save: " + (e.message || e));
