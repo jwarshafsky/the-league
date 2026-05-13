@@ -1137,10 +1137,19 @@ async function counterProposalAsync(parentProposal, { team1_receives, team2_rece
   const new_to   = (parentProposal.from_team_id === new_from)
     ? parentProposal.to_team_id
     : parentProposal.from_team_id;
-  // 1. Mark parent as countered.
-  const { error: upErr } = await supabaseClient.from("trade_proposals")
-    .update({ status: "countered" }).eq("id", parentProposal.id);
+  // 1. Atomically mark parent as countered. Filtering on status='pending'
+  //    means a racing accept/reject/withdraw will cause this to update 0
+  //    rows and we abort — preventing the counter from forking a thread
+  //    that was already closed.
+  const { data: updated, error: upErr } = await supabaseClient.from("trade_proposals")
+    .update({ status: "countered" })
+    .eq("id", parentProposal.id)
+    .eq("status", "pending")
+    .select();
   if (upErr) throw upErr;
+  if (!updated || updated.length === 0) {
+    throw new Error("This proposal has already been accepted, rejected, or countered.");
+  }
   // 2. Insert the counter in the same thread.
   const { data, error } = await supabaseClient.from("trade_proposals").insert({
     thread_id: parentProposal.thread_id,
@@ -1156,24 +1165,46 @@ async function counterProposalAsync(parentProposal, { team1_receives, team2_rece
   return data;
 }
 
+// Transition a proposal to a terminal status. Filtering on the current
+// status='pending' enforces the state machine (no double-rejects, no
+// reject-after-accept, etc.) at the DB level.
 async function setProposalStatusAsync(proposalId, status) {
   const valid = ["accepted", "rejected", "withdrawn"];
   if (!valid.includes(status)) throw new Error("Invalid status: " + status);
-  const { error } = await supabaseClient.from("trade_proposals")
-    .update({ status }).eq("id", proposalId);
+  const { data, error } = await supabaseClient.from("trade_proposals")
+    .update({ status })
+    .eq("id", proposalId)
+    .eq("status", "pending")
+    .select();
   if (error) throw error;
+  if (!data || data.length === 0) {
+    throw new Error("This proposal has already been accepted, rejected, withdrawn, or countered.");
+  }
 }
 
 // Accept a proposal: mark it accepted AND record a row in the trades table
 // using the same asset arrays. The proposal's negotiation context (notes,
 // chat thread) stays in the inbox — the Trade Log records just the swap.
 async function acceptProposalAsync(proposal) {
-  // 1. Insert the trade. team1/team2 follow the proposal as-is.
+  // 1. First claim the proposal atomically. If status != 'pending' (already
+  //    accepted by someone else, withdrawn, etc.), abort BEFORE inserting a
+  //    duplicate trade row. Previously this fired the trade insert before
+  //    the status update, so concurrent accepts could double-record the
+  //    trade with both updates being no-op idempotents.
+  const claim = await supabaseClient.from("trade_proposals")
+    .update({ status: "accepted" })
+    .eq("id", proposal.id)
+    .eq("status", "pending")
+    .select();
+  if (claim.error) throw claim.error;
+  if (!claim.data || claim.data.length === 0) {
+    throw new Error("This proposal has already been accepted, rejected, or withdrawn.");
+  }
+  // 2. Insert the trade. team1/team2 follow the proposal as-is.
   // In proposals, team1_receives = items the proposer (from_team) gets and
   // team2_receives = items the recipient gets. The trades table uses the
   // same convention (teamNReceives = items teamN receives), so the arrays
-  // pass through unchanged. An earlier version swapped them here, which
-  // showed every accepted trade inverted on the Trade Log.
+  // pass through unchanged.
   const tradeRow = {
     date: new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }),
     team1: proposal.from_team_id,
@@ -1182,10 +1213,20 @@ async function acceptProposalAsync(proposal) {
     team2Receives: proposal.team2_receives || [],
     notes: "",
   };
-  const tradeId = await addTradeAsync(tradeRow);
-  // 2. Mark the proposal accepted.
-  await setProposalStatusAsync(proposal.id, "accepted");
-  return { ...tradeRow, _id: tradeId };
+  try {
+    const tradeId = await addTradeAsync(tradeRow);
+    return { ...tradeRow, _id: tradeId };
+  } catch (e) {
+    // Trade insert failed AFTER we claimed the proposal. Best-effort revert
+    // so the inbox doesn't show a phantom "accepted" with no log entry.
+    try {
+      await supabaseClient.from("trade_proposals")
+        .update({ status: "pending" })
+        .eq("id", proposal.id)
+        .eq("status", "accepted");
+    } catch { /* swallow — surface the original error */ }
+    throw e;
+  }
 }
 
 async function sendProposalMessageAsync(thread_id, body) {
