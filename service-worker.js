@@ -85,9 +85,22 @@ self.addEventListener("push", (event) => {
   event.waitUntil(self.registration.showNotification(title, options));
 });
 
+// Only follow URLs that stay on this origin (defense-in-depth against a
+// malformed/spoofed push payload pointing at an off-site URL).
+function _safeTargetUrl(raw) {
+  const fallback = "/the-league/";
+  if (!raw || typeof raw !== "string") return fallback;
+  try {
+    const u = new URL(raw, self.location.origin);
+    return u.origin === self.location.origin ? u.pathname + u.search + u.hash : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
-  const targetUrl = (event.notification.data && event.notification.data.url) || "/the-league/";
+  const targetUrl = _safeTargetUrl(event.notification.data && event.notification.data.url);
   event.waitUntil((async () => {
     const allClients = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
     // Re-use an open The League tab if one exists.
@@ -101,6 +114,27 @@ self.addEventListener("notificationclick", (event) => {
     if (self.clients.openWindow) await self.clients.openWindow(targetUrl);
   })());
 });
+
+// After caching a versioned asset like `app.js?v=183`, drop older `?v=N`
+// entries for the same base path. Without this the cache accumulates one
+// dead entry per deploy per asset forever (browser quota eventually evicts
+// LRU, but it's wasted user storage in the meantime).
+async function _evictStaleVersions(cache, freshUrl) {
+  try {
+    if (!freshUrl.searchParams.has("v")) return;
+    const basePath = freshUrl.origin + freshUrl.pathname;
+    const freshHref = freshUrl.href;
+    const reqs = await cache.keys();
+    await Promise.all(reqs.map(r => {
+      try {
+        const u = new URL(r.url);
+        if (u.origin + u.pathname === basePath && u.href !== freshHref) {
+          return cache.delete(r);
+        }
+      } catch {}
+    }));
+  } catch {}
+}
 
 self.addEventListener("fetch", (event) => {
   const req = event.request;
@@ -119,6 +153,7 @@ self.addEventListener("fetch", (event) => {
         if (fresh && fresh.ok) {
           const cache = await caches.open(CACHE_VERSION);
           cache.put(req, fresh.clone()).catch(() => {});
+          _evictStaleVersions(cache, url);
         }
         return fresh;
       } catch (e) {
