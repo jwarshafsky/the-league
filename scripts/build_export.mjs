@@ -66,6 +66,7 @@ async function fetchAll() {
     supaGet("callup_overrides?select=*"),
     supaGet("roster_moves?select=*&order=at.asc"),
   ]);
+  // Note: commish_overrides and workaround_overrides live inside league_state.
 
   // Trades: same shape transform db.js does in _rowToTrade.
   const tradesOut = trades.map(r => ({
@@ -122,6 +123,12 @@ const DEFAULT_SEASON = 2026;
 const DATA_JS_BASE_SEASON = 2026;
 const ML_CONTRACT_YEARS = 3;
 const MIL_CONTRACT_YEARS = 3;
+
+const ESPN_ABBREV_TO_LOCAL = {
+  "MV3": "matt", "SHAR": "saxton", "S+A": "sam", "GLIX": "glicksman",
+  "Jeff": "jeff", "AJ": "aj", "CORE": "corey", "JD": "josh-doug",
+  "WEIN": "larry", "KLIN": "zack", "Dave": "dave", "JTL": "jesse",
+};
 
 // ---------------------------------------------------------------------------
 // Roster reconciliation — Node port of applyRosterAdjustments.
@@ -392,6 +399,265 @@ function getPickOwner(draft, round, pickInRound, trades) {
 }
 
 // ---------------------------------------------------------------------------
+// Full cost-basis + eligible-players resolution — port of resolveCostBasis +
+// getEligiblePlayers from app.js. Reads ESPN roster + draft + events to
+// figure out each player's contract origin (keeper / auction / FA / callup /
+// post-deadline drop), then computes contract status from that.
+// ---------------------------------------------------------------------------
+function getContractYearsKept(yearAcquired, currentSeason) {
+  return currentSeason - yearAcquired;
+}
+function getMaxKeepYears(originalPrice, fromMinors) {
+  if (fromMinors) return 3;
+  if (originalPrice > 50) return 1;
+  if (originalPrice > 40) return 2;
+  return 3;
+}
+function getOriginalDraftPrice(currentPrice, yearAcquired, currentSeason) {
+  return currentPrice - (currentSeason - yearAcquired) * 2;
+}
+function getContractStatus(player, currentSeason) {
+  const yearsKept = getContractYearsKept(player.yearAcquired, currentSeason);
+  const originalPrice = getOriginalDraftPrice(player.price, player.yearAcquired, currentSeason);
+  const maxYears = getMaxKeepYears(originalPrice, player.fromMinors);
+  const yearsRemaining = maxYears - yearsKept;
+  const nextYearPrice = player.price + 2;
+  const canKeepNextYear = yearsRemaining > 0;
+  let status, label;
+  if (yearsRemaining <= 0) { status = "final";    label = "Final Year"; }
+  else if (yearsRemaining === 1) { status = "expiring"; label = "1 yr left"; }
+  else if (yearsKept === 0) { status = "new"; label = `${yearsRemaining} yrs left`; }
+  else { status = "mid"; label = `${yearsRemaining} yrs left`; }
+  return { yearsKept, yearsRemaining, originalPrice, maxYears, nextYearPrice, canKeepNextYear, status, label };
+}
+
+function findKeeperCostBasis(teams, name) {
+  for (const t of teams) {
+    const m = (t.majors || []).find(p => p.name === name);
+    if (m) return { source: "keeper", originTeamId: t.id, price: m.price, yearAcquired: m.yearAcquired, fromMinors: m.fromMinors };
+  }
+  return null;
+}
+function findCallupRecord(teams, name) {
+  for (const t of teams) {
+    const c = (t.callups || []).find(p => p.name === name);
+    if (c) return { originTeamId: t.id, ...c };
+  }
+  return null;
+}
+function findDraftPick(name) {
+  if (!ESPN_SNAPSHOT) return null;
+  const roster = (ESPN_SNAPSHOT.teams || []).flatMap(t => t.roster.map(r => ({ ...r, espnId: t.espnId })));
+  const espnPlayer = roster.find(p => p.name === name);
+  if (!espnPlayer) return null;
+  const pick = (ESPN_SNAPSHOT.draftPicks || []).find(d => d.playerId === espnPlayer.playerId);
+  return pick || null;
+}
+function getPlayerIdByName(name, preferredTeamId) {
+  if (!ESPN_SNAPSHOT) return null;
+  const matches = [];
+  for (const t of (ESPN_SNAPSHOT.teams || [])) {
+    const p = t.roster.find(r => r.name === name);
+    if (p) matches.push({ playerId: p.playerId, teamLocalId: ESPN_ABBREV_TO_LOCAL[t.abbrev] });
+  }
+  if (!matches.length) return null;
+  if (matches.length === 1) return matches[0].playerId;
+  if (preferredTeamId) {
+    const onPreferred = matches.find(m => m.teamLocalId === preferredTeamId);
+    if (onPreferred) return onPreferred.playerId;
+  }
+  return null;
+}
+function getMostRecentAddEvent(playerId) {
+  if (!ESPN_SNAPSHOT?.events || playerId == null) return null;
+  const draftCutoff = ESPN_SNAPSHOT.draftDate || 0;
+  const adds = ESPN_SNAPSHOT.events.filter(e =>
+    e.type === "ADD" && e.playerId === playerId && e.date >= draftCutoff);
+  if (!adds.length) return null;
+  return adds.reduce((latest, ev) => ev.date > latest.date ? ev : latest, adds[0]);
+}
+function getTradeDeadline() { return ESPN_SNAPSHOT?.tradeDeadline || null; }
+
+function classifyCommishAdd(teams, name, playerId, currentTeamLocalId, lastAdd, workaroundOverrides) {
+  if (!lastAdd || !lastAdd.isCommishWorkaround) return null;
+  const callup = findCallupRecord(teams, name);
+  let presumption;
+  if (callup && callup.originTeamId === currentTeamLocalId) presumption = "callup";
+  else if (lastAdd.recentDropWithin24h) presumption = "fa";
+  else presumption = "trade";
+  const override = (workaroundOverrides || {})[String(playerId)] || null;
+  return { presumption, override, decision: override || presumption, needsConfirmation: !override };
+}
+
+function getOriginalCostBasis(teams, name, currentTeamLocalId, callupOverrides, currentSeason) {
+  const keeper = findKeeperCostBasis(teams, name);
+  if (keeper) {
+    return {
+      price: keeper.price, yearAcquired: keeper.yearAcquired, fromMinors: keeper.fromMinors,
+      source: keeper.originTeamId === currentTeamLocalId ? "keeper" : "keeper-via-trade",
+      contractType: "auction",
+    };
+  }
+  const callup = findCallupRecord(teams, name);
+  if (callup) {
+    const o = callupOverrides[name];
+    return {
+      price: o?.price ?? null,
+      yearAcquired: o?.year ?? currentSeason,
+      originalDraftYear: callup.yearAcquired,
+      fromMinors: true,
+      source: callup.originTeamId === currentTeamLocalId ? "callup" : "callup-via-trade",
+      contractType: "callup",
+    };
+  }
+  const pick = findDraftPick(name);
+  if (pick && !pick.keeper) {
+    return {
+      price: pick.bidAmount, yearAcquired: currentSeason, fromMinors: false,
+      source: "auction", contractType: "auction",
+    };
+  }
+  return null;
+}
+
+function resolveCostBasis(teams, name, currentTeamLocalId, callupOverrides, workaroundOverrides, currentSeason) {
+  const original = getOriginalCostBasis(teams, name, currentTeamLocalId, callupOverrides, currentSeason);
+  const playerId = getPlayerIdByName(name, currentTeamLocalId);
+  const lastAdd = getMostRecentAddEvent(playerId);
+  const deadline = getTradeDeadline();
+
+  if (!lastAdd) {
+    if (original) return original;
+    return { price: 6, yearAcquired: currentSeason + 1, fromMinors: false, source: "fa", contractType: "fa" };
+  }
+
+  const workaround = classifyCommishAdd(teams, name, playerId, currentTeamLocalId, lastAdd, workaroundOverrides);
+
+  if (workaround) {
+    if (workaround.decision === "trade") {
+      if (original) return { ...original, workaround };
+      return { price: 6, yearAcquired: currentSeason + 1, fromMinors: false, source: "fa", contractType: "fa", workaround };
+    }
+    if (workaround.decision === "callup") {
+      const callup = findCallupRecord(teams, name);
+      const o = callupOverrides[name];
+      return {
+        price: o?.price ?? null,
+        yearAcquired: o?.year ?? currentSeason,
+        fromMinors: true,
+        source: callup?.originTeamId === currentTeamLocalId ? "callup" : "callup-via-trade",
+        contractType: "callup",
+        workaround,
+      };
+    }
+    // decision === "fa" → fall through
+  }
+
+  if (original && original.contractType === "auction") {
+    const fake = { name, price: original.price, yearAcquired: original.yearAcquired, fromMinors: original.fromMinors };
+    const cs = getContractStatus(fake, currentSeason);
+    if (!cs.canKeepNextYear) {
+      return {
+        ...original,
+        droppedDuringSeason: true,
+        droppedAndPostDeadline: deadline && lastAdd.date > deadline,
+        workaround,
+      };
+    }
+  }
+
+  const isPostDeadline = deadline && lastAdd.date > deadline;
+  return {
+    price: 6, yearAcquired: currentSeason + 1, fromMinors: false,
+    source: original ? "fa-after-drop" : "fa",
+    contractType: "fa",
+    addDate: lastAdd.date,
+    addType: lastAdd.msgType === 178 ? "FA" : "Waiver",
+    isPostDeadline,
+    workaround,
+  };
+}
+
+function applyPlayerOverride(player, commishOverrides) {
+  const o = (commishOverrides || {})[player.name];
+  if (!o) return player;
+  const out = { ...player, _commishOverridden: true };
+  if (o.nextYearPrice    !== undefined) out.nextYearPrice    = o.nextYearPrice;
+  if (o.canKeepNextYear  !== undefined) out.canKeepNextYear  = o.canKeepNextYear;
+  if (o.contractLabel    !== undefined) out.contractLabel    = o.contractLabel;
+  if (o.contractStatus   !== undefined) out.contractStatus   = o.contractStatus;
+  return out;
+}
+
+// Returns each team's eligible-keeper list — every player currently on
+// their MLB roster (via ESPN snapshot) with full contract-status resolution.
+// Matches the browser's getEligiblePlayers(team) output.
+function getEligiblePlayers(team, teams, callupOverrides, workaroundOverrides, commishOverrides, priceExceptions, currentSeason) {
+  const players = [];
+  if (!ESPN_SNAPSHOT) {
+    // Same fallback the browser uses when no snapshot is loaded.
+    for (const p of (team.majors || [])) {
+      const cs = getContractStatus(p, currentSeason);
+      players.push({
+        name: p.name, type: "major", price: p.price, yearAcquired: p.yearAcquired,
+        fromMinors: p.fromMinors, contractType: "auction", source: "keeper",
+        contractStatus: cs.status, contractLabel: cs.label,
+        nextYearPrice: cs.canKeepNextYear ? cs.nextYearPrice : null,
+        canKeepNextYear: cs.canKeepNextYear, yearsRemaining: cs.yearsRemaining,
+      });
+    }
+    return players.map(p => applyPlayerOverride(p, commishOverrides));
+  }
+  const espnTeam = ESPN_SNAPSHOT.teams.find(t => ESPN_ABBREV_TO_LOCAL[t.abbrev] === team.id);
+  if (!espnTeam) return [];
+  for (const r of (espnTeam.roster || [])) {
+    const basis = resolveCostBasis(teams, r.name, team.id, callupOverrides, workaroundOverrides, currentSeason);
+    if (priceExceptions[r.name] != null && typeof basis.price === "number") {
+      basis.price = Number(priceExceptions[r.name]);
+    }
+    const fake = { name: r.name, price: basis.price ?? 0, yearAcquired: basis.yearAcquired, fromMinors: basis.fromMinors };
+    let cs;
+    if (basis.isPostDeadline) {
+      cs = { yearsKept: 0, yearsRemaining: 0, nextYearPrice: null, canKeepNextYear: false, status: "final", label: "Ineligible" };
+    } else if (basis.contractType === "fa") {
+      cs = { yearsKept: 0, yearsRemaining: 3, originalPrice: 6, maxYears: 3, nextYearPrice: 6, canKeepNextYear: true, status: "new", label: "FA — $6" };
+    } else if (basis.contractType === "callup" && basis.price == null) {
+      const draftYear = basis.originalDraftYear ?? basis.yearAcquired;
+      const milbYearsHeld = currentSeason - draftYear;
+      const milbMaxYears = draftYear < 2027 ? 4 : 99;
+      const milbYrsAfter = Math.max(0, milbMaxYears - milbYearsHeld - 1);
+      if (milbYrsAfter > 0 || draftYear >= 2027) {
+        cs = { yearsKept: 0, yearsRemaining: basis.yearAcquired < 2027 ? milbYrsAfter : null, nextYearPrice: null, canKeepNextYear: true, status: "new", label: "Call-up (price TBD)" };
+      } else {
+        cs = { yearsKept: 0, yearsRemaining: 0, nextYearPrice: null, canKeepNextYear: false, status: "final", label: "Final Year" };
+      }
+    } else {
+      cs = getContractStatus(fake, currentSeason);
+      if (basis.droppedDuringSeason && !cs.canKeepNextYear) cs = { ...cs, label: cs.label + " (dropped)" };
+    }
+    players.push({
+      name: r.name,
+      playerId: r.playerId,
+      type: "major",
+      price: basis.price,
+      yearAcquired: basis.yearAcquired,
+      originalDraftYear: basis.originalDraftYear || basis.yearAcquired,
+      fromMinors: basis.fromMinors,
+      contractType: basis.contractType,
+      source: basis.source,
+      contractStatus: cs.status,
+      contractLabel: cs.label,
+      nextYearPrice: cs.canKeepNextYear ? cs.nextYearPrice : null,
+      canKeepNextYear: cs.canKeepNextYear,
+      yearsRemaining: cs.yearsRemaining,
+      workaround: basis.workaround || null,
+      priceExceptionApplied: priceExceptions[r.name] != null,
+    });
+  }
+  return players.map(p => applyPlayerOverride(p, commishOverrides));
+}
+
+// ---------------------------------------------------------------------------
 // AoA builders — ports of _xlsx*Aoa in app.js. The shape must match what
 // the Apps Script writeSheet expects, so cross-reference app.js when
 // changing these.
@@ -596,12 +862,11 @@ function aoaKeepers(teams, currentSeason) {
   return aoa;
 }
 
-// Eligible Keepers — simplified port: walks each team's majors + minors
-// directly (no auction-pick / FA-pickup reconciliation that the browser
-// version does). This is the one tab where the browser export captures
-// more state than this server build (auction picks from this season's
-// auction don't show up here). Acceptable for now; can be deepened later.
-function aoaEligibleKeepers(teams, keeperSel, balances, currentSeason) {
+// Eligible Keepers — full reconciliation. Uses getEligiblePlayers to walk
+// each team's CURRENT MLB roster (via ESPN snapshot) and apply contract
+// math (keeper / auction / FA / callup / post-deadline-drop / commish
+// override). Matches the browser export.
+function aoaEligibleKeepers(teams, keeperSel, balances, currentSeason, allTeams, callupOverrides, workaroundOverrides, commishOverrides, priceExceptions) {
   const blockCols = 9;
   const totalCols = teams.length * blockCols;
   const blank = () => Array(totalCols).fill("");
@@ -677,7 +942,10 @@ function aoaEligibleKeepers(teams, keeperSel, balances, currentSeason) {
 
   const r5Counters = Array(teams.length).fill(0);
   const kpCounters = Array(teams.length).fill(0);
-  const perTeamPlayers = teams.map(t => (t.majors || []));
+  // Full reconciliation: walks ESPN roster + trade log + workaround
+  // overrides to assemble each team's keeper-eligible majors.
+  const perTeamPlayers = teams.map(t =>
+    getEligiblePlayers(t, allTeams, callupOverrides, workaroundOverrides, commishOverrides, priceExceptions, currentSeason));
   const maxPlayers = Math.max(0, ...perTeamPlayers.map(arr => arr.length));
 
   for (let row = 0; row < maxPlayers; row++) {
@@ -686,15 +954,16 @@ function aoaEligibleKeepers(teams, keeperSel, balances, currentSeason) {
       const p = perTeamPlayers[i][row];
       if (!p) return;
       const flags = (keeperSel[t.id] || {})[p.name] || {};
-      const cs = getMajorContractStatus(p, currentSeason);
-      const yrs = cs.yearsRemaining;
-      const isEligible = yrs != null && yrs > 0;
+      const yearsRemaining = p.yearsRemaining;
+      const isEligible = p.canKeepNextYear !== false && yearsRemaining != null;
       const isCallup = p.contractType === "callup";
       const priceCell = isEligible
         ? (p.price == null && isCallup ? "TBD" : (p.price ?? ""))
-        : "Ineligible";
-      const firstYearCell = isEligible ? (p.yearAcquired ?? "") : "Ineligible";
-      const finalYear = isEligible ? currentSeason + yrs : "Ineligible";
+        : (p.contractStatus === "expired" ? "Expired" : "Ineligible");
+      const firstYearCell = isEligible ? (p.yearAcquired ?? "")
+        : (p.contractStatus === "expired" ? (p.yearAcquired ?? "") : "Ineligible");
+      const finalYear = isEligible ? currentSeason + yearsRemaining
+        : (p.contractStatus === "expired" ? "Expired" : "Ineligible");
       if (flags.rule5) r5Counters[i] += 1;
       if (flags.keeper) kpCounters[i] += 1;
       r[i * blockCols + 0] = flags.rule5 ? r5Counters[i] : "";
@@ -900,7 +1169,7 @@ async function main() {
       { name: `${currentSeason} Minor League Draft`,        rows: aoaMinorLeagueDraft(state.draft, state.trades) },
       { name: `${currentSeason} Keepers`,                   rows: aoaKeepers(ordered, currentSeason) },
       { name: "Exceptions",                                  rows: aoaExceptions(state.keeperPriceExceptions) },
-      { name: `${currentSeason + 1} Eligible Keepers`,      rows: aoaEligibleKeepers(ordered, state.keeperSel, balances, currentSeason) },
+      { name: `${currentSeason + 1} Eligible Keepers`,      rows: aoaEligibleKeepers(ordered, state.keeperSel, balances, currentSeason, teams, state.callup, state.workaroundOverrides, state.commishOverrides, state.keeperPriceExceptions) },
       { name: `Rule 5 Draft ${currentSeason}`,              rows: aoaRule5(ordered, state.rule5) },
     ],
   };
