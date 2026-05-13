@@ -79,17 +79,23 @@ revoke all on function public.dispatch_github_workflow(text) from anon, authenti
 
 -- 4. Schedule entries. Times are UTC. Cadence matches .github/workflows/*.
 --    Unschedule before scheduling so this script is re-runnable.
-select cron.unschedule('league-espn-sync')    where exists (select 1 from cron.job where jobname='league-espn-sync');
-select cron.unschedule('league-draft-clock')  where exists (select 1 from cron.job where jobname='league-draft-clock');
-select cron.unschedule('league-sheets-sync')  where exists (select 1 from cron.job where jobname='league-sheets-sync');
-select cron.unschedule('league-nightly-sync') where exists (select 1 from cron.job where jobname='league-nightly-sync');
-select cron.unschedule('league-daily-report') where exists (select 1 from cron.job where jobname='league-daily-report');
+select cron.unschedule('league-espn-sync')     where exists (select 1 from cron.job where jobname='league-espn-sync');
+select cron.unschedule('league-draft-clock')   where exists (select 1 from cron.job where jobname='league-draft-clock');
+select cron.unschedule('league-sheets-sync')   where exists (select 1 from cron.job where jobname='league-sheets-sync');
+select cron.unschedule('league-nightly-sync')  where exists (select 1 from cron.job where jobname='league-nightly-sync');
+select cron.unschedule('league-daily-report')  where exists (select 1 from cron.job where jobname='league-daily-report');
+select cron.unschedule('league-notify-instant') where exists (select 1 from cron.job where jobname='league-notify-instant');
+select cron.unschedule('league-weekly-report') where exists (select 1 from cron.job where jobname='league-weekly-report');
 
-select cron.schedule('league-espn-sync',    '*/15 * * * *', $$select public.dispatch_github_workflow('espn-sync.yml');$$);
-select cron.schedule('league-draft-clock',  '*/5 * * * *',  $$select public.dispatch_github_workflow('draft-clock.yml');$$);
-select cron.schedule('league-sheets-sync',  '*/5 * * * *',  $$select public.dispatch_github_workflow('sheets-sync.yml');$$);
-select cron.schedule('league-nightly-sync', '7 8 * * *',    $$select public.dispatch_github_workflow('nightly-sync.yml');$$);
-select cron.schedule('league-daily-report', '7 1 * * *',    $$select public.dispatch_github_workflow('daily-report.yml');$$);
+select cron.schedule('league-espn-sync',     '*/15 * * * *', $$select public.dispatch_github_workflow('espn-sync.yml');$$);
+select cron.schedule('league-draft-clock',   '*/5 * * * *',  $$select public.dispatch_github_workflow('draft-clock.yml');$$);
+select cron.schedule('league-sheets-sync',   '*/5 * * * *',  $$select public.dispatch_github_workflow('sheets-sync.yml');$$);
+-- notify-instant uses 1-min cadence in pg_cron (GH Actions schedule minimum
+-- is 5 min, so the workflow's own schedule is a coarser fallback).
+select cron.schedule('league-notify-instant','* * * * *',    $$select public.dispatch_github_workflow('notify-instant.yml');$$);
+select cron.schedule('league-nightly-sync',  '7 8 * * *',    $$select public.dispatch_github_workflow('nightly-sync.yml');$$);
+select cron.schedule('league-daily-report',  '7 1 * * *',    $$select public.dispatch_github_workflow('daily-report.yml');$$);
+select cron.schedule('league-weekly-report', '7 1 * * 1',    $$select public.dispatch_github_workflow('weekly-report.yml');$$);
 
 -- ============================================================================
 -- NEXT STEP — paste the GitHub PAT (do this AFTER creating it on GitHub):

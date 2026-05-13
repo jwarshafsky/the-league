@@ -409,8 +409,41 @@ function _subscribeToChanges() {
   if (_realtimeChannel) return;
   // Listen for trades / keeper_selections / league_state changes from other
   // users and refresh the cache + UI. Skip the re-render if the user is mid-
-  // typing in a form (we don't want to wipe their input on echo).
+  // typing in a form or has a modal open (we don't want to wipe their work
+  // on a realtime echo) — but DON'T drop the refresh entirely; flag it as
+  // pending and re-attempt every few seconds until the user goes idle.
   let _refreshTimer = null;
+  let _refreshDeferred = false;
+  let _refreshRetryTimer = null;
+
+  const _isUserBusy = () => {
+    const ae = document.activeElement;
+    const typing = ae && (ae.tagName === "INPUT" || ae.tagName === "TEXTAREA" || ae.tagName === "SELECT" || ae.isContentEditable);
+    if (typing) return true;
+    if (typeof currentView !== "undefined" && currentView === "trades"
+        && document.getElementById("trade-form-container")?.children.length) return true;
+    if (document.getElementById("pick-editor-modal")
+        || document.getElementById("commish-editor-modal")) return true;
+    return false;
+  };
+
+  const _applyBodyRefresh = () => {
+    if (typeof switchTab !== "function" || typeof currentView === "undefined") return false;
+    if (_isUserBusy()) return false;
+    switchTab(currentView);
+    return true;
+  };
+
+  const _scheduleRetry = () => {
+    if (_refreshRetryTimer) return;
+    _refreshRetryTimer = setTimeout(() => {
+      _refreshRetryTimer = null;
+      if (!_refreshDeferred) return;
+      if (_applyBodyRefresh()) _refreshDeferred = false;
+      else _scheduleRetry(); // still busy — try again in a few seconds
+    }, 4000);
+  };
+
   const refresh = () => {
     if (_refreshTimer) return;
     _refreshTimer = setTimeout(async () => {
@@ -422,13 +455,12 @@ function _subscribeToChanges() {
       // Any realtime change is a candidate for auto-sync to Google Sheets.
       // The schedule helper rate-limits + debounces so rapid changes batch.
       if (typeof autoSyncSheetsScheduleSoon === "function") autoSyncSheetsScheduleSoon("realtime");
-      const ae = document.activeElement;
-      const userIsTyping = ae && (ae.tagName === "INPUT" || ae.tagName === "TEXTAREA" || ae.tagName === "SELECT" || ae.isContentEditable);
-      if (userIsTyping) return;
-      if (typeof switchTab !== "function" || typeof currentView === "undefined") return;
-      if (currentView === "trades" && document.getElementById("trade-form-container")?.children.length) return;
-      if (document.getElementById("pick-editor-modal") || document.getElementById("commish-editor-modal")) return;
-      switchTab(currentView);
+      if (!_applyBodyRefresh()) {
+        _refreshDeferred = true;
+        _scheduleRetry();
+      } else {
+        _refreshDeferred = false;
+      }
     }, 150);
   };
   try {
