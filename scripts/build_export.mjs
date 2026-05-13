@@ -1230,30 +1230,48 @@ async function main() {
   // whose GET body is the doPost response. Browsers downgrade POST→GET on
   // 302 (legacy behavior); Node's fetch preserves POST per WHATWG spec,
   // which would hit a Drive 405. Handle the redirect ourselves.
-  const postResp = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "text/plain;charset=utf-8" },
-    body: JSON.stringify(payload),
-    redirect: "manual",
-  });
-  let resp = postResp;
-  if (postResp.status >= 300 && postResp.status < 400) {
-    const location = postResp.headers.get("location");
-    if (!location) throw new Error(`Apps Script redirect missing Location header (HTTP ${postResp.status})`);
-    resp = await fetch(location, { method: "GET" });
+  //
+  // Apps Script Web Apps occasionally serve transient 404/500 pages from
+  // googleusercontent.com — retry a few times before failing the workflow
+  // (the next 5-min cron tick almost always succeeds).
+  const MAX_ATTEMPTS = 3;
+  const RETRY_DELAY_MS = 5000;
+  let attempt = 0;
+  let lastFailure = null;
+  while (attempt < MAX_ATTEMPTS) {
+    attempt++;
+    const postResp = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify(payload),
+      redirect: "manual",
+    });
+    let resp = postResp;
+    if (postResp.status >= 300 && postResp.status < 400) {
+      const location = postResp.headers.get("location");
+      if (!location) throw new Error(`Apps Script redirect missing Location header (HTTP ${postResp.status})`);
+      resp = await fetch(location, { method: "GET" });
+    }
+    const text = await resp.text();
+    let data = null;
+    try { data = JSON.parse(text); } catch {}
+    if (data && data.ok) {
+      if (attempt > 1) console.log(`(succeeded on attempt ${attempt})`);
+      console.log(`Synced ${data.tabs} tab(s) to Google Sheets.`);
+      return;
+    }
+    if (data && data.error) {
+      // Application-level error from the Apps Script — not transient.
+      console.error(`Apps Script error: ${data.error}`);
+      process.exit(1);
+    }
+    // HTML response or empty body — Google infra hiccup. Retry.
+    lastFailure = `HTTP ${resp.status}: ${text.slice(0, 200)}`;
+    console.warn(`Attempt ${attempt}/${MAX_ATTEMPTS} failed (${lastFailure}); retrying in ${RETRY_DELAY_MS / 1000}s…`);
+    if (attempt < MAX_ATTEMPTS) await new Promise(r => setTimeout(r, RETRY_DELAY_MS));
   }
-  const text = await resp.text();
-  let data = null;
-  try { data = JSON.parse(text); } catch {}
-  if (data && data.ok) {
-    console.log(`Synced ${data.tabs} tab(s) to Google Sheets.`);
-  } else if (data && data.error) {
-    console.error(`Apps Script error: ${data.error}`);
-    process.exit(1);
-  } else {
-    console.error(`Unexpected response (HTTP ${resp.status}): ${text.slice(0, 300)}`);
-    process.exit(1);
-  }
+  console.error(`Unexpected response after ${MAX_ATTEMPTS} attempts: ${lastFailure}`);
+  process.exit(1);
 }
 
 main().catch(e => { console.error(e); process.exit(1); });
