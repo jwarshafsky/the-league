@@ -4684,10 +4684,15 @@ function switchTab(tab) {
   document.querySelectorAll(".nav-tab, .nav-drawer-item").forEach(t => t.classList.remove("active"));
   document.querySelectorAll(`[data-tab="${tab}"]`).forEach(el => el.classList.add("active"));
 
-  // Reset scroll to top when switching tabs — without this, mobile users
-  // land halfway down the new tab because the previous tab's scroll
-  // position carried over.
-  try { window.scrollTo(0, 0); } catch {}
+  // Reset scroll to top only when actually changing tabs. switchTab() is
+  // also called to re-render the active tab in response to realtime cache
+  // refreshes — in those cases we want to keep the user's scroll position
+  // (otherwise the Commissioner Tools / Settings page lurches to the top
+  // when an ESPN sync or another user's edit lands).
+  const tabActuallyChanged = (typeof currentView === "undefined") || currentView !== tab;
+  if (tabActuallyChanged) {
+    try { window.scrollTo(0, 0); } catch {}
+  }
 
   const content = document.getElementById("main-content");
   const backBtn = document.getElementById("back-btn");
