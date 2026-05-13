@@ -42,14 +42,20 @@ jobs:
           set -o pipefail
           bash scripts/sync_espn.sh 2>&1 | tee /tmp/sync_log.txt
 
+      # Status-write steps are non-fatal. The banner / push are nice-to-have;
+      # we don't want a Supabase grant blip or a transient PostgREST error to
+      # flag the whole workflow red and email Jeff. Failures show up in the
+      # job log.
       - name: Record sync status (success)
         if: steps.sync.outcome == 'success'
+        continue-on-error: true
         env:
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: python3 scripts/_sync_status.py --success
 
       - name: Record sync status (failure + push commish)
         if: steps.sync.outcome == 'failure'
+        continue-on-error: true
         env:
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}
