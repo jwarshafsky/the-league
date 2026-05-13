@@ -4896,16 +4896,18 @@ const VAPID_PUBLIC_KEY = "BNgnBnVKWKd39EOdA5UJNhCaOnzgGAtspFtXtJ8r_qnaQQXrz_E9UV
 // Notification event taxonomy: each row defines its label and which channels
 // it supports. `email` = list of allowed frequencies. `push` = whether the
 // per-row push checkbox is shown.
+// Notification events. defaults are intentionally all-off so an owner who
+// has never opened Settings receives nothing. They opt in explicitly.
 const NOTIFY_EVENTS = [
-  { key: "trade_proposal",   label: "Trade proposal received",      email: ["instant","daily","weekly","never"], push: true,  defaults: { email: "instant", push: true } },
-  { key: "trade_update",     label: "Trade proposal updates",        email: ["instant","daily","weekly","never"], push: true,  defaults: { email: "instant", push: true } },
-  { key: "trade_message",    label: "Trade thread message",          email: ["instant","daily","weekly","never"], push: true,  defaults: { email: "instant", push: true } },
-  { key: "trade_completed",  label: "Trade completed (any league trade)", email: ["instant","daily","weekly","never"], push: true,  defaults: { email: "daily", push: false } },
-  { key: "keeper_protect",   label: "Keeper protection changes",     email: ["daily","weekly","never"],            push: false, defaults: { email: "daily" } },
-  { key: "rule5_protect",    label: "Rule 5 protection changes",     email: ["daily","weekly","never"],            push: false, defaults: { email: "daily" } },
-  { key: "callup",           label: "Call-ups",                       email: ["daily","weekly","never"],            push: false, defaults: { email: "daily" } },
-  { key: "send_down",        label: "Send-downs",                     email: ["daily","weekly","never"],            push: false, defaults: { email: "daily" } },
-  { key: "draft_picks",      label: "Other teams' draft picks",       email: ["daily","weekly","never"],            push: false, defaults: { email: "daily" } },
+  { key: "trade_proposal",   label: "Trade proposal received",      email: ["instant","daily","weekly","never"], push: true,  defaults: { email: "never", push: false } },
+  { key: "trade_update",     label: "Trade proposal updates",        email: ["instant","daily","weekly","never"], push: true,  defaults: { email: "never", push: false } },
+  { key: "trade_message",    label: "Trade thread message",          email: ["instant","daily","weekly","never"], push: true,  defaults: { email: "never", push: false } },
+  { key: "trade_completed",  label: "Trade completed (any league trade)", email: ["instant","daily","weekly","never"], push: true,  defaults: { email: "never", push: false } },
+  { key: "keeper_protect",   label: "Keeper protection changes",     email: ["daily","weekly","never"],            push: false, defaults: { email: "never" } },
+  { key: "rule5_protect",    label: "Rule 5 protection changes",     email: ["daily","weekly","never"],            push: false, defaults: { email: "never" } },
+  { key: "callup",           label: "Call-ups",                       email: ["daily","weekly","never"],            push: false, defaults: { email: "never" } },
+  { key: "send_down",        label: "Send-downs",                     email: ["daily","weekly","never"],            push: false, defaults: { email: "never" } },
+  { key: "draft_picks",      label: "Other teams' draft picks",       email: ["daily","weekly","never"],            push: false, defaults: { email: "never" } },
 ];
 
 const DRAFT_CLOCK_STATES = [
@@ -4919,7 +4921,11 @@ function getDefaultNotifyPrefs() {
   for (const e of NOTIFY_EVENTS) {
     out[e.key] = { email: e.defaults.email, push: e.push ? !!e.defaults.push : false };
   }
-  out.draft_clock = { in_hole: { email: true, push: true }, on_deck: { email: true, push: true }, on_clock: { email: true, push: true } };
+  out.draft_clock = {
+    in_hole:  { email: false, push: false },
+    on_deck:  { email: false, push: false },
+    on_clock: { email: false, push: false },
+  };
   return out;
 }
 
