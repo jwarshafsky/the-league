@@ -26,12 +26,17 @@ def _get_vapid_instance(pem_str):
     """Load + cache a Vapid01 instance from a PEM string. pywebpush's
     `vapid_private_key=PEM` path tried to deserialize the string itself and
     failed on some cryptography/OpenSSL combos — passing a Vapid01 object
-    instead works reliably."""
+    instead works reliably.
+
+    The PEM is stored single-line with literal `\\n` escapes in scripts/.env
+    (and in GitHub Actions secrets), so we re-expand them before parsing.
+    """
     global _vapid_instance
     if _vapid_instance is None:
         if Vapid01 is None:
             raise RuntimeError("py_vapid not installed — run: pip3 install --user py_vapid")
-        _vapid_instance = Vapid01.from_pem(pem_str.encode())
+        pem = pem_str.replace("\\n", "\n")
+        _vapid_instance = Vapid01.from_pem(pem.encode())
     return _vapid_instance
 
 
