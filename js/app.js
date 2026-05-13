@@ -8246,15 +8246,24 @@ function _renderEspnSyncBanner() {
     else document.body.insertBefore(banner, document.body.firstChild);
   }
   const when = lastFailureMs ? new Date(lastFailureMs).toLocaleString() : "—";
+  const lastSuccessWhen = lastSuccessMs ? new Date(lastSuccessMs).toLocaleString() : "—";
   const lastErr = (s.lastError || "").split("\n").slice(-3).join(" · ").slice(0, 240);
   banner.style.display = "flex";
+  // Distinguish two failure modes:
+  //   - `failing` = a real failure landed AFTER the last success (cookies expired,
+  //                 ESPN side rejecting the request, etc.) — actionable.
+  //   - `stale`   = last success was a long time ago BUT no failure recorded
+  //                 since (scheduled workflow not firing — GitHub Actions
+  //                 scheduler hiccup; cookies are probably fine).
+  const headline = failing ? "ESPN sync is failing." : "ESPN sync may be delayed.";
+  const detail = failing
+    ? `Last fail at ${escapeHtml(when)}. Your ESPN cookies (<code>SWID</code> + <code>espn_s2</code>) probably need refresh.`
+    : `Last successful sync was ${escapeHtml(lastSuccessWhen)} — the scheduled workflow on GitHub Actions hasn't fired recently. Cookies are likely fine; check <a href="https://github.com/jwarshafsky/the-league/actions" target="_blank" style="color:var(--accent)">the Actions tab</a>.`;
   banner.innerHTML = `
     <span style="font-size:1rem">⚠️</span>
     <span style="flex:1">
-      <strong>ESPN sync is failing.</strong>
-      ${failing ? `Last fail at ${escapeHtml(when)}.` : `No success in over 90 min.`}
-      Your ESPN cookies (<code>SWID</code> + <code>espn_s2</code>) probably need refresh.
-      ${lastErr ? `<span style="display:block;color:var(--text-dim);margin-top:2px;font-size:0.74rem">${escapeHtml(lastErr)}</span>` : ""}
+      <strong>${headline}</strong> ${detail}
+      ${failing && lastErr ? `<span style="display:block;color:var(--text-dim);margin-top:2px;font-size:0.74rem">${escapeHtml(lastErr)}</span>` : ""}
     </span>
     <button onclick="this.parentElement.style.display='none'" title="Hide until next page load" style="background:rgba(0,0,0,0.25);border:1px solid rgba(255,255,255,0.2);color:#fff;padding:3px 8px;border-radius:5px;font-size:0.74rem;cursor:pointer">Dismiss</button>
   `;
