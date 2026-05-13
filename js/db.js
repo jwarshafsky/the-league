@@ -803,11 +803,14 @@ async function addTradeAsync(trade) {
 
 async function editTradeAsync(id, fields) {
   // Apply optimistic local update first; revert on RPC error.
-  const idx = _cache.trades.findIndex(t => t._id === id);
-  const prev = idx !== -1 ? { ..._cache.trades[idx] } : null;
+  // Re-find by id on rollback — _cache.trades may have been replaced by a
+  // realtime _fetchAll() during the await, in which case the captured idx
+  // would no longer point at this trade.
+  const startIdx = _cache.trades.findIndex(t => t._id === id);
+  const prev = startIdx !== -1 ? { ..._cache.trades[startIdx] } : null;
   if (prev) {
-    _cache.trades[idx] = {
-      ..._cache.trades[idx],
+    _cache.trades[startIdx] = {
+      ..._cache.trades[startIdx],
       team1: fields.team1 ?? prev.team1,
       team2: fields.team2 ?? prev.team2,
       team1Receives: fields.team1Receives ?? prev.team1Receives,
@@ -825,12 +828,19 @@ async function editTradeAsync(id, fields) {
     }).eq("id", id);
     if (error) throw error;
   } catch (e) {
-    if (prev) _cache.trades[idx] = prev;
+    if (prev) {
+      const curIdx = _cache.trades.findIndex(t => t._id === id);
+      if (curIdx !== -1) _cache.trades[curIdx] = prev;
+      // If the trade is no longer in cache (realtime removed it), there's
+      // nothing to restore — the server-side state is the source of truth.
+    }
     throw e;
   }
 }
 
 async function deleteTradeAsync(id) {
+  // Optimistic remove. On failure, re-find by id rather than relying on a
+  // pre-await index — realtime may have changed _cache.trades positions.
   const idx = _cache.trades.findIndex(t => t._id === id);
   const removed = idx !== -1 ? _cache.trades[idx] : null;
   if (idx !== -1) _cache.trades.splice(idx, 1);
@@ -838,7 +848,12 @@ async function deleteTradeAsync(id) {
     const { error } = await supabaseClient.from("trades").delete().eq("id", id);
     if (error) throw error;
   } catch (e) {
-    if (removed && idx !== -1) _cache.trades.splice(idx, 0, removed);
+    if (removed && !_cache.trades.some(t => t._id === id)) {
+      // Re-add in original position if possible; else append (a later
+      // realtime refresh will sort it correctly).
+      const insertAt = Math.min(idx, _cache.trades.length);
+      _cache.trades.splice(insertAt, 0, removed);
+    }
     throw e;
   }
 }
