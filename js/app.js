@@ -6213,28 +6213,28 @@ function renderSettingsView() {
       <div style="color:var(--text-dim);font-size:0.82rem;margin-bottom:18px">Commissioner-only. Changes apply league-wide for everyone.</div>
       ${reviewBanner}
 
-      <div class="keeper-projection" style="margin-bottom:14px">
-        <h3 style="margin-top:0">Commissioner Review</h3>
-        <div style="color:var(--text-dim);font-size:0.84rem;margin-bottom:12px">
+      <details class="keeper-projection" style="margin-bottom:14px"${reviewTotal ? " open" : ""}>
+        <summary style="cursor:pointer;font-weight:700;color:var(--text-bright);font-size:0.92rem">Commissioner Review${reviewTotal ? ` <span style="color:var(--orange);font-weight:700;font-size:0.78rem">(${reviewTotal})</span>` : ""}</summary>
+        <div style="color:var(--text-dim);font-size:0.84rem;margin:8px 0 12px">
           Items the app surfaced that need a human decision. Each one links to the place where you can resolve it.
         </div>
         ${renderCommissionerReviewSections()}
-      </div>
+      </details>
 
-      <div class="keeper-projection" style="margin-bottom:14px">
-        <h3 style="margin-top:0">Season</h3>
-        <div style="color:var(--text-dim);font-size:0.84rem;margin-bottom:10px">
+      <details class="keeper-projection" style="margin-bottom:14px">
+        <summary style="cursor:pointer;font-weight:700;color:var(--text-bright);font-size:0.92rem">Season <span style="color:var(--text-dim);font-weight:400;font-size:0.78rem">(currently ${CURRENT_SEASON})</span></summary>
+        <div style="color:var(--text-dim);font-size:0.84rem;margin:8px 0 10px">
           The current season drives contract math everywhere (Expiry years, keeper eligibility, etc.). Click once at the start of each new year. Take a snapshot below first if you want a quick revert.
         </div>
         <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
           <span style="color:var(--text);font-size:0.88rem">Current season: <strong style="color:var(--text-bright)">${CURRENT_SEASON}</strong></span>
           <button class="trade-btn trade-btn-submit" onclick="submitAdvanceSeason()" style="font-size:0.85rem">Advance to ${CURRENT_SEASON + 1}</button>
         </div>
-      </div>
+      </details>
 
-      <div class="keeper-projection" style="margin-bottom:14px">
-        <h3 style="margin-top:0">Draft Roster Limits</h3>
-        <div style="color:var(--text-dim);font-size:0.84rem;margin-bottom:10px">
+      <details class="keeper-projection" style="margin-bottom:14px">
+        <summary style="cursor:pointer;font-weight:700;color:var(--text-bright);font-size:0.92rem">Draft Roster Limits</summary>
+        <div style="color:var(--text-dim);font-size:0.84rem;margin:8px 0 10px">
           When enabled, the on-the-clock team can only submit a pick if they have an open roster spot. They can open a spot via trade (or calling up a minor leaguer, for minors) and try again. Commissioner can always pass.
         </div>
         <label style="display:flex;align-items:center;gap:10px;padding:10px;background:var(--bg);border:1px solid var(--border);border-radius:6px;cursor:pointer;margin-bottom:6px">
@@ -6245,7 +6245,7 @@ function renderSettingsView() {
           <input type="checkbox" id="settings-enforce-mil" ${enforceMiL ? "checked" : ""} onchange="toggleEnforceMinorsRosterSpot(this.checked)" style="width:18px;height:18px;cursor:pointer;accent-color:var(--accent)">
           <span style="color:var(--text);font-size:0.9rem">Minors Draft: enforce open 10-man MiL spot</span>
         </label>
-      </div>
+      </details>
 
       <details class="keeper-projection" style="margin-bottom:14px">
         <summary style="cursor:pointer;font-weight:700;color:var(--text-bright);font-size:0.92rem">Key Dates</summary>
@@ -6279,18 +6279,18 @@ function renderSettingsView() {
         ${renderKeeperPriceExceptionsEditor()}
       </details>
 
-      <div class="keeper-projection" style="margin-bottom:14px">
-        <h3 style="margin-top:0;margin-bottom:12px">Export/Sync League Data</h3>
-        <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <details class="keeper-projection" style="margin-bottom:14px">
+        <summary style="cursor:pointer;font-weight:700;color:var(--text-bright);font-size:0.92rem">Export/Sync League Data</summary>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
           <button class="trade-btn" onclick="showAppsScriptSetup()" style="font-size:0.85rem">Configure</button>
           <button id="sync-sheets-btn" class="trade-btn trade-btn-submit" onclick="syncToGoogleSheets()" style="font-size:0.85rem">Sync to Google Sheets</button>
           <button class="trade-btn" onclick="exportLeagueXlsx()" style="font-size:0.85rem">Export League (.xlsx)</button>
         </div>
-      </div>
+      </details>
 
-      <div class="keeper-projection" style="margin-bottom:14px">
-        <h3 style="margin-top:0">Rollback League State</h3>
-        <div style="color:var(--text-dim);font-size:0.84rem;margin-bottom:10px">
+      <details class="keeper-projection" style="margin-bottom:14px">
+        <summary style="cursor:pointer;font-weight:700;color:var(--text-bright);font-size:0.92rem">Rollback League State</summary>
+        <div style="color:var(--text-dim);font-size:0.84rem;margin:8px 0 10px">
           Take a snapshot of the entire league (trades, keeper selections, draft state, settings, etc.) so you can experiment — set the year, mess with rosters — and restore later if needed. A safety snapshot is taken automatically before any restore.
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
@@ -6298,7 +6298,7 @@ function renderSettingsView() {
           <button class="trade-btn trade-btn-submit" onclick="submitTakeSnapshot()" style="font-size:0.85rem">Take Snapshot</button>
         </div>
         <div id="settings-snapshot-list" style="font-size:0.85rem;color:var(--text-dim)">Loading snapshots…</div>
-      </div>
+      </details>
     </div>
   `;
 }
