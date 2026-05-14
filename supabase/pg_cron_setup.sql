@@ -86,6 +86,7 @@ select cron.unschedule('league-nightly-sync')  where exists (select 1 from cron.
 select cron.unschedule('league-daily-report')  where exists (select 1 from cron.job where jobname='league-daily-report');
 select cron.unschedule('league-notify-instant') where exists (select 1 from cron.job where jobname='league-notify-instant');
 select cron.unschedule('league-weekly-report') where exists (select 1 from cron.job where jobname='league-weekly-report');
+select cron.unschedule('league-key-date-reminders') where exists (select 1 from cron.job where jobname='league-key-date-reminders');
 
 select cron.schedule('league-espn-sync',     '*/15 * * * *', $$select public.dispatch_github_workflow('espn-sync.yml');$$);
 select cron.schedule('league-draft-clock',   '*/5 * * * *',  $$select public.dispatch_github_workflow('draft-clock.yml');$$);
@@ -96,6 +97,9 @@ select cron.schedule('league-notify-instant','* * * * *',    $$select public.dis
 select cron.schedule('league-nightly-sync',  '7 8 * * *',    $$select public.dispatch_github_workflow('nightly-sync.yml');$$);
 select cron.schedule('league-daily-report',  '7 1 * * *',    $$select public.dispatch_github_workflow('daily-report.yml');$$);
 select cron.schedule('league-weekly-report', '7 1 * * 1',    $$select public.dispatch_github_workflow('weekly-report.yml');$$);
+-- Key date reminders fire 1-week and 24-hour ahead. The script tolerates
+-- ±3-6h slack so 30-min cadence is plenty.
+select cron.schedule('league-key-date-reminders','*/30 * * * *', $$select public.dispatch_github_workflow('key-date-reminders.yml');$$);
 
 -- ============================================================================
 -- NEXT STEP — paste the GitHub PAT (do this AFTER creating it on GitHub):
