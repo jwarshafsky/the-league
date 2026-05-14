@@ -1063,12 +1063,12 @@ function renderMajorsTable(players) {
     <table class="player-table keepers-aligned-table" style="table-layout:fixed">
       <colgroup>
         <col style="width:42%">
-        <col style="width:14%">
         <col style="width:22%">
+        <col style="width:14%">
         <col style="width:22%">
       </colgroup>
       <thead>
-        <tr><th>Player</th><th>${CURRENT_SEASON} $</th><th>Acquired</th><th>Expiry</th></tr>
+        <tr><th>Player</th><th>Acquired</th><th>${CURRENT_SEASON} $</th><th>Expiry</th></tr>
       </thead>
       <tbody>
         ${players.map(p => {
@@ -1077,8 +1077,8 @@ function renderMajorsTable(players) {
           return `
             <tr>
               <td><span class="player-name"${_playerTitleAttr(p.name)}>${escapeHtml(p.name)}</span></td>
-              <td class="player-price">$${p.price}</td>
               <td class="player-year">${p.yearAcquired}${p.fromMinors ? ' <span class="from-minors-tag">MiLB</span>' : ""}</td>
+              <td class="player-price">$${p.price}</td>
               <td><span class="contract-tag contract-${escapeHtml(cs.status)}">${expiry}</span></td>
             </tr>
           `;
@@ -3641,9 +3641,9 @@ function sourceBadge(player) {
     case "keeper-via-trade": return `<span class="from-minors-tag" style="background:rgba(59,130,246,0.2);color:var(--accent)">Keeper (trade)${yearTag}</span>`;
     case "callup":          return `<span class="from-minors-tag" style="background:rgba(168,85,247,0.2);color:var(--purple)">Call-up${origYear ? ` (${origYear}m)` : ""}</span>`;
     case "callup-via-trade": return `<span class="from-minors-tag" style="background:rgba(168,85,247,0.2);color:var(--purple)">Call-up (trade)${origYear ? ` (${origYear}m)` : ""}</span>`;
-    case "auction":         return '<span class="from-minors-tag" style="background:rgba(34,197,94,0.2);color:var(--green)">Auction \'26</span>';
-    case "fa":              return '<span class="from-minors-tag" style="background:rgba(234,179,8,0.2);color:var(--yellow)">FA</span>';
-    case "fa-after-drop":   return '<span class="from-minors-tag" style="background:rgba(234,179,8,0.2);color:var(--yellow)">FA</span>';
+    case "auction":         return `<span class="from-minors-tag" style="background:rgba(34,197,94,0.2);color:var(--green)">Auction ${CURRENT_SEASON}</span>`;
+    case "fa":              return `<span class="from-minors-tag" style="background:rgba(234,179,8,0.2);color:var(--yellow)">FA ${CURRENT_SEASON}</span>`;
+    case "fa-after-drop":   return `<span class="from-minors-tag" style="background:rgba(234,179,8,0.2);color:var(--yellow)">FA ${CURRENT_SEASON}</span>`;
     default: return "";
   }
 }
@@ -8643,7 +8643,7 @@ function openManagerHistory(teamId) {
     let yearLabels = "";
     for (const p of points) {
       const x = xFor(p.year);
-      yearLabels += `<text x="${x}" y="${H - PADB + 18}" fill="rgba(255,255,255,0.55)" font-size="11" text-anchor="middle">'${String(p.year).slice(-2)}</text>`;
+      yearLabels += `<text x="${x}" y="${H - PADB + 18}" fill="rgba(255,255,255,0.55)" font-size="11" text-anchor="middle">${p.year}</text>`;
     }
     // Connect points
     let line = "";
