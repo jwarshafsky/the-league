@@ -5760,6 +5760,7 @@ function renderMustCallUpReview() {
 
 function renderCommissionerReviewSections() {
   const callupItems = _findCallupsWithoutPrice();
+  const mustCallUpItems = _findMustCallUpPlayers();
   const sections = [
     { title: "Duplicate Player Names", body: renderDuplicateNamesReview(),
       intro: 'Two MLB players sharing a name (or a stale data-entry duplicate). Cost-basis lookups pick the first match by name, so the commish needs to pin contracts via Keeper Price Exceptions (case (a)) or clean up <code>js/data.js</code> (case (b)).' },
@@ -5769,7 +5770,8 @@ function renderCommissionerReviewSections() {
       intro: 'Active call-ups need a first ML-year price per §2(e). Until set, the player shows as <code>$TBD</code> and keeper math is incomplete.',
       collapsible: true, count: callupItems.length },
     { title: "MiL Players Past §3(f) Threshold", body: renderMustCallUpReview(),
-      intro: 'These minor leaguers have hit 300 AB / 75 IP — per the post-Jan-2026 amendment they must be called up or dropped by the end of the next MiL draft.' },
+      intro: 'These minor leaguers have hit 300 AB / 75 IP — per the post-Jan-2026 amendment they must be called up or dropped by the end of the next MiL draft.',
+      collapsible: true, count: mustCallUpItems.length },
   ];
   const nonEmpty = sections.filter(s => s.body);
   if (!nonEmpty.length) {
