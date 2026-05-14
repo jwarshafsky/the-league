@@ -150,11 +150,19 @@ def main():
     push_by_team = {}
     for s in push_subs:
         push_by_team.setdefault(s["team_id"], []).append(s)
-    email_by_team = {}
+    # Each team may have multiple managers (co-managers like Josh/Doug).
+    # Build a set of email addresses per team so notifications fan out to
+    # every owner record. The team-level prefs.email row, if set, is a
+    # broadcast address that goes to everyone in addition.
+    emails_by_team = {}
     for o in owners:
-        addr = (all_prefs.get(o["team_id"]) or {}).get("email") or emails_by_uid.get(o["id"])
+        addr = emails_by_uid.get(o["id"])
         if addr:
-            email_by_team[o["team_id"]] = addr
+            emails_by_team.setdefault(o["team_id"], set()).add(addr)
+    for tid, row in (all_prefs or {}).items():
+        broadcast = row.get("email")
+        if broadcast:
+            emails_by_team.setdefault(tid, set()).add(broadcast)
 
     email_sent = 0
     push_sent = 0
@@ -165,21 +173,22 @@ def main():
         if not meta:
             continue  # Not an "instant"-eligible category (those are digest-only).
         headline = describe_activity(a)
-        # Email
+        # Email — fan out to every manager on the team.
         targets = recipients_for_activity(a, all_prefs, "email")
         for tid in targets:
-            addr = email_by_team.get(tid)
-            if not addr: continue
+            addrs = emails_by_team.get(tid) or set()
+            if not addrs: continue
             subject = f"The League: {meta['subject_prefix']} — {team_name(a.get('actor_team_id') or '?')}"
             html, text = render_alert(meta["title"], headline, url=meta["url"], cta_label="Open in app")
-            if smtp_user and smtp_pass:
-                try:
-                    send_email(smtp_user, smtp_pass, [addr], subject, html, text)
-                    email_sent += 1
-                except Exception as e:
-                    print(f"  ! email failed for {tid} <{addr}>: {e}", file=sys.stderr)
-            else:
-                print(f"[preview email] {tid} <{addr}> — {subject}")
+            for addr in addrs:
+                if smtp_user and smtp_pass:
+                    try:
+                        send_email(smtp_user, smtp_pass, [addr], subject, html, text)
+                        email_sent += 1
+                    except Exception as e:
+                        print(f"  ! email failed for {tid} <{addr}>: {e}", file=sys.stderr)
+                else:
+                    print(f"[preview email] {tid} <{addr}> — {subject}")
         # Push
         if vapid_priv:
             targets = recipients_for_activity(a, all_prefs, "push")

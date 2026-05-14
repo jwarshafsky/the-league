@@ -334,10 +334,16 @@ def main():
     push_by_team = {}
     for s in push_subs:
         push_by_team.setdefault(s["team_id"], []).append(s)
-    email_by_team = {}
+    # Co-managers: fan out to every owner record for the team.
+    emails_by_team = {}
     for o in owners:
-        addr = (all_prefs.get(o["team_id"]) or {}).get("email") or emails_by_uid.get(o["id"])
-        if addr: email_by_team[o["team_id"]] = addr
+        addr = emails_by_uid.get(o["id"])
+        if addr:
+            emails_by_team.setdefault(o["team_id"], set()).add(addr)
+    for tid, row in (all_prefs or {}).items():
+        broadcast = row.get("email")
+        if broadcast:
+            emails_by_team.setdefault(tid, set()).add(broadcast)
 
     notify_count = 0
     push_failed_endpoints = []
@@ -362,16 +368,17 @@ def main():
         body = f"Your team ({team_name(team_id)}) is {STATE_LABELS[state_key].lower()} for the Minors Draft (Round {pick['round']}, Pick {pick['pickInRound']})."
         url = APP_URL + "?tab=draft"
         if wants_email:
-            addr = email_by_team.get(team_id)
-            if addr and smtp_user and smtp_pass:
-                try:
-                    html, text = render_alert(title, body, url=url, cta_label="Open Minors Draft")
-                    send_email(smtp_user, smtp_pass, [addr], f"The League: Draft alert — {title}", html, text)
-                    notify_count += 1
-                except Exception as e:
-                    print(f"  ! email failed for {team_id}: {e}", file=sys.stderr)
-            elif addr:
-                print(f"[preview] would email {team_id} <{addr}> — {title}")
+            addrs = emails_by_team.get(team_id) or set()
+            for addr in addrs:
+                if smtp_user and smtp_pass:
+                    try:
+                        html, text = render_alert(title, body, url=url, cta_label="Open Minors Draft")
+                        send_email(smtp_user, smtp_pass, [addr], f"The League: Draft alert — {title}", html, text)
+                        notify_count += 1
+                    except Exception as e:
+                        print(f"  ! email failed for {team_id} <{addr}>: {e}", file=sys.stderr)
+                else:
+                    print(f"[preview] would email {team_id} <{addr}> — {title}")
         if wants_push and vapid_priv:
             for sub in push_by_team.get(team_id, []):
                 payload = {

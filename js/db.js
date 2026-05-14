@@ -953,6 +953,34 @@ async function saveKeyDatesAsync(dates)         { return _saveLeagueStateAsync("
 async function saveActiveVoteAsync(vote)        { return _saveLeagueStateAsync("active_vote", vote, "activeVote"); }
 function dbGetKeyDates() { return _clone(_cache.keyDates || {}); }
 function dbGetActiveVote() { return _clone(_cache.activeVote); }
+
+// --- Co-manager invites (commissioner-only) ---
+
+// Add an email→team_id mapping. When that user signs in, claim_invited_team()
+// auto-creates their owners row. RLS limits this table to commissioners.
+async function addInvitedEmailAsync(email, teamId, isCommish) {
+  const norm = String(email || "").trim().toLowerCase();
+  if (!norm || !teamId) throw new Error("email and team_id required");
+  const { error } = await supabaseClient.from("invited_emails").upsert({
+    email: norm,
+    team_id: teamId,
+    is_commissioner: !!isCommish,
+  });
+  if (error) throw error;
+}
+
+async function deleteInvitedEmailAsync(email) {
+  const norm = String(email || "").trim().toLowerCase();
+  if (!norm) return;
+  const { error } = await supabaseClient.from("invited_emails").delete().eq("email", norm);
+  if (error) throw error;
+}
+
+async function fetchInvitedEmailsAsync() {
+  const { data, error } = await supabaseClient.from("invited_emails").select("*").order("team_id");
+  if (error) throw error;
+  return data || [];
+}
 function dbGetCustomProspects() { return _cache.customProspects || []; }
 function dbGetEspnSyncStatus() { return _clone(_cache.espnSyncStatus || {}); }
 function dbGetPgCronHeartbeat() { return _clone(_cache.pgCronHeartbeat || {}); }

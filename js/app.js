@@ -5002,6 +5002,7 @@ function switchTab(tab) {
       // Snapshots come from a fresh DB query (not the regular cache) — load
       // them after the container is in the DOM.
       if (typeof _refreshSnapshotList === "function") _refreshSnapshotList();
+      if (typeof _refreshTeamManagersList === "function") _refreshTeamManagersList();
       // Show "synced X ago" on the Sync button now that it's in the DOM.
       if (typeof _refreshSyncButtonLabel === "function") _refreshSyncButtonLabel();
       break;
@@ -6229,6 +6230,14 @@ function renderSettingsView() {
       </details>
 
       <details class="keeper-projection" style="margin-bottom:14px">
+        <summary style="cursor:pointer;font-weight:700;color:var(--text-bright);font-size:0.92rem">Team Managers (co-managers)</summary>
+        <div style="color:var(--text-dim);font-size:0.84rem;margin:8px 0 10px">
+          Invite an email to a team — once they sign in, they're a manager of that team. A team can have multiple managers (e.g. Josh/Doug). Notifications go to all of them.
+        </div>
+        <div id="team-managers-editor" style="font-size:0.85rem;color:var(--text-dim)">Loading…</div>
+      </details>
+
+      <details class="keeper-projection" style="margin-bottom:14px">
         <summary style="cursor:pointer;font-weight:700;color:var(--text-bright);font-size:0.92rem">Keeper Price Exceptions</summary>
         <div style="color:var(--text-dim);font-size:0.84rem;margin:8px 0 10px">
           ESPN doesn't let us trade draft dollars, so the workaround is to bump a keeper's ESPN price up or down to absorb the swing. Enter the player's <em>true</em> salary here and the app will use that everywhere instead of the inflated ESPN value — Keepers tab, Eligible Keepers, Luxury Tax, and all contract math (years remaining, next-year price, etc.).
@@ -6436,6 +6445,90 @@ async function submitTakeSnapshot() {
     alert("Couldn't take snapshot: " + (e.message || e));
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = "Take Snapshot"; }
+  }
+}
+
+async function _refreshTeamManagersList() {
+  const container = document.getElementById("team-managers-editor");
+  if (!container) return;
+  if (!isCommissioner()) {
+    container.innerHTML = `<div style="color:var(--text-dim)">Commissioner-only.</div>`;
+    return;
+  }
+  try {
+    const rows = await fetchInvitedEmailsAsync();
+    const byTeam = {};
+    for (const r of rows) {
+      if (!byTeam[r.team_id]) byTeam[r.team_id] = [];
+      byTeam[r.team_id].push(r);
+    }
+    const teamOpts = LEAGUE_DATA.teams.map(t =>
+      `<option value="${escapeHtml(t.id)}">${escapeHtml(t.name)}</option>`
+    ).join("");
+    const listHtml = getDisplayOrderedTeams().map(team => {
+      const teamRows = byTeam[team.id] || [];
+      const itemsHtml = teamRows.map(r => `
+        <li style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:3px 0;font-size:0.84rem">
+          <span><code>${escapeHtml(r.email)}</code>${r.is_commissioner ? ' <span style="color:var(--yellow);font-size:0.72rem">(commish)</span>' : ''}</span>
+          <button class="trade-btn trade-btn-cancel" style="font-size:0.7rem;padding:3px 7px"
+            onclick="removeTeamManager('${escapeJsString(r.email)}','${escapeJsString(team.id)}')">Remove</button>
+        </li>
+      `).join("");
+      return `
+        <div style="background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:8px 10px;margin-bottom:6px">
+          <div style="font-weight:700;color:var(--text-bright);font-size:0.88rem;margin-bottom:4px">${escapeHtml(team.name)}</div>
+          ${teamRows.length
+            ? `<ul style="margin:0;padding:0;list-style:none">${itemsHtml}</ul>`
+            : `<div style="color:var(--text-dim);font-size:0.78rem;font-style:italic">No invites recorded</div>`}
+        </div>
+      `;
+    }).join("");
+    container.innerHTML = `
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap">
+        <input type="email" id="tm-new-email" placeholder="email@example.com"
+          style="flex:1;min-width:200px;background:var(--bg);color:var(--text);border:1px solid var(--border);padding:7px 10px;border-radius:5px;font-size:0.88rem">
+        <select id="tm-new-team" style="background:var(--bg);color:var(--text);border:1px solid var(--border);padding:7px 10px;border-radius:5px;font-size:0.88rem">
+          ${teamOpts}
+        </select>
+        <label style="color:var(--text);font-size:0.78rem;display:flex;align-items:center;gap:4px">
+          <input type="checkbox" id="tm-new-commish" style="accent-color:var(--accent)"> commish
+        </label>
+        <button class="trade-btn trade-btn-submit" style="font-size:0.85rem" onclick="submitAddTeamManager()">Invite</button>
+      </div>
+      <div style="color:var(--text-dim);font-size:0.74rem;margin-bottom:8px">When the invited person signs in (Google or magic link), they're auto-added to the team. Remove an entry below to revoke an unclaimed invite.</div>
+      ${listHtml}
+    `;
+  } catch (e) {
+    container.innerHTML = `<div style="color:var(--red)">Couldn't load team managers: ${escapeHtml(String(e.message || e))}</div>`;
+  }
+}
+
+async function submitAddTeamManager() {
+  if (!isCommissioner()) return;
+  const email = document.getElementById("tm-new-email")?.value || "";
+  const teamId = document.getElementById("tm-new-team")?.value || "";
+  const commish = !!document.getElementById("tm-new-commish")?.checked;
+  if (!email.trim() || !teamId) {
+    alert("Enter an email and pick a team.");
+    return;
+  }
+  try {
+    await addInvitedEmailAsync(email, teamId, commish);
+    if (typeof showToast === "function") showToast(`Invited ${email} to ${teamId}`);
+    if (typeof _refreshTeamManagersList === "function") _refreshTeamManagersList();
+  } catch (e) {
+    alert("Couldn't invite: " + (e.message || e));
+  }
+}
+
+async function removeTeamManager(email, teamId) {
+  if (!isCommissioner()) return;
+  if (!confirm(`Remove invite for ${email}? If they've already signed in, this only removes the invite record — they'll keep their existing access. Use Supabase auth to revoke entirely.`)) return;
+  try {
+    await deleteInvitedEmailAsync(email);
+    if (typeof _refreshTeamManagersList === "function") _refreshTeamManagersList();
+  } catch (e) {
+    alert("Couldn't remove: " + (e.message || e));
   }
 }
 

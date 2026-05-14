@@ -7,10 +7,14 @@
 -- ============================================================================
 create table if not exists public.owners (
   id              uuid primary key references auth.users(id) on delete cascade,
-  team_id         text unique not null,
+  -- team_id is NOT unique: a team can have multiple managers (co-managers
+  -- like Josh/Doug). The 2026-05-13 migration drops the old UNIQUE
+  -- constraint; new projects pick this up directly.
+  team_id         text not null,
   is_commissioner boolean not null default false,
   created_at      timestamptz not null default now()
 );
+create index if not exists owners_team_id_idx on public.owners(team_id);
 
 -- Helper: is the current user a commissioner?
 create or replace function public.is_commissioner()
