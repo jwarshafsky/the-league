@@ -5025,6 +5025,24 @@ function switchTab(tab) {
 //
 // Chrome and Edge fire `beforeinstallprompt` when the PWA is eligible to
 // install. We stash the event so a click on the "Install" button can call
+// Persist <details> open/closed state across re-renders. Without this,
+// every realtime tick or post-save switchTab() collapses every section
+// the user had expanded — extremely jarring on Commissioner Tools.
+// Each <details> needs a unique id; renderers read the cache via
+// _detailsOpenAttr(id, defaultOpen) and emit `open` accordingly.
+const _detailsOpenState = new Map();
+document.addEventListener("toggle", (e) => {
+  const t = e.target;
+  if (t && t.tagName === "DETAILS" && t.id) {
+    _detailsOpenState.set(t.id, t.open);
+  }
+}, true);
+function _detailsOpenAttr(id, defaultOpen) {
+  const stored = _detailsOpenState.get(id);
+  const isOpen = (stored !== undefined) ? stored : !!defaultOpen;
+  return isOpen ? " open" : "";
+}
+
 // Measure the sticky .header-stack and expose its height as a CSS custom
 // property on :root so sticky elements inside the main content (Key Dates
 // sidebar, etc.) can offset by `calc(var(--header-stack-height) + 14px)`
@@ -6213,7 +6231,7 @@ function renderSettingsView() {
       <div style="color:var(--text-dim);font-size:0.82rem;margin-bottom:18px">Commissioner-only. Changes apply league-wide for everyone.</div>
       ${reviewBanner}
 
-      <details class="keeper-projection" style="margin-bottom:14px"${reviewTotal ? " open" : ""}>
+      <details id="cs-review" class="keeper-projection" style="margin-bottom:14px"${_detailsOpenAttr("cs-review", reviewTotal > 0)}>
         <summary style="cursor:pointer;font-weight:700;color:var(--text-bright);font-size:0.92rem">Commissioner Review${reviewTotal ? ` <span style="color:var(--orange);font-weight:700;font-size:0.78rem">(${reviewTotal})</span>` : ""}</summary>
         <div style="color:var(--text-dim);font-size:0.84rem;margin:8px 0 12px">
           Items the app surfaced that need a human decision. Each one links to the place where you can resolve it.
@@ -6221,7 +6239,7 @@ function renderSettingsView() {
         ${renderCommissionerReviewSections()}
       </details>
 
-      <details class="keeper-projection" style="margin-bottom:14px">
+      <details id="cs-season" class="keeper-projection" style="margin-bottom:14px"${_detailsOpenAttr("cs-season", false)}>
         <summary style="cursor:pointer;font-weight:700;color:var(--text-bright);font-size:0.92rem">Season <span style="color:var(--text-dim);font-weight:400;font-size:0.78rem">(currently ${CURRENT_SEASON})</span></summary>
         <div style="color:var(--text-dim);font-size:0.84rem;margin:8px 0 10px">
           The current season drives contract math everywhere (Expiry years, keeper eligibility, etc.). Click once at the start of each new year. Take a snapshot below first if you want a quick revert.
@@ -6232,7 +6250,7 @@ function renderSettingsView() {
         </div>
       </details>
 
-      <details class="keeper-projection" style="margin-bottom:14px">
+      <details id="cs-roster-limits" class="keeper-projection" style="margin-bottom:14px"${_detailsOpenAttr("cs-roster-limits", false)}>
         <summary style="cursor:pointer;font-weight:700;color:var(--text-bright);font-size:0.92rem">Draft Roster Limits</summary>
         <div style="color:var(--text-dim);font-size:0.84rem;margin:8px 0 10px">
           When enabled, the on-the-clock team can only submit a pick if they have an open roster spot. They can open a spot via trade (or calling up a minor leaguer, for minors) and try again. Commissioner can always pass.
@@ -6247,23 +6265,23 @@ function renderSettingsView() {
         </label>
       </details>
 
-      <details class="keeper-projection" style="margin-bottom:14px">
+      <details id="cs-key-dates" class="keeper-projection" style="margin-bottom:14px"${_detailsOpenAttr("cs-key-dates", false)}>
         <summary style="cursor:pointer;font-weight:700;color:var(--text-bright);font-size:0.92rem">Key Dates</summary>
         <div style="color:var(--text-dim);font-size:0.84rem;margin:8px 0 10px">
-          Surfaced on the League Rules page so every manager can see deadlines at a glance. Leave any field blank to hide it from the sidebar.
+          Surfaced on the League Rules page so every manager can see deadlines at a glance. Leave any field blank to hide it from the sidebar. <strong>Times are interpreted as Eastern Time (ET).</strong>
         </div>
         ${renderKeyDatesEditor()}
       </details>
 
-      <details class="keeper-projection" style="margin-bottom:14px">
+      <details id="cs-vote" class="keeper-projection" style="margin-bottom:14px"${_detailsOpenAttr("cs-vote", false)}>
         <summary style="cursor:pointer;font-weight:700;color:var(--text-bright);font-size:0.92rem">League Vote</summary>
         <div style="color:var(--text-dim);font-size:0.84rem;margin:8px 0 10px">
-          Per §9c, constitution changes need a majority vote. Initiate one here — all managers see a banner on League Rules and vote inline. You'll get a toast each time a ballot lands; non-commish only see whether they've voted, not the running tally.
+          Per §9c, constitution changes need a majority vote. Initiate one here — all managers see a banner on League Rules and vote inline. You'll get a toast each time a ballot lands; non-commish only see whether they've voted, not the running tally. A vote auto-ends as soon as 7 of 12 teams pick the same option, and commissioners get an email summary.
         </div>
         ${renderInitiateVoteSection()}
       </details>
 
-      <details class="keeper-projection" style="margin-bottom:14px">
+      <details id="cs-team-managers" class="keeper-projection" style="margin-bottom:14px"${_detailsOpenAttr("cs-team-managers", false)}>
         <summary style="cursor:pointer;font-weight:700;color:var(--text-bright);font-size:0.92rem">Team Managers (co-managers)</summary>
         <div style="color:var(--text-dim);font-size:0.84rem;margin:8px 0 10px">
           Invite an email to a team — once they sign in, they're a manager of that team. A team can have multiple managers (e.g. Josh/Doug). Notifications go to all of them.
@@ -6271,7 +6289,7 @@ function renderSettingsView() {
         <div id="team-managers-editor" style="font-size:0.85rem;color:var(--text-dim)">Loading…</div>
       </details>
 
-      <details class="keeper-projection" style="margin-bottom:14px">
+      <details id="cs-price-exceptions" class="keeper-projection" style="margin-bottom:14px"${_detailsOpenAttr("cs-price-exceptions", false)}>
         <summary style="cursor:pointer;font-weight:700;color:var(--text-bright);font-size:0.92rem">Keeper Price Exceptions</summary>
         <div style="color:var(--text-dim);font-size:0.84rem;margin:8px 0 10px">
           ESPN doesn't let us trade draft dollars, so the workaround is to bump a keeper's ESPN price up or down to absorb the swing. Enter the player's <em>true</em> salary here and the app will use that everywhere instead of the inflated ESPN value — Keepers tab, Eligible Keepers, Luxury Tax, and all contract math (years remaining, next-year price, etc.).
@@ -6279,7 +6297,7 @@ function renderSettingsView() {
         ${renderKeeperPriceExceptionsEditor()}
       </details>
 
-      <details class="keeper-projection" style="margin-bottom:14px">
+      <details id="cs-export" class="keeper-projection" style="margin-bottom:14px"${_detailsOpenAttr("cs-export", false)}>
         <summary style="cursor:pointer;font-weight:700;color:var(--text-bright);font-size:0.92rem">Export/Sync League Data</summary>
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
           <button class="trade-btn" onclick="showAppsScriptSetup()" style="font-size:0.85rem">Configure</button>
@@ -6288,7 +6306,7 @@ function renderSettingsView() {
         </div>
       </details>
 
-      <details class="keeper-projection" style="margin-bottom:14px">
+      <details id="cs-rollback" class="keeper-projection" style="margin-bottom:14px"${_detailsOpenAttr("cs-rollback", false)}>
         <summary style="cursor:pointer;font-weight:700;color:var(--text-bright);font-size:0.92rem">Rollback League State</summary>
         <div style="color:var(--text-dim);font-size:0.84rem;margin:8px 0 10px">
           Take a snapshot of the entire league (trades, keeper selections, draft state, settings, etc.) so you can experiment — set the year, mess with rosters — and restore later if needed. A safety snapshot is taken automatically before any restore.
@@ -6305,22 +6323,12 @@ function renderSettingsView() {
 
 function renderKeyDatesEditor() {
   const dates = (typeof dbGetKeyDates === "function") ? dbGetKeyDates() : {};
-  // datetime-local needs YYYY-MM-DDTHH:MM (no seconds, no timezone). Convert
-  // the stored ISO (which may be a full timestamp) into that form.
-  const toInput = iso => {
-    if (!iso) return "";
-    try {
-      const d = new Date(iso);
-      if (isNaN(d.getTime())) return "";
-      const pad = n => String(n).padStart(2, "0");
-      return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-    } catch { return ""; }
-  };
   const rows = KEY_DATES_SCHEMA.map(d => `
     <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px">
       <label style="color:var(--text);font-size:0.88rem;min-width:140px">${escapeHtml(d.label)}</label>
-      <input type="datetime-local" id="kd-${d.key}" value="${toInput(dates[d.key])}"
+      <input type="datetime-local" id="kd-${d.key}" value="${_utcIsoToEtInputValue(dates[d.key])}"
         style="background:var(--bg);color:var(--text);border:1px solid var(--border);padding:6px 10px;border-radius:5px;font-size:0.9rem">
+      <span style="color:var(--text-dim);font-size:0.74rem">ET</span>
       <button class="trade-btn trade-btn-cancel" style="font-size:0.74rem;padding:4px 8px"
         onclick="clearKeyDate('${d.key}')">Clear</button>
     </div>
@@ -6341,16 +6349,16 @@ async function submitKeyDates() {
     if (!el) continue;
     const v = el.value;
     if (!v) { delete next[d.key]; continue; }
-    // Round-trip through Date to canonical ISO so display formatting is stable.
-    try {
-      const iso = new Date(v).toISOString();
-      next[d.key] = iso;
-    } catch { delete next[d.key]; }
+    // Interpret the input value as ET wall-clock and store as UTC.
+    const iso = _etInputToUtcIso(v);
+    if (iso) next[d.key] = iso; else delete next[d.key];
   }
   try {
     if (typeof saveKeyDatesAsync === "function") await saveKeyDatesAsync(next);
     if (typeof showToast === "function") showToast("Key dates saved");
-    switchTab("settings");
+    // No switchTab — open-state preservation handles re-renders, but
+    // skipping the explicit re-render keeps the edit form sticky for
+    // follow-up tweaks without flicker.
   } catch (e) {
     alert("Save failed: " + (e.message || e));
   }
@@ -8519,17 +8527,68 @@ const KEY_DATES_SCHEMA = [
   { key: "trade_deadline",  label: "Trade Deadline" },
 ];
 
+// Stored as UTC ISO. Display + input editing always in Eastern Time so
+// every league member sees the same wall-clock regardless of their TZ.
+const _ET_TZ = "America/New_York";
+
+function _etPartsFromUtc(iso) {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return null;
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: _ET_TZ,
+    year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", hour12: false,
+  }).formatToParts(d);
+  const get = t => parts.find(p => p.type === t)?.value || "";
+  return {
+    year: parseInt(get("year"), 10),
+    month: parseInt(get("month"), 10),
+    day: parseInt(get("day"), 10),
+    hour: parseInt(get("hour"), 10),
+    minute: parseInt(get("minute"), 10),
+  };
+}
+
 function _formatKeyDate(iso) {
   if (!iso) return null;
-  try {
-    const d = new Date(iso);
-    if (isNaN(d.getTime())) return null;
-    // Show date + time only if a time is set (non-midnight); otherwise just date.
-    const opts = (d.getHours() === 0 && d.getMinutes() === 0)
-      ? { year: "numeric", month: "short", day: "numeric" }
-      : { year: "numeric", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" };
-    return d.toLocaleString(undefined, opts);
-  } catch { return null; }
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return null;
+  const p = _etPartsFromUtc(iso);
+  if (!p) return null;
+  // Hide time if it lands at exactly midnight ET.
+  const opts = (p.hour === 0 && p.minute === 0)
+    ? { timeZone: _ET_TZ, year: "numeric", month: "short", day: "numeric" }
+    : { timeZone: _ET_TZ, year: "numeric", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" };
+  const formatted = d.toLocaleString("en-US", opts);
+  return (p.hour === 0 && p.minute === 0) ? formatted : `${formatted} ET`;
+}
+
+// Convert a "YYYY-MM-DDTHH:MM" wall-clock string (interpreted as ET) into
+// a UTC ISO. Handles DST transitions correctly.
+function _etInputToUtcIso(localStr) {
+  if (!localStr) return null;
+  const m = localStr.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
+  if (!m) return null;
+  const [, y, mo, d, hh, mm] = m;
+  // Pretend the input is UTC, then subtract the offset between that fake
+  // UTC instant's ET wall-clock and the input wall-clock.
+  const fakeUtcMs = Date.UTC(+y, +mo - 1, +d, +hh, +mm);
+  const fakeDate = new Date(fakeUtcMs);
+  const etWallStr = fakeDate.toLocaleString("sv", { timeZone: _ET_TZ }); // "YYYY-MM-DD HH:MM:SS"
+  const etWallMs = Date.parse(etWallStr.replace(" ", "T") + "Z");
+  const offsetMs = fakeUtcMs - etWallMs;
+  const realUtcMs = fakeUtcMs + offsetMs;
+  return new Date(realUtcMs).toISOString();
+}
+
+// Convert a UTC ISO into the "YYYY-MM-DDTHH:MM" string that <input
+// type="datetime-local"> expects, in ET wall-clock.
+function _utcIsoToEtInputValue(iso) {
+  const p = _etPartsFromUtc(iso);
+  if (!p) return "";
+  const pad = n => String(n).padStart(2, "0");
+  return `${p.year}-${pad(p.month)}-${pad(p.day)}T${pad(p.hour)}:${pad(p.minute)}`;
 }
 
 function renderKeyDatesSidebar() {
@@ -8544,8 +8603,8 @@ function renderKeyDatesSidebar() {
     `;
   }).join("");
   return `
-    <aside style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:14px 18px;box-shadow:var(--shadow);width:280px;flex-shrink:0;align-self:flex-start;position:sticky;top:calc(var(--header-stack-height, 60px) + 14px)">
-      <h3 style="margin:0 0 8px;font-size:1rem;color:var(--text-bright)">Key Dates</h3>
+    <aside style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:14px 18px;box-shadow:var(--shadow);width:280px;flex-shrink:0;align-self:flex-start">
+      <h3 style="margin:0 0 8px;font-size:1rem;color:var(--text-bright)">Key Dates <span style="color:var(--text-dim);font-size:0.7rem;font-weight:400">(ET)</span></h3>
       ${rows}
     </aside>
   `;
