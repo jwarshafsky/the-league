@@ -4920,9 +4920,14 @@ function switchTab(tab) {
   const tabActuallyChanged = (typeof currentView === "undefined") || currentView !== tab;
   if (tabActuallyChanged) {
     try { window.scrollTo(0, 0); } catch {}
-    // Remember which tab the user is on so a refresh / fresh sign-in lands
-    // them back where they left off (overrides _smartDefaultTab).
-    try { localStorage.setItem(LAST_TAB_KEY, tab); } catch {}
+    // Remember the tab in sessionStorage — refreshes within the same tab
+    // keep the user where they were, but opening a brand-new tab/window
+    // (or returning the next day) re-runs _smartDefaultTab() so the
+    // "homepage" lands on whatever's most relevant given the calendar.
+    try { sessionStorage.setItem(LAST_TAB_KEY, tab); } catch {}
+    // Wipe the legacy localStorage entry on first migration so users who
+    // had it set don't keep seeing a stale tab from months ago.
+    try { localStorage.removeItem(LAST_TAB_KEY); } catch {}
   }
 
   const content = document.getElementById("main-content");
@@ -6211,21 +6216,19 @@ function renderCommissionerReviewSections() {
 }
 
 // Auto-expand Commissioner Review only during the offseason window —
-// March 1 through the end of the Minors Draft. The rest of the season,
-// Jeff prefers it collapsed (he opens it intentionally if needed).
-// If no minors_draft is set, default to May 1 as a conservative cutoff
-// so the auto-open doesn't run all summer/fall.
+// March 1 through the end of the Minors Draft. Strict: requires
+// minors_draft to be explicitly set in Key Dates, and we have to be
+// within [March 1, minors_draft]. Outside of that, the section starts
+// collapsed (commish opens it intentionally).
 function _shouldAutoOpenCommishReview() {
+  const dates = (typeof dbGetKeyDates === "function") ? dbGetKeyDates() : {};
+  if (!dates.minors_draft) return false;
+  const minorsEnd = new Date(dates.minors_draft).getTime();
+  if (!Number.isFinite(minorsEnd)) return false;
   const now = Date.now();
   const today = new Date();
   const march1 = new Date(today.getFullYear(), 2, 1).getTime();
-  if (now < march1) return false;
-  const dates = (typeof dbGetKeyDates === "function") ? dbGetKeyDates() : {};
-  const minorsEnd = dates.minors_draft
-    ? new Date(dates.minors_draft).getTime()
-    : new Date(today.getFullYear(), 4, 1).getTime(); // month 4 = May
-  if (now > minorsEnd) return false;
-  return true;
+  return now >= march1 && now <= minorsEnd;
 }
 
 function _commishReviewTotal() {
@@ -10294,12 +10297,12 @@ const LAST_TAB_KEY = "flm_last_tab_v1";
 function showAppForAuthedUser() {
   document.querySelector(".nav-tabs").style.display = "";
   renderHeaderUser();
-  // Tab to load: in-memory currentView (set by an earlier switch in this
-  // session) > last-stored tab (so refresh stays put) > smart default
-  // based on key dates > legacy "eligible" fallback.
+  // Tab to load: in-memory currentView > sessionStorage (so refresh keeps
+  // the tab but a fresh-tab/cold-load goes through smart routing) > smart
+  // default based on key dates > legacy "eligible" fallback.
   let initialTab = currentView;
   if (!initialTab) {
-    try { initialTab = localStorage.getItem(LAST_TAB_KEY) || ""; } catch {}
+    try { initialTab = sessionStorage.getItem(LAST_TAB_KEY) || ""; } catch {}
   }
   if (!initialTab) initialTab = _smartDefaultTab();
   switchTab(initialTab);
