@@ -5201,6 +5201,15 @@ function renderUserSettingsView() {
   // a dash instead of the radio.
   const FREQS = ["instant", "daily", "weekly", "never"];
   const FREQ_LABELS = { instant: "Instant", daily: "Daily", weekly: "Weekly", never: "Never" };
+  const inApp = prefs.in_app || {};
+  // Map NOTIFY_EVENTS keys → INAPP_TOAST_EVENTS keys for the rows that have
+  // an on-screen-toast equivalent. The two rows that match are
+  // "trade_proposal" → "trade_proposal" and "trade_completed" → "trade_completed".
+  // Other rows show "—" in the on-screen column.
+  const NOTIFY_TO_INAPP = {
+    trade_proposal:  "trade_proposal",
+    trade_completed: "trade_completed",
+  };
   const eventRowsHtml = NOTIFY_EVENTS.map(e => {
     const cur = prefs[e.key] || {};
     const cells = FREQS.map(freq => {
@@ -5216,16 +5225,24 @@ function renderUserSettingsView() {
     const pushCol = e.push
       ? `<input type="checkbox" ${cur.push ? "checked" : ""} onchange="setNotifyPush('${e.key}', this.checked)" style="accent-color:var(--accent);cursor:pointer">`
       : `<span class="notif-na-inline" style="color:var(--text-dim);font-size:0.74rem">—</span>`;
+    const inAppKey = NOTIFY_TO_INAPP[e.key];
+    const inAppCol = inAppKey
+      ? `<input type="checkbox" ${inApp[inAppKey] ? "checked" : ""} onchange="setInAppToast('${inAppKey}', this.checked)" style="accent-color:var(--accent);cursor:pointer">`
+      : `<span class="notif-na-inline" style="color:var(--text-dim);font-size:0.74rem">—</span>`;
     return `<tr>
       <td class="notif-row-label" style="padding:9px 10px;color:var(--text);vertical-align:middle">${escapeHtml(e.label)}</td>
       ${cells}
       <td data-label="Push" style="padding:9px 10px;text-align:center;vertical-align:middle">${pushCol}</td>
+      <td data-label="On-screen" style="padding:9px 10px;text-align:center;vertical-align:middle">${inAppCol}</td>
     </tr>`;
   }).join("");
 
   const dc = prefs.draft_clock || {};
+  // Draft alert state.key → INAPP toast key.
+  const DRAFT_TO_INAPP = { in_hole: "draft_in_hole", on_deck: "draft_on_deck", on_clock: "draft_on_clock" };
   const dcRowsHtml = DRAFT_CLOCK_STATES.map(s => {
     const c = dc[s.key] || {};
+    const inAppKey = DRAFT_TO_INAPP[s.key];
     return `<tr>
       <td class="notif-row-label" style="padding:8px 10px;color:var(--text)">${escapeHtml(s.label)}</td>
       <td data-label="Email" style="padding:8px 10px;text-align:center">
@@ -5233,6 +5250,9 @@ function renderUserSettingsView() {
       </td>
       <td data-label="Push" style="padding:8px 10px;text-align:center">
         <input type="checkbox" ${c.push ? "checked" : ""} onchange="setDraftClockChannel('${s.key}','push',this.checked)" style="accent-color:var(--accent)">
+      </td>
+      <td data-label="On-screen" style="padding:8px 10px;text-align:center">
+        <input type="checkbox" ${inApp[inAppKey] ? "checked" : ""} onchange="setInAppToast('${inAppKey}', this.checked)" style="accent-color:var(--accent)">
       </td>
     </tr>`;
   }).join("");
@@ -5247,10 +5267,10 @@ function renderUserSettingsView() {
       <div class="keeper-projection" style="margin-bottom:14px">
         <h3 style="margin-top:0">Notifications</h3>
         <div style="color:var(--text-dim);font-size:0.82rem;margin-bottom:10px">
-          Choose how you want to hear about each kind of event. Email frequency for keeper-protection / Rule 5 / call-up / send-down / other teams' picks tops out at Daily. Push is only available for event types that fire in real time.
+          Choose how you want to hear about each kind of event. Email frequency for keeper-protection / Rule 5 / call-up / send-down / other teams' picks tops out at Daily. Push is only available for event types that fire in real time. On-screen banners pop up briefly while you have the app open.
         </div>
         <div class="mobile-stack-table-wrap" style="overflow-x:auto">
-          <table class="player-table mobile-stack-table" style="font-size:0.85rem;width:100%;max-width:760px">
+          <table class="player-table mobile-stack-table" style="font-size:0.85rem;width:100%;max-width:820px">
             <colgroup>
               <col>
               <col style="width:64px">
@@ -5258,6 +5278,7 @@ function renderUserSettingsView() {
               <col style="width:64px">
               <col style="width:64px">
               <col style="width:72px">
+              <col style="width:80px">
             </colgroup>
             <thead>
               <tr>
@@ -5267,6 +5288,7 @@ function renderUserSettingsView() {
                 <th style="text-align:center">Weekly</th>
                 <th style="text-align:center">Never</th>
                 <th style="text-align:center">Push</th>
+                <th style="text-align:center">On-screen</th>
               </tr>
             </thead>
             <tbody>${eventRowsHtml}</tbody>
@@ -5275,36 +5297,17 @@ function renderUserSettingsView() {
       </div>
 
       <div class="keeper-projection" style="margin-bottom:14px">
-        <h3 style="margin-top:0">On-screen notifications</h3>
-        <div style="color:var(--text-dim);font-size:0.82rem;margin-bottom:10px">
-          Small banners that pop up briefly when something happens while you have the app open. These are independent of email and Push — no extra setup needed.
-        </div>
-        <div style="display:grid;grid-template-columns:1fr auto;gap:8px 18px;max-width:520px;align-items:center">
-          ${INAPP_TOAST_EVENTS.map(t => {
-            const on = !!(prefs.in_app || {})[t.key];
-            return `
-              <span style="color:var(--text);font-size:0.88rem">${escapeHtml(t.label)}</span>
-              <label style="display:inline-flex;align-items:center;cursor:pointer">
-                <input type="checkbox" ${on ? "checked" : ""}
-                  onchange="setInAppToast('${t.key}', this.checked)"
-                  style="accent-color:var(--accent);cursor:pointer;width:18px;height:18px">
-              </label>
-            `;
-          }).join("")}
-        </div>
-      </div>
-
-      <div class="keeper-projection" style="margin-bottom:14px">
         <h3 style="margin-top:0">Draft alerts (your team)</h3>
         <div style="color:var(--text-dim);font-size:0.82rem;margin-bottom:10px">
           Get notified when your team's pick is coming up. (No per-pick spam — just these three states.)
         </div>
-        <table class="player-table mobile-stack-table" style="font-size:0.85rem;width:100%;max-width:520px">
+        <table class="player-table mobile-stack-table" style="font-size:0.85rem;width:100%;max-width:600px">
           <thead>
             <tr>
               <th style="text-align:left">State</th>
               <th style="text-align:center;width:90px">Email</th>
               <th style="text-align:center;width:90px">Push</th>
+              <th style="text-align:center;width:90px">On-screen</th>
             </tr>
           </thead>
           <tbody>${dcRowsHtml}</tbody>
