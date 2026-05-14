@@ -6215,18 +6215,21 @@ function renderCommissionerReviewSections() {
   }).join("");
 }
 
-// Auto-expand Commissioner Review only during the offseason window —
-// March 1 through the end of the Minors Draft. Strict: requires
-// minors_draft to be explicitly set in Key Dates, and we have to be
-// within [March 1, minors_draft]. Outside of that, the section starts
-// collapsed (commish opens it intentionally).
+// Auto-expand Commissioner Review only during the offseason crunch —
+// March 1 through the end of the Minors Draft, AND only when the
+// scheduled minors_draft is in the current calendar year. (A future-year
+// date is just an early entry for next year's draft, not a signal that
+// we're in this year's offseason.) Outside that window the section
+// starts collapsed; commish opens it intentionally.
 function _shouldAutoOpenCommishReview() {
   const dates = (typeof dbGetKeyDates === "function") ? dbGetKeyDates() : {};
   if (!dates.minors_draft) return false;
   const minorsEnd = new Date(dates.minors_draft).getTime();
   if (!Number.isFinite(minorsEnd)) return false;
   const now = Date.now();
-  const today = new Date();
+  const today = new Date(now);
+  const minorsDate = new Date(minorsEnd);
+  if (minorsDate.getFullYear() !== today.getFullYear()) return false;
   const march1 = new Date(today.getFullYear(), 2, 1).getTime();
   return now >= march1 && now <= minorsEnd;
 }
