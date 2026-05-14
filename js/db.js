@@ -549,6 +549,22 @@ function _subscribeToChanges() {
           if (typeof renderHeaderUser === "function") renderHeaderUser();
         }
       )
+      // league_votes — commissioners get realtime ballots as they come in
+      // (RLS naturally hides this stream from non-commish). Used to drive
+      // the running-tally view + a "new vote received" toast for commish.
+      .on("postgres_changes",
+        { event: "*", schema: "public", table: "league_votes" },
+        async (payload) => {
+          if (typeof window !== "undefined" && typeof window._handleVoteCast === "function") {
+            try { window._handleVoteCast(payload?.new || payload?.old); } catch (e) { console.warn("vote toast failed:", e); }
+          }
+          if (typeof currentView !== "undefined" && currentView === "rules" && typeof switchTab === "function") {
+            switchTab("rules");
+          } else if (typeof currentView !== "undefined" && currentView === "settings" && typeof switchTab === "function") {
+            switchTab("settings");
+          }
+        }
+      )
       // league_messages — refresh the in-memory cache and re-render the
       // board if open so messages from other teams appear without polling.
       .on("postgres_changes",
@@ -978,6 +994,37 @@ async function deleteInvitedEmailAsync(email) {
 
 async function fetchInvitedEmailsAsync() {
   const { data, error } = await supabaseClient.from("invited_emails").select("*").order("team_id");
+  if (error) throw error;
+  return data || [];
+}
+
+// --- League votes ---
+
+async function castVoteAsync(voteId, optionIndex) {
+  if (!currentOwner) throw new Error("Not signed in");
+  if (!currentUser) throw new Error("Not signed in");
+  const { error } = await supabaseClient.from("league_votes").upsert({
+    vote_id: voteId,
+    team_id: currentOwner.team_id,
+    option_index: optionIndex,
+    user_id: currentUser.id,
+  });
+  if (error) throw error;
+}
+
+async function fetchMyVoteAsync(voteId) {
+  if (!currentOwner) return null;
+  const { data, error } = await supabaseClient.from("league_votes")
+    .select("*").eq("vote_id", voteId).eq("team_id", currentOwner.team_id).maybeSingle();
+  if (error) throw error;
+  return data;
+}
+
+// Commissioners only — fetches every ballot for a vote. RLS allows this
+// because the policy permits is_commissioner() to read all rows.
+async function fetchAllVotesAsync(voteId) {
+  const { data, error } = await supabaseClient.from("league_votes")
+    .select("*").eq("vote_id", voteId);
   if (error) throw error;
   return data || [];
 }
