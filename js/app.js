@@ -5179,9 +5179,27 @@ function getDefaultNotifyPrefs() {
   return out;
 }
 
-function getMyNotifyPrefs() {
+// Commissioners can use the team-picker on the Settings tab to view/edit
+// another team's notification prefs. Stored module-side so the various
+// set*() handlers know which team to write to. Null = self.
+let _settingsTargetTeamId = null;
+
+function _getSettingsTargetTeamId() {
+  if (typeof currentOwner === "undefined" || !currentOwner) return null;
+  if (!_settingsTargetTeamId) return currentOwner.team_id;
+  // Only commissioners can edit other teams; if they lose commish mid-edit
+  // (or the value is stale), snap back to self.
+  if (_settingsTargetTeamId !== currentOwner.team_id && !isCommissioner()) {
+    _settingsTargetTeamId = null;
+    return currentOwner.team_id;
+  }
+  return _settingsTargetTeamId;
+}
+
+function getMyNotifyPrefs(teamIdOverride) {
   if (typeof currentOwner === "undefined" || !currentOwner) return getDefaultNotifyPrefs();
-  const row = (typeof dbGetNotifyPrefs === "function") ? dbGetNotifyPrefs(currentOwner.team_id) : null;
+  const teamId = teamIdOverride || _getSettingsTargetTeamId();
+  const row = (typeof dbGetNotifyPrefs === "function") ? dbGetNotifyPrefs(teamId) : null;
   if (!row) return getDefaultNotifyPrefs();
   // Merge with defaults so newly-added event types pick up sensible values.
   const defaults = getDefaultNotifyPrefs();
@@ -5190,14 +5208,52 @@ function getMyNotifyPrefs() {
   return merged;
 }
 
+// Called from the team-picker dropdown — switches the target team and
+// re-renders Settings. Commissioner-only.
+function switchSettingsTargetTeam(teamId) {
+  if (!isCommissioner() && teamId !== (currentOwner && currentOwner.team_id)) {
+    alert("Only commissioners can edit another team's settings.");
+    return;
+  }
+  _settingsTargetTeamId = teamId || null;
+  if (typeof switchTab === "function") switchTab("user-settings");
+}
+
 function renderUserSettingsView() {
   if (typeof currentOwner === "undefined" || !currentOwner) {
     return '<div style="padding:30px;color:var(--text-dim);text-align:center">Sign in to manage your notification preferences.</div>';
   }
-  const teamId = currentOwner.team_id;
+  const myTeamId = currentOwner.team_id;
+  const targetTeamId = _getSettingsTargetTeamId();
+  const teamId = targetTeamId;
   const teamName = LEAGUE_DATA.teams.find(t => t.id === teamId)?.name || teamId;
-  const prefs = getMyNotifyPrefs();
-  const myEmail = (currentUser && currentUser.email) || "";
+  const prefs = getMyNotifyPrefs(teamId);
+  const isEditingOther = teamId !== myTeamId;
+  // For "your email", show the row email if editing another team (so the
+  // commish sees what address that team's notifications go to). For self,
+  // fall back to the auth user's email.
+  const rowEmail = (typeof dbGetNotifyPrefs === "function") ? dbGetNotifyPrefs(teamId)?.email : null;
+  const myEmail = isEditingOther ? (rowEmail || "") : ((currentUser && currentUser.email) || "");
+
+  // Commissioner-only team picker. Lets Jeff edit someone else's prefs
+  // without that person having to sign in. The "Web Push on this device"
+  // section is hidden when editing another team since push subscriptions
+  // are per-device (Jeff can't enable Matt's phone from his own browser).
+  const teamPickerHtml = isCommissioner()
+    ? `
+      <div class="keeper-projection" style="margin-bottom:14px">
+        <h3 style="margin-top:0">Manager (commissioner-only)</h3>
+        <div style="color:var(--text-dim);font-size:0.82rem;margin-bottom:10px">
+          Edit another team's notification settings. Useful when a manager wants you to change something for them. Push subscriptions stay per-device.
+        </div>
+        <select onchange="switchSettingsTargetTeam(this.value)" style="background:var(--bg);color:var(--text);border:1px solid var(--border);padding:8px 10px;border-radius:6px;font-size:0.95rem;min-width:200px">
+          ${getDisplayOrderedTeams().map(t =>
+            `<option value="${escapeHtml(t.id)}" ${t.id === teamId ? "selected" : ""}>${escapeHtml(t.name)}${t.id === myTeamId ? " (you)" : ""}</option>`
+          ).join("")}
+        </select>
+        ${isEditingOther ? `<div style="margin-top:10px;color:var(--orange);font-size:0.82rem">Editing as <strong>${escapeHtml(teamName)}</strong>. Changes are saved against their team.</div>` : ""}
+      </div>
+    ` : "";
 
   // Push state — checked client-side, since this is per-device (subscription
   // endpoint stored in DB). Will be filled in by setupSettingsPagePushUi().
@@ -5268,6 +5324,8 @@ function renderUserSettingsView() {
         Manager preferences for <strong>${escapeHtml(teamName)}</strong>${myEmail ? ` · emails go to <code>${escapeHtml(myEmail)}</code>` : ""}.
       </div>
 
+      ${teamPickerHtml}
+
       <div class="keeper-projection" style="margin-bottom:14px">
         <h3 style="margin-top:0">Notifications</h3>
         <div style="color:var(--text-dim);font-size:0.82rem;margin-bottom:10px">
@@ -5318,6 +5376,7 @@ function renderUserSettingsView() {
         </table>
       </div>
 
+      ${isEditingOther ? "" : `
       <div class="keeper-projection" style="margin-bottom:14px">
         <h3 style="margin-top:0">Web Push on this device</h3>
         <div style="color:var(--text-dim);font-size:0.82rem;margin-bottom:10px">
@@ -5338,48 +5397,56 @@ function renderUserSettingsView() {
           <span style="display:block">• <strong>iOS</strong>: install the app to the Home Screen first (Share → Add to Home Screen), then open from there.</span>
         </div>
       </div>
+      `}
 
-      ${renderInstallSection()}
+      ${isEditingOther ? "" : renderInstallSection()}
     </div>
   `;
 }
 
 async function setNotifyEmail(eventKey, freq) {
   if (!currentOwner) return;
-  const prefs = getMyNotifyPrefs();
+  const teamId = _getSettingsTargetTeamId();
+  const prefs = getMyNotifyPrefs(teamId);
   if (!prefs[eventKey]) prefs[eventKey] = {};
   prefs[eventKey].email = freq;
-  await _saveMyNotifyPrefs(prefs);
+  await _saveMyNotifyPrefs(prefs, teamId);
 }
 
 async function setNotifyPush(eventKey, on) {
   if (!currentOwner) return;
-  const prefs = getMyNotifyPrefs();
+  const teamId = _getSettingsTargetTeamId();
+  const prefs = getMyNotifyPrefs(teamId);
   if (!prefs[eventKey]) prefs[eventKey] = {};
   prefs[eventKey].push = !!on;
-  await _saveMyNotifyPrefs(prefs);
+  await _saveMyNotifyPrefs(prefs, teamId);
 }
 
 async function setDraftClockChannel(stateKey, channel, on) {
   if (!currentOwner) return;
-  const prefs = getMyNotifyPrefs();
+  const teamId = _getSettingsTargetTeamId();
+  const prefs = getMyNotifyPrefs(teamId);
   if (!prefs.draft_clock) prefs.draft_clock = {};
   if (!prefs.draft_clock[stateKey]) prefs.draft_clock[stateKey] = {};
   prefs.draft_clock[stateKey][channel] = !!on;
-  await _saveMyNotifyPrefs(prefs);
+  await _saveMyNotifyPrefs(prefs, teamId);
 }
 
 async function setInAppToast(key, on) {
   if (!currentOwner) return;
-  const prefs = getMyNotifyPrefs();
+  const teamId = _getSettingsTargetTeamId();
+  const prefs = getMyNotifyPrefs(teamId);
   if (!prefs.in_app) prefs.in_app = {};
   prefs.in_app[key] = !!on;
-  await _saveMyNotifyPrefs(prefs);
+  await _saveMyNotifyPrefs(prefs, teamId);
 }
 
+// Always checks the SELF prefs — in-app toasts fire based on what the
+// current user wants to see, regardless of which team's prefs they may
+// be editing in the Settings tab.
 function _inAppToastEnabled(key) {
   if (typeof currentOwner === "undefined" || !currentOwner) return false;
-  const prefs = getMyNotifyPrefs();
+  const prefs = getMyNotifyPrefs(currentOwner.team_id);
   const flags = prefs.in_app || {};
   // If the user has never visited Settings, prefs.in_app is undefined and
   // the default-on toasts fire (per the INAPP_TOAST_EVENTS defaults baked
@@ -5608,16 +5675,26 @@ if (typeof window !== "undefined") {
   window._handleDraftToasts = _handleDraftToasts;
 }
 
-async function _saveMyNotifyPrefs(prefs) {
+async function _saveMyNotifyPrefs(prefs, teamIdOverride) {
   if (typeof saveNotifyPrefsAsync !== "function" || !currentOwner) return;
+  const teamId = teamIdOverride || _getSettingsTargetTeamId();
+  const isSelf = teamId === currentOwner.team_id;
+  const existing = (typeof dbGetNotifyPrefs === "function") ? dbGetNotifyPrefs(teamId) : null;
+  // Preserve the row's existing email when editing another team — otherwise
+  // a commish save would clobber Matt's email with Jeff's. For self, fall
+  // back to currentUser.email so a brand-new prefs row gets stamped with
+  // the right address.
+  const emailToSave = existing?.email != null
+    ? existing.email
+    : (isSelf ? ((currentUser && currentUser.email) || null) : null);
   try {
     await saveNotifyPrefsAsync({
-      teamId: currentOwner.team_id,
+      teamId,
       prefs,
-      receiveAll: !!(dbGetNotifyPrefs?.(currentOwner.team_id)?.receiveAll),
-      email: (currentUser && currentUser.email) || null,
+      receiveAll: !!(existing?.receiveAll),
+      email: emailToSave,
     });
-    if (typeof showToast === "function") showToast("Saved");
+    if (typeof showToast === "function") showToast(isSelf ? "Saved" : `Saved for ${LEAGUE_DATA.teams.find(t => t.id === teamId)?.name || teamId}`);
   } catch (e) {
     alert("Couldn't save: " + (e.message || e));
   }
