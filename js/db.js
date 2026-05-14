@@ -31,6 +31,7 @@ const _cache = {
   pgCronHeartbeat: {}, // { lastFiredAt, lastWorkflow } — set by Supabase pg_cron jobs
   keyDates: {},        // { rule5_deadline, rule5_draft, keeper_deadline, auction_draft, minors_draft, trade_deadline } — ISO date strings
   activeVotes: [],     // [{ id, title, description, opens_at, closes_at, options }, ...] — multiple concurrent votes supported
+  luxuryTaxSnapshot: null, // { takenAt, cycleAnchor, salaries: {teamId:n}, overrides: {teamId:n} } | null
 };
 // Cross-conversation read state for the trade inbox: { threadId: lastReadAt }.
 // Anything in the thread newer than lastReadAt counts as unread (covers BOTH
@@ -284,6 +285,7 @@ async function _fetchAll() {
     else if (r.key === "espn_sync_status") _cache.espnSyncStatus = r.state || {};
     else if (r.key === "pg_cron_heartbeat") _cache.pgCronHeartbeat = r.state || {};
     else if (r.key === "key_dates") _cache.keyDates = r.state || {};
+    else if (r.key === "luxury_tax_snapshot") _cache.luxuryTaxSnapshot = r.state || null;
     else if (r.key === "active_vote") {
       // Schema migration: older rows stored a single object; new format is
       // an array. Accept both on read so a paste-in upgrade is seamless.
@@ -615,6 +617,7 @@ function _resetDb() {
   _cache.rosterMoves = [];
   _cache.keyDates = {};
   _cache.activeVotes = [];
+  _cache.luxuryTaxSnapshot = null;
   _dbReady = false;
 }
 
@@ -973,8 +976,10 @@ async function saveKeeperPriceExceptionsAsync(m){ return _saveLeagueStateAsync("
 async function saveCustomProspectsAsync(list)   { return _saveLeagueStateAsync("custom_prospects", list, "customProspects"); }
 async function saveKeyDatesAsync(dates)         { return _saveLeagueStateAsync("key_dates", dates, "keyDates"); }
 async function saveActiveVotesAsync(votes)      { return _saveLeagueStateAsync("active_vote", votes && votes.length ? votes : null, "activeVotes"); }
+async function saveLuxuryTaxSnapshotAsync(snap) { return _saveLeagueStateAsync("luxury_tax_snapshot", snap, "luxuryTaxSnapshot"); }
 function dbGetKeyDates() { return _clone(_cache.keyDates || {}); }
 function dbGetActiveVotes() { return _clone(_cache.activeVotes || []); }
+function dbGetLuxuryTaxSnapshot() { return _clone(_cache.luxuryTaxSnapshot); }
 
 // --- Co-manager invites (commissioner-only) ---
 

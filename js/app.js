@@ -1925,20 +1925,31 @@ const LEAGUE_FEE = 300;
 const SEND_DOWN_FEE = 10;
 const LUXURY_TAX_CAP = 350;
 
-// Compute a team's total salary for luxury-tax purposes.
-// Rules: keepers and auction picks count at their stored price; free agents
-// count at $1; minor-league call-ups count at $0. Reads the current
-// ESPN-reconciled roster.
-function getTeamLuxurySalary(team) {
+// §10 luxury tax freezes at the trade deadline and unfreezes the next
+// Nov 1 (start of the next keeper cycle). The unfreeze boundary is
+// anchored to the trade deadline, not to "today" — otherwise post-Nov-1
+// the boundary would jump forward a year and keep the freeze active.
+function _luxuryFreezeWindow() {
+  const dates = (typeof dbGetKeyDates === "function") ? dbGetKeyDates() : {};
+  const tradeDl = dates.trade_deadline ? new Date(dates.trade_deadline).getTime() : null;
+  if (tradeDl == null || !Number.isFinite(tradeDl)) return { isFrozen: false };
+  const now = Date.now();
+  const tradeDate = new Date(tradeDl);
+  let unfreeze = new Date(tradeDate.getFullYear(), 10, 1).getTime();
+  if (unfreeze <= tradeDl) unfreeze = new Date(tradeDate.getFullYear() + 1, 10, 1).getTime();
+  return { isFrozen: now > tradeDl && now < unfreeze, tradeDl, nov1: unfreeze };
+}
+
+// Live (post-Nov-1 / pre-deadline) salary calc — auction picks at stored
+// price, FA / minors call-ups at $1 flat. Keeper-Price Exception always
+// wins for the player's stored salary.
+function _liveLuxurySalary(team) {
   const players = (typeof getEligiblePlayers === "function") ? getEligiblePlayers(team) : [];
   let total = 0;
   for (const p of players) {
-    // Keeper-Price Exception always wins — the commissioner has set the
-    // player's "true" salary explicitly, so use it regardless of contractType.
     if (p.priceExceptionApplied && typeof p.price === "number") {
       total += p.price;
     } else if (p.contractType === "callup" || p.contractType === "fa") {
-      // Both free agents and minor-league call-ups count at $1 flat.
       total += 1;
     } else if (typeof p.price === "number") {
       total += p.price;
@@ -1947,7 +1958,116 @@ function getTeamLuxurySalary(team) {
   return total;
 }
 
+// Public-facing salary getter. Returns the frozen value (or commish
+// override) if we're past the trade deadline and a snapshot exists;
+// otherwise the live calculation.
+function getTeamLuxurySalary(team) {
+  const freeze = _luxuryFreezeWindow();
+  if (freeze.isFrozen) {
+    const snap = (typeof dbGetLuxuryTaxSnapshot === "function") ? dbGetLuxuryTaxSnapshot() : null;
+    if (snap && snap.salaries) {
+      const override = snap.overrides && snap.overrides[team.id];
+      if (override != null) return Number(override) || 0;
+      if (snap.salaries[team.id] != null) return Number(snap.salaries[team.id]) || 0;
+    }
+  }
+  return _liveLuxurySalary(team);
+}
+
+// Snapshot every team's current live salary into league_state. Called by
+// renderFinancialsView on first commish view past the trade deadline,
+// or manually via the "Re-snapshot" button.
+async function takeLuxuryTaxSnapshot() {
+  if (typeof saveLuxuryTaxSnapshotAsync !== "function") return;
+  const freeze = _luxuryFreezeWindow();
+  const salaries = {};
+  for (const team of LEAGUE_DATA.teams) {
+    salaries[team.id] = _liveLuxurySalary(team);
+  }
+  const existing = (typeof dbGetLuxuryTaxSnapshot === "function") ? dbGetLuxuryTaxSnapshot() : null;
+  const snap = {
+    takenAt: new Date().toISOString(),
+    cycleAnchor: freeze.tradeDl ? new Date(freeze.tradeDl).toISOString() : null,
+    salaries,
+    overrides: (existing && existing.overrides) || {},
+  };
+  try {
+    await saveLuxuryTaxSnapshotAsync(snap);
+  } catch (e) {
+    console.warn("luxury tax snapshot failed:", e);
+  }
+}
+
+async function setLuxuryTaxOverride(teamId, value) {
+  if (!isCommissioner()) return;
+  const snap = (typeof dbGetLuxuryTaxSnapshot === "function") ? dbGetLuxuryTaxSnapshot() : null;
+  if (!snap) {
+    alert("Take a snapshot first."); return;
+  }
+  const next = { ...snap, overrides: { ...(snap.overrides || {}) } };
+  if (value == null || value === "") {
+    delete next.overrides[teamId];
+  } else {
+    const n = parseInt(value, 10);
+    if (!Number.isFinite(n) || n < 0) { alert("Enter a non-negative integer."); return; }
+    next.overrides[teamId] = n;
+  }
+  try {
+    await saveLuxuryTaxSnapshotAsync(next);
+    if (typeof showToast === "function") showToast("Luxury salary updated");
+  } catch (e) {
+    alert("Save failed: " + (e.message || e));
+  }
+}
+
+async function resnapshotLuxuryTax() {
+  if (!isCommissioner()) return;
+  if (!confirm("Re-snapshot now? This wipes any commissioner edits and overwrites the frozen salaries with the current live values.")) return;
+  if (typeof saveLuxuryTaxSnapshotAsync === "function") {
+    const salaries = {};
+    for (const team of LEAGUE_DATA.teams) salaries[team.id] = _liveLuxurySalary(team);
+    const freeze = _luxuryFreezeWindow();
+    await saveLuxuryTaxSnapshotAsync({
+      takenAt: new Date().toISOString(),
+      cycleAnchor: freeze.tradeDl ? new Date(freeze.tradeDl).toISOString() : null,
+      salaries,
+      overrides: {},
+    });
+    if (typeof showToast === "function") showToast("Luxury tax re-snapshotted");
+  }
+}
+
+// Auto-snapshot if commish opens Financials past trade_deadline AND no
+// snapshot exists for this cycle yet. Fire-and-forget; the realtime echo
+// re-renders after.
+function _maybeSnapshotLuxuryTax() {
+  if (!isCommissioner()) return;
+  const freeze = _luxuryFreezeWindow();
+  if (!freeze.isFrozen) return;
+  const snap = (typeof dbGetLuxuryTaxSnapshot === "function") ? dbGetLuxuryTaxSnapshot() : null;
+  // Take a fresh snapshot if none exists OR the existing one was anchored
+  // to a previous trade deadline (i.e., we've rolled into a new cycle).
+  const anchorIso = freeze.tradeDl ? new Date(freeze.tradeDl).toISOString() : null;
+  if (!snap || snap.cycleAnchor !== anchorIso) {
+    takeLuxuryTaxSnapshot().catch(e => console.warn("auto luxury snapshot failed:", e));
+  }
+}
+
 function renderLuxuryTaxTable() {
+  // Trigger auto-snapshot when in the freeze window. Any subsequent
+  // realtime echo refreshes the display with the persisted snapshot.
+  _maybeSnapshotLuxuryTax();
+  const freeze = _luxuryFreezeWindow();
+  const snap = (typeof dbGetLuxuryTaxSnapshot === "function") ? dbGetLuxuryTaxSnapshot() : null;
+  const isFrozen = freeze.isFrozen && snap && snap.salaries;
+  const commish = isCommissioner();
+  const freezeBanner = isFrozen
+    ? `<div style="background:rgba(59,130,246,0.10);border:1px solid rgba(59,130,246,0.4);border-radius:6px;padding:9px 12px;margin-bottom:10px;font-size:0.84rem">
+         <strong style="color:var(--accent)">Frozen as of trade deadline.</strong>
+         Snapshot taken ${snap.takenAt ? new Date(snap.takenAt).toLocaleString() : "?"}. Auto-unfreezes Nov 1.
+         ${commish ? `<button class="trade-btn trade-btn-cancel" style="font-size:0.74rem;padding:3px 8px;margin-left:10px" onclick="resnapshotLuxuryTax()">Re-snapshot</button>` : ""}
+       </div>`
+    : "";
   const rows = LEAGUE_DATA.teams.map(team => {
     const players = (typeof getEligiblePlayers === "function") ? getEligiblePlayers(team) : [];
     const breakdown = players.map(p => {
@@ -1965,21 +2085,30 @@ function renderLuxuryTaxTable() {
       const isKeeper = p.contractType === "auction" && yearAcquired != null && yearAcquired < CURRENT_SEASON;
       return { name: p.name, type: p.contractType, isKeeper, hasOverride, price: p.price, counted };
     });
-    const salary = breakdown.reduce((s, b) => s + b.counted, 0);
+    const liveSalary = breakdown.reduce((s, b) => s + b.counted, 0);
+    // Frozen value (snapshot or commish override) wins when in window.
+    let salary = liveSalary;
+    let frozenSource = null;  // "snapshot" | "override" | null
+    if (isFrozen) {
+      const ov = snap.overrides && snap.overrides[team.id];
+      if (ov != null) { salary = Number(ov) || 0; frozenSource = "override"; }
+      else if (snap.salaries[team.id] != null) { salary = Number(snap.salaries[team.id]) || 0; frozenSource = "snapshot"; }
+    }
     const over = salary > LUXURY_TAX_CAP;
     const remaining = over ? 0 : (LUXURY_TAX_CAP - salary);
     const surplus = over ? (salary - LUXURY_TAX_CAP) : 0;
-    return { team, salary, remaining, surplus, over, breakdown };
+    return { team, salary, liveSalary, frozenSource, remaining, surplus, over, breakdown };
   });
   // Highest salary first so over-cap teams jump out.
   rows.sort((a, b) => b.salary - a.salary);
   return `
+    ${freezeBanner}
     <div style="max-width:760px">
       <table class="player-table mobile-stack-table" style="font-size:0.88rem;width:100%;table-layout:fixed">
         <colgroup>
           <col style="width:140px">
           <col style="width:80px">
-          <col style="width:100px">
+          <col style="width:120px">
           <col style="width:90px">
           <col style="width:90px">
         </colgroup>
@@ -2009,23 +2138,36 @@ function renderLuxuryTaxTable() {
                   <td style="padding:3px 8px;text-align:right;color:var(--text-bright);font-weight:600">$${b.counted}</td>
                 </tr>`;
               }).join("");
+            // Salary cell: clickable inline edit for commish during freeze.
+            const salaryDisplayId = `lt-sal-${escapeHtml(r.team.id)}`;
+            const editAttr = (isFrozen && commish)
+              ? `onclick="editLuxurySalaryInline('${escapeJsString(r.team.id)}', this)" title="Click to edit (commish)"`
+              : "";
+            const cursorStyle = (isFrozen && commish) ? ";cursor:pointer;text-decoration:underline dotted" : "";
+            const sourceTag = isFrozen
+              ? (r.frozenSource === "override"
+                ? ` <span style="color:var(--yellow);font-size:0.62rem;font-weight:700">EDITED</span>`
+                : ` <span style="color:var(--accent);font-size:0.62rem;font-weight:700">FROZEN</span>`)
+              : "";
             return `
               <tr>
                 <td class="notif-row-label" style="padding:8px 10px">
-                  <details>
-                    <summary style="cursor:pointer;list-style:none">
-                      <span style="font-weight:700;color:var(--text-bright)">${escapeHtml(r.team.name)}</span>
-                      <span style="color:var(--text-dim);font-size:0.7rem;margin-left:6px">▶ show players</span>
-                    </summary>
-                    <div style="margin-top:6px;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:4px 0">
-                      <table style="width:100%;border-collapse:collapse;font-size:0.78rem">
-                        <tbody>${breakdownRows}</tbody>
-                      </table>
-                    </div>
-                  </details>
+                  ${isFrozen ? `<span style="font-weight:700;color:var(--text-bright)">${escapeHtml(r.team.name)}</span>` : `
+                    <details>
+                      <summary style="cursor:pointer;list-style:none">
+                        <span style="font-weight:700;color:var(--text-bright)">${escapeHtml(r.team.name)}</span>
+                        <span style="color:var(--text-dim);font-size:0.7rem;margin-left:6px">▶ show players</span>
+                      </summary>
+                      <div style="margin-top:6px;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:4px 0">
+                        <table style="width:100%;border-collapse:collapse;font-size:0.78rem">
+                          <tbody>${breakdownRows}</tbody>
+                        </table>
+                      </div>
+                    </details>
+                  `}
                 </td>
-                <td data-label="Players" style="text-align:right;padding:8px 6px;color:var(--text-dim)">${r.breakdown.length}</td>
-                <td data-label="Salary" style="text-align:right;padding:8px 6px;color:${r.over ? 'var(--red)' : 'var(--text)'};font-weight:${r.over ? '700' : '400'}">$${r.salary}</td>
+                <td data-label="Players" style="text-align:right;padding:8px 6px;color:var(--text-dim)">${isFrozen ? "—" : r.breakdown.length}</td>
+                <td id="${salaryDisplayId}" data-label="Salary" data-team="${escapeHtml(r.team.id)}" data-current="${r.salary}" ${editAttr} style="text-align:right;padding:8px 6px;color:${r.over ? 'var(--red)' : 'var(--text)'};font-weight:${r.over ? '700' : '400'}${cursorStyle}">$${r.salary}${sourceTag}</td>
                 <td data-label="Remaining" style="text-align:right;padding:8px 6px;color:${r.remaining > 0 ? 'var(--green)' : 'var(--text-dim)'}">${r.remaining > 0 ? `$${r.remaining}` : '—'}</td>
                 <td data-label="Surplus" style="text-align:right;padding:8px 10px;color:${r.surplus > 0 ? 'var(--red)' : 'var(--text-dim)'};font-weight:${r.surplus > 0 ? '700' : '400'}">${r.surplus > 0 ? `$${r.surplus}` : '—'}</td>
               </tr>
@@ -2035,6 +2177,35 @@ function renderLuxuryTaxTable() {
       </table>
     </div>
   `;
+}
+
+// Click-to-edit a frozen luxury salary inline. Replaces the cell with an
+// input + save button; persists via setLuxuryTaxOverride.
+function editLuxurySalaryInline(teamId, td) {
+  if (!td || !isCommissioner()) return;
+  const current = td.getAttribute("data-current") || "0";
+  td.innerHTML = `
+    <input type="number" id="lt-edit-${escapeHtml(teamId)}" value="${escapeHtml(current)}" min="0" max="2000"
+      style="width:64px;background:var(--bg-card);color:var(--text);border:1px solid var(--accent);padding:3px 6px;border-radius:4px;font-size:0.84rem;text-align:right">
+    <button class="trade-btn trade-btn-submit" style="font-size:0.7rem;padding:2px 7px;margin-left:4px"
+      onclick="event.stopPropagation();submitLuxuryEdit('${escapeJsString(teamId)}')">Save</button>
+    <button class="trade-btn trade-btn-cancel" style="font-size:0.7rem;padding:2px 7px;margin-left:2px"
+      onclick="event.stopPropagation();clearLuxuryOverride('${escapeJsString(teamId)}')">Reset</button>
+  `;
+  const input = document.getElementById(`lt-edit-${teamId}`);
+  if (input) { input.focus(); input.select(); }
+}
+
+async function submitLuxuryEdit(teamId) {
+  const input = document.getElementById(`lt-edit-${teamId}`);
+  if (!input) return;
+  await setLuxuryTaxOverride(teamId, input.value);
+  if (typeof switchTab === "function") switchTab("financials");
+}
+
+async function clearLuxuryOverride(teamId) {
+  await setLuxuryTaxOverride(teamId, null);
+  if (typeof switchTab === "function") switchTab("financials");
 }
 
 function getSendDownsByTeam() {
