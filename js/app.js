@@ -10311,25 +10311,45 @@ if (typeof onPresenceChange === "function") {
 
 // Pick the most relevant tab to land on based on today's date relative to
 // the league's key dates. Each transition flips the default; the latest
-// one in the past wins. Used only when the user has never navigated this
-// session AND no stored last-tab is found.
+// one in the past wins.
+//
+// Cycle awareness: the keeper cycle resets each Nov 1. Dates outside
+// [Nov 1 of previous year, Nov 1 of next year] are ignored — those are
+// for a different cycle. If minors_draft is missing for this cycle but
+// auction_draft is set, we assume the minors draft wraps within ~30
+// days (so post-auction routing still progresses to "trades" instead
+// of staying stuck on "draft" all season).
 function _smartDefaultTab() {
   const dates = (typeof dbGetKeyDates === "function") ? dbGetKeyDates() : {};
   const ms = key => dates[key] ? new Date(dates[key]).getTime() : null;
   const now = Date.now();
-  // Anchor: Nov 1 of the most recent year. The keeper-cycle resets each
-  // November so the transition table starts from there.
-  const today = new Date();
-  let nov1 = new Date(today.getFullYear(), 10, 1).getTime();
-  if (now < nov1) nov1 = new Date(today.getFullYear() - 1, 10, 1).getTime();
+  const today = new Date(now);
+  // Most recent past Nov 1 (cycle start) and the next Nov 1 (cycle end).
+  let cycleStart = new Date(today.getFullYear(), 10, 1).getTime();
+  if (now < cycleStart) cycleStart = new Date(today.getFullYear() - 1, 10, 1).getTime();
+  const cycleEnd = cycleStart + 366 * 86400000; // ~1 year window
+
+  const inCycle = d => d != null && d >= cycleStart && d <= cycleEnd;
+
+  const rule5Dl   = inCycle(ms("rule5_deadline"))  ? ms("rule5_deadline")  : null;
+  const rule5Dr   = inCycle(ms("rule5_draft"))     ? ms("rule5_draft")     : null;
+  const keeperDl  = inCycle(ms("keeper_deadline")) ? ms("keeper_deadline") : null;
+  const auction   = inCycle(ms("auction_draft"))   ? ms("auction_draft")   : null;
+  let   minors    = inCycle(ms("minors_draft"))    ? ms("minors_draft")    : null;
+  const tradeDl   = inCycle(ms("trade_deadline"))  ? ms("trade_deadline")  : null;
+
+  // Fallback: if THIS cycle's minors_draft isn't set but auction is,
+  // assume the minors draft wraps within ~30 days of the auction.
+  if (minors == null && auction != null) minors = auction + 30 * 86400000;
+
   const transitions = [
-    { at: nov1,                tab: "eligible" },  // Nov 1 → Select Keepers
-    { at: ms("rule5_deadline"),  tab: "rule5"    },  // → Rule 5 Draft
-    { at: ms("rule5_draft"),     tab: "eligible" },  // After Rule 5 → back to keeper picking
-    { at: ms("keeper_deadline"), tab: "keepers"  },  // → 2026 Keepers
-    { at: ms("auction_draft"),   tab: "draft"    },  // → Minors Draft
-    { at: ms("minors_draft"),    tab: "trades"   },  // After Minors Draft → Trades
-    { at: ms("trade_deadline"),  tab: "rosters"  },  // After Trade Deadline → Minors Rosters
+    { at: cycleStart, tab: "eligible" },  // Nov 1 → Select Keepers
+    { at: rule5Dl,    tab: "rule5"    },
+    { at: rule5Dr,    tab: "eligible" },
+    { at: keeperDl,   tab: "keepers"  },
+    { at: auction,    tab: "draft"    },
+    { at: minors,     tab: "trades"   },
+    { at: tradeDl,    tab: "rosters"  },
   ].filter(t => t.at != null && t.at <= now);
   if (!transitions.length) return "eligible";
   transitions.sort((a, b) => a.at - b.at);
