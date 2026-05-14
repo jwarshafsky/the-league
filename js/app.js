@@ -6210,6 +6210,24 @@ function renderCommissionerReviewSections() {
   }).join("");
 }
 
+// Auto-expand Commissioner Review only during the offseason window —
+// March 1 through the end of the Minors Draft. The rest of the season,
+// Jeff prefers it collapsed (he opens it intentionally if needed).
+// If no minors_draft is set, default to May 1 as a conservative cutoff
+// so the auto-open doesn't run all summer/fall.
+function _shouldAutoOpenCommishReview() {
+  const now = Date.now();
+  const today = new Date();
+  const march1 = new Date(today.getFullYear(), 2, 1).getTime();
+  if (now < march1) return false;
+  const dates = (typeof dbGetKeyDates === "function") ? dbGetKeyDates() : {};
+  const minorsEnd = dates.minors_draft
+    ? new Date(dates.minors_draft).getTime()
+    : new Date(today.getFullYear(), 4, 1).getTime(); // month 4 = May
+  if (now > minorsEnd) return false;
+  return true;
+}
+
 function _commishReviewTotal() {
   return _findDuplicateNameOccurrences().length
        + _findCommishWorkaroundsPending().length
@@ -6234,7 +6252,7 @@ function renderSettingsView() {
       <div style="color:var(--text-dim);font-size:0.82rem;margin-bottom:18px">Commissioner-only. Changes apply league-wide for everyone.</div>
       ${reviewBanner}
 
-      <details id="cs-review" class="keeper-projection" style="margin-bottom:14px"${_detailsOpenAttr("cs-review", reviewTotal > 0)}>
+      <details id="cs-review" class="keeper-projection" style="margin-bottom:14px"${_detailsOpenAttr("cs-review", _shouldAutoOpenCommishReview() && reviewTotal > 0)}>
         <summary style="cursor:pointer;font-weight:700;color:var(--text-bright);font-size:0.92rem">Commissioner Review${reviewTotal ? ` <span style="color:var(--orange);font-weight:700;font-size:0.78rem">(${reviewTotal})</span>` : ""}</summary>
         <div style="color:var(--text-dim);font-size:0.84rem;margin:8px 0 12px">
           Items the app surfaced that need a human decision. Each one links to the place where you can resolve it.
@@ -6285,11 +6303,19 @@ function renderSettingsView() {
       </details>
 
       <details id="cs-team-managers" class="keeper-projection" style="margin-bottom:14px"${_detailsOpenAttr("cs-team-managers", false)}>
-        <summary style="cursor:pointer;font-weight:700;color:var(--text-bright);font-size:0.92rem">Team Managers (co-managers)</summary>
+        <summary style="cursor:pointer;font-weight:700;color:var(--text-bright);font-size:0.92rem">Team Managers</summary>
         <div style="color:var(--text-dim);font-size:0.84rem;margin:8px 0 10px">
-          Invite an email to a team — once they sign in, they're a manager of that team. A team can have multiple managers (e.g. Josh/Doug). Notifications go to all of them.
+          Invite an email to a team — once they sign in, they're a manager of that team. A team can have multiple managers (Josh/Doug, etc.). Notifications go to all of them.
         </div>
         <div id="team-managers-editor" style="font-size:0.85rem;color:var(--text-dim)">Loading…</div>
+      </details>
+
+      <details id="cs-set-tbd-prices" class="keeper-projection" style="margin-bottom:14px"${_detailsOpenAttr("cs-set-tbd-prices", false)}>
+        <summary style="cursor:pointer;font-weight:700;color:var(--text-bright);font-size:0.92rem">Set TBD Prices</summary>
+        <div style="color:var(--text-dim);font-size:0.84rem;margin:8px 0 10px">
+          Paste the ESPN top-200 ranks (one player per line, in order — line 1 = rank 1) and the app proposes a first ML-year price for every call-up still showing TBD using the §2(e) tier ladder: outside top 200 = $1, 100-199 = $3, 50-99 = $5, 20-49 = $10, top 19 = $15.
+        </div>
+        ${renderTbdPricesEditor()}
       </details>
 
       <details id="cs-price-exceptions" class="keeper-projection" style="margin-bottom:14px"${_detailsOpenAttr("cs-price-exceptions", false)}>
@@ -6322,6 +6348,189 @@ function renderSettingsView() {
       </details>
     </div>
   `;
+}
+
+// --- Set TBD Prices (§2(e) ranking-tier proposal) ---
+
+// Module-scope buffer of the most recently parsed ranking list. Cleared on
+// page reload — no need to persist this between sessions.
+let _RANK_PROPOSALS = null;
+
+// §2(e) ladder. Top-down for clarity.
+function _priceTierForRank(rank) {
+  if (rank == null || !Number.isFinite(rank)) return 1;  // unranked
+  if (rank <= 19)  return 15;  // top 19
+  if (rank <= 49)  return 10;  // 20-49
+  if (rank <= 99)  return 5;   // 50-99
+  if (rank <= 199) return 3;   // 100-199
+  return 1;                     // 200 and outside top 200
+}
+
+// Light fuzzy compare so "J. Smith Jr." and "J Smith Jr" match. Strips
+// punctuation + lowercases + collapses whitespace + drops common suffixes.
+function _normalizePlayerName(name) {
+  if (!name) return "";
+  return String(name)
+    .toLowerCase()
+    .replace(/[.,'’"]/g, "")
+    .replace(/\s+jr$|\s+sr$|\s+iii$|\s+ii$|\s+iv$/i, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+// Parse a pasted list. Tolerant: accepts "1. Player Name (POS, TM)",
+// "1 Player", or just "Player Name" per line. Rank = line number for
+// unnumbered lines, or the leading number when present.
+function _parseRanksList(text) {
+  const out = new Map();
+  const lines = (text || "").split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  let autoRank = 0;
+  for (const line of lines) {
+    autoRank++;
+    let rank = autoRank;
+    let rest = line;
+    const m = line.match(/^(\d+)[\.\)]?\s*[-–:|]?\s*(.+)$/);
+    if (m) {
+      const explicit = parseInt(m[1], 10);
+      if (Number.isFinite(explicit)) rank = explicit;
+      rest = m[2];
+    }
+    // Strip trailing parentheticals: "(SS, TEX)" etc.
+    rest = rest.replace(/\s*\([^)]*\)\s*$/g, "").trim();
+    // Strip trailing position+team after dash: "Bobby Witt Jr - SS, KC"
+    rest = rest.replace(/\s*[-–]\s*[A-Z]{1,3}(?:,.*)?$/i, "").trim();
+    if (rest) out.set(_normalizePlayerName(rest), { rank, originalName: rest });
+  }
+  return out;
+}
+
+function _findCallupsTbd() {
+  const out = [];
+  for (const team of LEAGUE_DATA.teams || []) {
+    for (const p of (team.callups || [])) {
+      if (p.price != null) continue;
+      if (typeof isPlayerDroppedFromEspn === "function" && isPlayerDroppedFromEspn(p.name)) continue;
+      out.push({ name: p.name, teamId: team.id, teamName: team.name, yearAcquired: p.yearAcquired });
+    }
+  }
+  return out;
+}
+
+function renderTbdPricesEditor() {
+  const tbds = _findCallupsTbd();
+  if (!tbds.length) {
+    return `<div style="color:var(--text-dim);font-style:italic;font-size:0.85rem">No active TBD call-up prices. ✓</div>`;
+  }
+  const tbdCount = tbds.length;
+  const proposalsHtml = _RANK_PROPOSALS
+    ? _renderTbdProposalsTable(tbds)
+    : `<div style="color:var(--text-dim);font-size:0.78rem">${tbdCount} call-up${tbdCount === 1 ? "" : "s"} need a price. Paste a list above and click <em>Parse & Propose</em> to see suggested prices.</div>`;
+  return `
+    <div style="margin-bottom:10px">
+      <textarea id="tbd-rank-paste" rows="6" placeholder="Paste ESPN top-200 list, one player per line. Rank = line order (or use '1. Player' format)."
+        style="width:100%;background:var(--bg);color:var(--text);border:1px solid var(--border);padding:8px 10px;border-radius:6px;font-size:0.85rem;font-family:inherit;resize:vertical"></textarea>
+      <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
+        <button class="trade-btn trade-btn-submit" onclick="parseTbdRanks()" style="font-size:0.85rem">Parse &amp; Propose</button>
+        <button class="trade-btn trade-btn-cancel" onclick="clearTbdRanks()" style="font-size:0.85rem">Clear</button>
+      </div>
+    </div>
+    <div id="tbd-proposals">${proposalsHtml}</div>
+  `;
+}
+
+function _renderTbdProposalsTable(tbds) {
+  const ranks = _RANK_PROPOSALS || new Map();
+  const rows = tbds.map(t => {
+    const norm = _normalizePlayerName(t.name);
+    const hit = ranks.get(norm);
+    const rank = hit ? hit.rank : null;
+    const proposed = _priceTierForRank(rank);
+    const safeId = `tbd-price-${escapeHtml(t.name)}`;
+    const rankLabel = rank != null ? `#${rank}` : `<span style="color:var(--text-dim)">unranked</span>`;
+    return `<tr>
+      <td style="padding:5px 8px;color:var(--text);font-size:0.86rem">${escapeHtml(t.name)}</td>
+      <td style="padding:5px 8px;color:var(--accent);font-size:0.84rem">${escapeHtml(t.teamName)}</td>
+      <td style="padding:5px 8px;font-size:0.84rem">${rankLabel}</td>
+      <td style="padding:5px 8px;font-size:0.84rem">$${proposed}</td>
+      <td style="padding:5px 8px"><input type="number" id="${safeId}" value="${proposed}" min="0" max="60"
+        style="width:60px;background:var(--bg-card);color:var(--text);border:1px solid var(--border);padding:4px 6px;border-radius:4px;font-size:0.84rem"></td>
+    </tr>`;
+  }).join("");
+  return `
+    <div style="margin-top:8px">
+      <table class="player-table" style="width:100%;font-size:0.85rem">
+        <thead><tr>
+          <th style="text-align:left">Player</th>
+          <th style="text-align:left">Team</th>
+          <th style="text-align:left">Rank</th>
+          <th style="text-align:left">Proposed</th>
+          <th style="text-align:left">Final $</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+      <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
+        <button class="trade-btn trade-btn-submit" onclick="submitTbdPrices()" style="font-size:0.85rem">Save All Prices</button>
+        <span style="color:var(--text-dim);font-size:0.75rem;align-self:center">Edit any value before saving. Saves write to callup_overrides for ${CURRENT_SEASON}.</span>
+      </div>
+    </div>
+  `;
+}
+
+function parseTbdRanks() {
+  if (!isCommissioner()) return;
+  const ta = document.getElementById("tbd-rank-paste");
+  if (!ta) return;
+  const map = _parseRanksList(ta.value || "");
+  _RANK_PROPOSALS = map;
+  // Re-render the proposals area in place — keep the textarea + collapsible
+  // open. Other commish-tools sections are untouched.
+  const target = document.getElementById("tbd-proposals");
+  if (target) target.innerHTML = _renderTbdProposalsTable(_findCallupsTbd());
+  if (typeof showToast === "function") showToast(`Parsed ${map.size} ranked players`);
+}
+
+function clearTbdRanks() {
+  _RANK_PROPOSALS = null;
+  const ta = document.getElementById("tbd-rank-paste");
+  if (ta) ta.value = "";
+  const target = document.getElementById("tbd-proposals");
+  if (target) {
+    const tbds = _findCallupsTbd();
+    target.innerHTML = `<div style="color:var(--text-dim);font-size:0.78rem">${tbds.length} call-up${tbds.length === 1 ? "" : "s"} need a price. Paste a list above and click <em>Parse &amp; Propose</em> to see suggested prices.</div>`;
+  }
+}
+
+async function submitTbdPrices() {
+  if (!isCommissioner()) return;
+  const tbds = _findCallupsTbd();
+  if (!tbds.length) return;
+  const updates = [];
+  for (const t of tbds) {
+    const el = document.getElementById(`tbd-price-${t.name}`);
+    if (!el) continue;
+    const val = parseInt(el.value, 10);
+    if (!Number.isFinite(val) || val < 0) continue;
+    updates.push({ name: t.name, price: val });
+  }
+  if (!updates.length) { alert("Nothing to save."); return; }
+  if (!confirm(`Save ${updates.length} call-up price${updates.length === 1 ? "" : "s"} for ${CURRENT_SEASON}?`)) return;
+  let ok = 0, failed = 0;
+  for (const u of updates) {
+    try {
+      if (typeof setCallupPriceOverride === "function") {
+        setCallupPriceOverride(u.name, u.price, CURRENT_SEASON);
+      }
+      ok++;
+    } catch (e) { failed++; }
+  }
+  // Wait for the DB writes to settle before re-rendering so the next view
+  // pickup actually reflects the new prices.
+  await new Promise(r => setTimeout(r, 350));
+  if (typeof showToast === "function") showToast(`Saved ${ok}${failed ? ` (${failed} failed)` : ""}`);
+  // Reset the proposals buffer; the section will re-render via realtime
+  // refresh and show the now-empty TBD list (or the remaining unset ones).
+  _RANK_PROPOSALS = null;
+  if (typeof switchTab === "function") switchTab("settings");
 }
 
 function renderKeyDatesEditor() {
