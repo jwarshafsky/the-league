@@ -6220,13 +6220,21 @@ function renderSettingsView() {
         </label>
       </div>
 
-      <div class="keeper-projection" style="margin-bottom:14px">
-        <h3 style="margin-top:0">Keeper Price Exceptions</h3>
-        <div style="color:var(--text-dim);font-size:0.84rem;margin-bottom:10px">
+      <details class="keeper-projection" style="margin-bottom:14px">
+        <summary style="cursor:pointer;font-weight:700;color:var(--text-bright);font-size:0.92rem">Key Dates</summary>
+        <div style="color:var(--text-dim);font-size:0.84rem;margin:8px 0 10px">
+          Surfaced on the League Rules page so every manager can see deadlines at a glance. Leave any field blank to hide it from the sidebar.
+        </div>
+        ${renderKeyDatesEditor()}
+      </details>
+
+      <details class="keeper-projection" style="margin-bottom:14px">
+        <summary style="cursor:pointer;font-weight:700;color:var(--text-bright);font-size:0.92rem">Keeper Price Exceptions</summary>
+        <div style="color:var(--text-dim);font-size:0.84rem;margin:8px 0 10px">
           ESPN doesn't let us trade draft dollars, so the workaround is to bump a keeper's ESPN price up or down to absorb the swing. Enter the player's <em>true</em> salary here and the app will use that everywhere instead of the inflated ESPN value — Keepers tab, Eligible Keepers, Luxury Tax, and all contract math (years remaining, next-year price, etc.).
         </div>
         ${renderKeeperPriceExceptionsEditor()}
-      </div>
+      </details>
 
       <div class="keeper-projection" style="margin-bottom:14px">
         <h3 style="margin-top:0;margin-bottom:12px">Export/Sync League Data</h3>
@@ -6250,6 +6258,65 @@ function renderSettingsView() {
       </div>
     </div>
   `;
+}
+
+function renderKeyDatesEditor() {
+  const dates = (typeof dbGetKeyDates === "function") ? dbGetKeyDates() : {};
+  // datetime-local needs YYYY-MM-DDTHH:MM (no seconds, no timezone). Convert
+  // the stored ISO (which may be a full timestamp) into that form.
+  const toInput = iso => {
+    if (!iso) return "";
+    try {
+      const d = new Date(iso);
+      if (isNaN(d.getTime())) return "";
+      const pad = n => String(n).padStart(2, "0");
+      return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    } catch { return ""; }
+  };
+  const rows = KEY_DATES_SCHEMA.map(d => `
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px">
+      <label style="color:var(--text);font-size:0.88rem;min-width:140px">${escapeHtml(d.label)}</label>
+      <input type="datetime-local" id="kd-${d.key}" value="${toInput(dates[d.key])}"
+        style="background:var(--bg);color:var(--text);border:1px solid var(--border);padding:6px 10px;border-radius:5px;font-size:0.9rem">
+      <button class="trade-btn trade-btn-cancel" style="font-size:0.74rem;padding:4px 8px"
+        onclick="clearKeyDate('${d.key}')">Clear</button>
+    </div>
+  `).join("");
+  return `
+    ${rows}
+    <div style="display:flex;gap:8px;margin-top:12px">
+      <button class="trade-btn trade-btn-submit" onclick="submitKeyDates()" style="font-size:0.85rem">Save Dates</button>
+    </div>
+  `;
+}
+
+async function submitKeyDates() {
+  if (!isCommissioner()) return;
+  const next = { ...(typeof dbGetKeyDates === "function" ? dbGetKeyDates() : {}) };
+  for (const d of KEY_DATES_SCHEMA) {
+    const el = document.getElementById(`kd-${d.key}`);
+    if (!el) continue;
+    const v = el.value;
+    if (!v) { delete next[d.key]; continue; }
+    // Round-trip through Date to canonical ISO so display formatting is stable.
+    try {
+      const iso = new Date(v).toISOString();
+      next[d.key] = iso;
+    } catch { delete next[d.key]; }
+  }
+  try {
+    if (typeof saveKeyDatesAsync === "function") await saveKeyDatesAsync(next);
+    if (typeof showToast === "function") showToast("Key dates saved");
+    switchTab("settings");
+  } catch (e) {
+    alert("Save failed: " + (e.message || e));
+  }
+}
+
+async function clearKeyDate(key) {
+  if (!isCommissioner()) return;
+  const el = document.getElementById(`kd-${key}`);
+  if (el) el.value = "";
 }
 
 function renderKeeperPriceExceptionsEditor() {
@@ -8267,20 +8334,71 @@ function renderConstitutionHTML(md) {
   return out.join("\n");
 }
 
+// Key dates surfaced on the Rules tab + edited in Commissioner Tools. Keys
+// match the constitution language so the labels read naturally next to it.
+const KEY_DATES_SCHEMA = [
+  { key: "rule5_deadline",  label: "Rule 5 Deadline" },
+  { key: "rule5_draft",     label: "Rule 5 Draft" },
+  { key: "keeper_deadline", label: "Keeper Deadline" },
+  { key: "auction_draft",   label: "Auction Draft" },
+  { key: "minors_draft",    label: "Minors Draft" },
+  { key: "trade_deadline",  label: "Trade Deadline" },
+];
+
+function _formatKeyDate(iso) {
+  if (!iso) return null;
+  try {
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return null;
+    // Show date + time only if a time is set (non-midnight); otherwise just date.
+    const opts = (d.getHours() === 0 && d.getMinutes() === 0)
+      ? { year: "numeric", month: "short", day: "numeric" }
+      : { year: "numeric", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" };
+    return d.toLocaleString(undefined, opts);
+  } catch { return null; }
+}
+
+function renderKeyDatesSidebar() {
+  const dates = (typeof dbGetKeyDates === "function") ? dbGetKeyDates() : {};
+  const rows = KEY_DATES_SCHEMA.map(d => {
+    const formatted = _formatKeyDate(dates[d.key]);
+    return `
+      <div style="display:flex;justify-content:space-between;align-items:baseline;gap:12px;padding:8px 0;border-bottom:1px solid var(--border);font-size:0.85rem">
+        <span style="color:var(--text)">${escapeHtml(d.label)}</span>
+        <span style="color:${formatted ? "var(--text-bright)" : "var(--text-dim)"};font-weight:${formatted ? "600" : "400"};text-align:right">${formatted || "—"}</span>
+      </div>
+    `;
+  }).join("");
+  return `
+    <aside style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:14px 18px;box-shadow:var(--shadow);width:280px;flex-shrink:0;align-self:flex-start;position:sticky;top:14px">
+      <h3 style="margin:0 0 8px;font-size:1rem;color:var(--text-bright)">Key Dates</h3>
+      ${rows}
+    </aside>
+  `;
+}
+
 function renderRulesView() {
   const md = getConstitutionMarkdown();
   const editBtn = isCommissioner()
     ? `<button class="trade-btn" onclick="enterRulesEdit()" style="font-size:0.78rem">Edit</button>`
     : "";
+  const voteNoticeHtml = renderActiveVoteNoticeForRules();
   return `
     <div id="rules-view-container">
+      ${voteNoticeHtml}
       ${editBtn ? `<div style="display:flex;justify-content:flex-end;margin-bottom:14px">${editBtn}</div>` : ""}
-      <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:18px 22px;box-shadow:var(--shadow);max-width:780px">
-        ${renderConstitutionHTML(md)}
+      <div style="display:flex;gap:18px;flex-wrap:wrap;align-items:flex-start">
+        <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:18px 22px;box-shadow:var(--shadow);flex:1;min-width:280px;max-width:780px">
+          ${renderConstitutionHTML(md)}
+        </div>
+        ${renderKeyDatesSidebar()}
       </div>
     </div>
   `;
 }
+
+// Placeholder — populated when League Vote is implemented further below.
+function renderActiveVoteNoticeForRules() { return ""; }
 
 function enterRulesEdit() {
   if (!isCommissioner()) return;

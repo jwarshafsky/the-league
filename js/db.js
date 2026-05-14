@@ -29,6 +29,8 @@ const _cache = {
   customProspects: [], // string[] — names typed during minors picks; shared league-wide via league_state
   espnSyncStatus: {},  // { lastSuccessAt, lastFailureAt, lastError, pushedAt } — set by the ESPN sync workflow
   pgCronHeartbeat: {}, // { lastFiredAt, lastWorkflow } — set by Supabase pg_cron jobs
+  keyDates: {},        // { rule5_deadline, rule5_draft, keeper_deadline, auction_draft, minors_draft, trade_deadline } — ISO date strings
+  activeVote: null,    // { id, title, description, opens_at, closes_at, options } | null
 };
 // Cross-conversation read state for the trade inbox: { threadId: lastReadAt }.
 // Anything in the thread newer than lastReadAt counts as unread (covers BOTH
@@ -281,6 +283,8 @@ async function _fetchAll() {
     else if (r.key === "custom_prospects") _cache.customProspects = Array.isArray(r.state) ? r.state : (r.state?.names || []);
     else if (r.key === "espn_sync_status") _cache.espnSyncStatus = r.state || {};
     else if (r.key === "pg_cron_heartbeat") _cache.pgCronHeartbeat = r.state || {};
+    else if (r.key === "key_dates") _cache.keyDates = r.state || {};
+    else if (r.key === "active_vote") _cache.activeVote = r.state || null;
   }
 
   _cache.callup = {};
@@ -587,6 +591,8 @@ function _resetDb() {
   _cache.pgCronHeartbeat = {};
   _cache.keeperDeadline = null;
   _cache.rosterMoves = [];
+  _cache.keyDates = {};
+  _cache.activeVote = null;
   _dbReady = false;
 }
 
@@ -943,6 +949,10 @@ async function saveSettingsAsync(s)             { return _saveLeagueStateAsync("
 async function saveFeesPaidAsync(m)             { return _saveLeagueStateAsync("fees_paid", m, "feesPaid"); }
 async function saveKeeperPriceExceptionsAsync(m){ return _saveLeagueStateAsync("keeper_price_exceptions", m, "keeperPriceExceptions"); }
 async function saveCustomProspectsAsync(list)   { return _saveLeagueStateAsync("custom_prospects", list, "customProspects"); }
+async function saveKeyDatesAsync(dates)         { return _saveLeagueStateAsync("key_dates", dates, "keyDates"); }
+async function saveActiveVoteAsync(vote)        { return _saveLeagueStateAsync("active_vote", vote, "activeVote"); }
+function dbGetKeyDates() { return _clone(_cache.keyDates || {}); }
+function dbGetActiveVote() { return _clone(_cache.activeVote); }
 function dbGetCustomProspects() { return _cache.customProspects || []; }
 function dbGetEspnSyncStatus() { return _clone(_cache.espnSyncStatus || {}); }
 function dbGetPgCronHeartbeat() { return _clone(_cache.pgCronHeartbeat || {}); }
