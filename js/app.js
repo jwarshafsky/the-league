@@ -8651,23 +8651,39 @@ async function _refreshRulesVoteStatus() {
       }
     } catch (e) { my.textContent = ""; }
   }
-  // Commish-only running tally.
+  // Commish-only running tally — also lists WHO voted for each option.
   const tally = document.getElementById("rules-vote-tally");
   if (tally && isCommissioner()) {
     try {
       const rows = await fetchAllVotesAsync(vote.id);
-      const counts = (vote.options || []).map(() => 0);
-      const voters = [];
-      for (const r of rows) {
-        if (counts[r.option_index] != null) counts[r.option_index] += 1;
-        voters.push(r.team_id);
-      }
-      const breakdown = (vote.options || []).map((opt, i) =>
-        `<span style="margin-right:12px"><strong>${escapeHtml(opt)}</strong>: ${counts[i]}</span>`
-      ).join("");
-      tally.innerHTML = `<strong>Commish view:</strong> ${rows.length}/12 voted &middot; ${breakdown}<br><span style="color:var(--text-dim);font-size:0.74rem">Voters: ${voters.length ? voters.join(", ") : "none yet"}</span>`;
+      tally.innerHTML = _voteTallyHtml(vote, rows, /*compact*/ false);
     } catch (e) { tally.textContent = ""; }
   }
+}
+
+// Render a per-option breakdown showing both count and the list of teams
+// that voted for it. Used by both the Rules-page commish view and the
+// Commissioner Tools mini-view.
+function _voteTallyHtml(vote, rows, compact) {
+  const opts = vote.options || [];
+  const buckets = opts.map(() => []);
+  const yetToVote = new Set(LEAGUE_DATA.teams.map(t => t.id));
+  for (const r of rows) {
+    if (buckets[r.option_index]) buckets[r.option_index].push(r.team_id);
+    yetToVote.delete(r.team_id);
+  }
+  const teamName = id => LEAGUE_DATA.teams.find(t => t.id === id)?.name || id;
+  const lineHtml = opts.map((opt, i) => {
+    const voterNames = buckets[i].map(teamName).sort();
+    const voters = voterNames.length ? voterNames.join(", ") : "—";
+    return `<div style="padding:3px 0"><strong>${escapeHtml(opt)}</strong> (${buckets[i].length}): <span style="color:var(--text-dim)">${escapeHtml(voters)}</span></div>`;
+  }).join("");
+  const pending = [...yetToVote].map(teamName).sort();
+  const header = compact ? "" : `<strong style="color:var(--text-bright)">Commish view</strong> &middot; ${rows.length}/12 voted<br>`;
+  const pendingHtml = pending.length
+    ? `<div style="color:var(--text-dim);font-size:0.74rem;margin-top:4px">Yet to vote: ${escapeHtml(pending.join(", "))}</div>`
+    : "";
+  return `${header}${lineHtml}${pendingHtml}`;
 }
 
 // Realtime hook: commish gets a toast each time a ballot lands.
@@ -8769,15 +8785,7 @@ async function _refreshSettingsVoteTally() {
   if (!_voteIsActive(vote)) return;
   try {
     const rows = await fetchAllVotesAsync(vote.id);
-    const counts = (vote.options || []).map(() => 0);
-    const voters = rows.map(r => r.team_id);
-    for (const r of rows) {
-      if (counts[r.option_index] != null) counts[r.option_index] += 1;
-    }
-    const breakdown = (vote.options || []).map((opt, i) =>
-      `<span style="margin-right:12px"><strong>${escapeHtml(opt)}</strong>: ${counts[i]}</span>`
-    ).join("");
-    tally.innerHTML = `${rows.length}/12 voted &middot; ${breakdown}<br><span style="font-size:0.72rem">Voters: ${voters.length ? voters.join(", ") : "none yet"}</span>`;
+    tally.innerHTML = `<div style="margin-bottom:4px">${rows.length}/12 voted</div>` + _voteTallyHtml(vote, rows, /*compact*/ true);
   } catch (e) { tally.textContent = ""; }
 }
 
