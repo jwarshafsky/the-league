@@ -4893,12 +4893,19 @@ function removeTradedPick(key) {
 
 // --- Navigation ---
 
-let currentView = "eligible";
+// Null until the first switchTab(); showAppForAuthedUser checks this so the
+// "homepage" can fall through to the smart-routing logic on first load
+// instead of being locked to "eligible" by a module-level default.
+let currentView = null;
 // Remembers the last team picked in each per-team-selector view so that
 // re-renders (realtime echoes, etc.) don't reset the dropdown to "All Teams".
 const _lastTeamSel = { eligible: null, keepers: null, rosters: null };
 
 function switchTab(tab) {
+  // Defensive guard: a realtime callback could theoretically fire
+  // switchTab(currentView) before showAppForAuthedUser has set currentView
+  // for the first time. With the new null-init, that would land here.
+  if (!tab) return;
   // Pick up the commish-set season (and other settings) before any render
   // computes contract math.
   if (typeof _applySettingsFromCache === "function") _applySettingsFromCache();
