@@ -4920,6 +4920,9 @@ function switchTab(tab) {
   const tabActuallyChanged = (typeof currentView === "undefined") || currentView !== tab;
   if (tabActuallyChanged) {
     try { window.scrollTo(0, 0); } catch {}
+    // Remember which tab the user is on so a refresh / fresh sign-in lands
+    // them back where they left off (overrides _smartDefaultTab).
+    try { localStorage.setItem(LAST_TAB_KEY, tab); } catch {}
   }
 
   const content = document.getElementById("main-content");
@@ -10050,10 +10053,47 @@ if (typeof onPresenceChange === "function") {
   onPresenceChange(() => renderHeaderUser());
 }
 
+// Pick the most relevant tab to land on based on today's date relative to
+// the league's key dates. Each transition flips the default; the latest
+// one in the past wins. Used only when the user has never navigated this
+// session AND no stored last-tab is found.
+function _smartDefaultTab() {
+  const dates = (typeof dbGetKeyDates === "function") ? dbGetKeyDates() : {};
+  const ms = key => dates[key] ? new Date(dates[key]).getTime() : null;
+  const now = Date.now();
+  // Anchor: Nov 1 of the most recent year. The keeper-cycle resets each
+  // November so the transition table starts from there.
+  const today = new Date();
+  let nov1 = new Date(today.getFullYear(), 10, 1).getTime();
+  if (now < nov1) nov1 = new Date(today.getFullYear() - 1, 10, 1).getTime();
+  const transitions = [
+    { at: nov1,                tab: "eligible" },  // Nov 1 → Select Keepers
+    { at: ms("rule5_deadline"),  tab: "rule5"    },  // → Rule 5 Draft
+    { at: ms("rule5_draft"),     tab: "eligible" },  // After Rule 5 → back to keeper picking
+    { at: ms("keeper_deadline"), tab: "keepers"  },  // → 2026 Keepers
+    { at: ms("auction_draft"),   tab: "draft"    },  // → Minors Draft
+    { at: ms("minors_draft"),    tab: "trades"   },  // After Minors Draft → Trades
+    { at: ms("trade_deadline"),  tab: "rosters"  },  // After Trade Deadline → Minors Rosters
+  ].filter(t => t.at != null && t.at <= now);
+  if (!transitions.length) return "eligible";
+  transitions.sort((a, b) => a.at - b.at);
+  return transitions[transitions.length - 1].tab;
+}
+
+const LAST_TAB_KEY = "flm_last_tab_v1";
+
 function showAppForAuthedUser() {
   document.querySelector(".nav-tabs").style.display = "";
   renderHeaderUser();
-  switchTab(currentView || "eligible");
+  // Tab to load: in-memory currentView (set by an earlier switch in this
+  // session) > last-stored tab (so refresh stays put) > smart default
+  // based on key dates > legacy "eligible" fallback.
+  let initialTab = currentView;
+  if (!initialTab) {
+    try { initialTab = localStorage.getItem(LAST_TAB_KEY) || ""; } catch {}
+  }
+  if (!initialTab) initialTab = _smartDefaultTab();
+  switchTab(initialTab);
   // Commish-only safety net for Google Sheets auto-sync. The realtime
   // refresh callback in db.js handles event-driven syncs; this 15-min
   // interval covers cases where ESPN snapshot updates server-side and
