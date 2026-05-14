@@ -5428,7 +5428,7 @@ function _handleActivityToast(row) {
     return;
   }
   if (t === "trade_recorded") {
-    if (myAction) return;
+    // Per spec: every team, including the actor, sees the toast.
     fire("trade_completed", `Trade: ${teamName(p.team1)} ↔ ${teamName(p.team2)}`);
     return;
   }
