@@ -637,7 +637,7 @@ function renderMinorsKeepersTable(minors) {
           })();
           return `
             <tr>
-              <td><span class="player-name">${escapeHtml(p.name)}</span>${statusBadge}</td>
+              <td><span class="player-name"${_playerTitleAttr(p.name)}>${escapeHtml(p.name)}</span>${statusBadge}</td>
               <td class="player-year">${p.yearAcquired}</td>
               <td class="${statClass}">${p.careerStat}</td>
               <td>${milTag}${p.sendDownCount ? ` <span class="hide-on-mobile" style="color:var(--red);font-size:0.7rem;font-weight:600">($${p.sendDownCount * 10} send down fee)</span>` : ""}</td>
@@ -1036,7 +1036,7 @@ function renderMinorsCompactTable(team) {
           let statClass = "";
           if ((p.statType === "AB" && p.careerStat >= 200) || (p.statType === "IP" && p.careerStat >= 50)) statClass = "stat-warning";
           return `<tr>
-            <td class="notif-row-label"><span class="player-name">${escapeHtml(p.name)}</span></td>
+            <td class="notif-row-label"><span class="player-name"${_playerTitleAttr(p.name)}>${escapeHtml(p.name)}</span></td>
             <td data-label="Drafted" class="player-year">${p.yearAcquired}</td>
             <td data-label="AB/IP" class="${statClass}">${p.careerStat} ${p.statType}</td>
             <td data-label="Expiry">${_milExpiryTag(ms)}</td>
@@ -1076,7 +1076,7 @@ function renderMajorsTable(players) {
           const expiry = CURRENT_SEASON + cs.yearsRemaining;
           return `
             <tr>
-              <td><span class="player-name">${escapeHtml(p.name)}</span></td>
+              <td><span class="player-name"${_playerTitleAttr(p.name)}>${escapeHtml(p.name)}</span></td>
               <td class="player-price">$${p.price}</td>
               <td class="player-year">${p.yearAcquired}${p.fromMinors ? ' <span class="from-minors-tag">MiLB</span>' : ""}</td>
               <td><span class="contract-tag contract-${escapeHtml(cs.status)}">${expiry}</span></td>
@@ -1149,7 +1149,7 @@ function renderCallupsTable(players, teamId) {
             </td>` : "";
           return `
             <tr>
-              <td class="notif-row-label"><span class="player-name">${escapeHtml(p.name)}</span></td>
+              <td class="notif-row-label"><span class="player-name"${_playerTitleAttr(p.name)}>${escapeHtml(p.name)}</span></td>
               <td data-label="Drafted" class="player-year">${p.yearAcquired}</td>
               <td data-label="AB/IP" class="${statClass}">${statDisplay}</td>
               <td data-label="Expiry">${_milExpiryTag(ms)}</td>
@@ -1222,7 +1222,7 @@ function renderMinorsTable(players, teamId) {
             </td>` : "";
           return `
             <tr>
-              <td class="notif-row-label"><span class="player-name">${escapeHtml(p.name)}</span>${p.sendDownCount ? ` <span class="hide-on-mobile" style="color:var(--red);font-size:0.65rem;font-weight:700">$${p.sendDownCount * 10} fee</span>` : ''}</td>
+              <td class="notif-row-label"><span class="player-name"${_playerTitleAttr(p.name)}>${escapeHtml(p.name)}</span>${p.sendDownCount ? ` <span class="hide-on-mobile" style="color:var(--red);font-size:0.65rem;font-weight:700">$${p.sendDownCount * 10} fee</span>` : ''}</td>
               <td data-label="Drafted" class="player-year">${p.yearAcquired}</td>
               <td data-label="AB/IP" class="${statClass}">${statDisplay}</td>
               <td data-label="Expiry">${_milExpiryTag(ms)}</td>
@@ -1309,7 +1309,7 @@ function updateKeeperCalc() {
           <tbody>
             ${keepableNextYear.map(p => `
               <tr>
-                <td><span class="player-name">${escapeHtml(p.name)}</span>${p.fromMinors ? '<span class="from-minors-tag">MiLB</span>' : ""}</td>
+                <td><span class="player-name"${_playerTitleAttr(p.name)}>${escapeHtml(p.name)}</span>${p.fromMinors ? '<span class="from-minors-tag">MiLB</span>' : ""}</td>
                 <td class="player-price">$${p.price}</td>
                 <td style="color:var(--yellow);font-weight:700">$${p.contract.nextYearPrice}</td>
                 <td><span class="contract-tag contract-${p.contract.yearsRemaining === 1 ? 'expiring' : 'mid'}">${CURRENT_SEASON + p.contract.yearsRemaining}</span></td>
@@ -1333,7 +1333,7 @@ function updateKeeperCalc() {
           <tbody>
             ${notKeepable.map(p => `
               <tr>
-                <td><span class="player-name">${escapeHtml(p.name)}</span></td>
+                <td><span class="player-name"${_playerTitleAttr(p.name)}>${escapeHtml(p.name)}</span></td>
                 <td class="player-price">$${p.price}</td>
                 <td><span class="contract-tag contract-final">Contract Expired</span></td>
               </tr>
@@ -3577,7 +3577,7 @@ function renderEligibleTable(players, teamId, teamSelections) {
           return `
             <tr style="${rowBg}">
               <td>
-                <span class="player-name" style="${nameStyle}">${escapeHtml(p.name)}</span>${injuryTag}${overrideBadge}${editBtn}
+                <span class="player-name" style="${nameStyle}"${_playerTitleAttr(p.name)}>${escapeHtml(p.name)}</span>${injuryTag}${overrideBadge}${editBtn}
                 ${workaroundBadgeHtml(p)}
               </td>
               <td>${sourceBadge(p)}</td>
@@ -3670,7 +3670,7 @@ function renderMinorsEligibleTable(minors, teamId, teamSelections) {
           return `
             <tr style="${rowBg}">
               <td>
-                <span class="player-name" style="${nameStyle}">${escapeHtml(p.name)}</span>
+                <span class="player-name" style="${nameStyle}"${_playerTitleAttr(p.name)}>${escapeHtml(p.name)}</span>
                 ${p.sendDownCount ? ` <span class="hide-on-mobile" style="color:var(--red);font-size:0.65rem;font-weight:700">$${p.sendDownCount * 10} fee</span>` : ''}
                 <div style="font-size:0.7rem;color:var(--text-dim);margin-top:2px">
                   <span class="${statClass}">${p.careerStat} ${p.statType}</span>
@@ -6952,6 +6952,53 @@ async function saveGoogleSheetsUrl() {
   }
 }
 
+// Hover-tooltip showing every trade this player has been involved in across
+// the league's recorded history. Returns a multi-line plain-text string
+// suitable for an HTML title="..." attribute (browser native tooltip — no
+// extra JS needed). Returns "" when the player has never been traded so
+// the attribute is harmless on every cell.
+const _PLAYER_TRADE_TITLE_CACHE = new Map();
+let _PLAYER_TRADE_TITLE_TRADES_SIG = null;
+
+function _playerTitleAttr(name) {
+  const t = playerTradeHistoryTitle(name);
+  if (!t) return "";
+  // escapeHtml handles quotes/angle brackets; newlines pass through and are
+  // preserved by the browser's native title tooltip.
+  return ` title="${escapeHtml(t)}"`;
+}
+
+function playerTradeHistoryTitle(playerName) {
+  if (!playerName) return "";
+  const trades = (typeof getTrades === "function") ? getTrades() : [];
+  // Bust the cache when the trade list changes (length is a cheap proxy;
+  // edits to existing rows also change the array reference).
+  const sig = `${trades.length}|${trades[0]?._id || ""}|${trades[trades.length - 1]?._id || ""}`;
+  if (sig !== _PLAYER_TRADE_TITLE_TRADES_SIG) {
+    _PLAYER_TRADE_TITLE_CACHE.clear();
+    _PLAYER_TRADE_TITLE_TRADES_SIG = sig;
+  }
+  if (_PLAYER_TRADE_TITLE_CACHE.has(playerName)) return _PLAYER_TRADE_TITLE_CACHE.get(playerName);
+
+  const hits = [];
+  const teamName = id => LEAGUE_DATA.teams.find(t => t.id === id)?.name || id;
+  for (const t of trades) {
+    const inT1 = (t.team1Receives || []).some(a => a && a.value === playerName);
+    const inT2 = (t.team2Receives || []).some(a => a && a.value === playerName);
+    if (!inT1 && !inT2) continue;
+    // team1Receives = items team1 got (came from team2), so player moved team2 → team1.
+    const fromTeam = inT1 ? t.team2 : t.team1;
+    const toTeam   = inT1 ? t.team1 : t.team2;
+    hits.push({ date: t.date || "?", from: fromTeam, to: toTeam });
+  }
+  let out = "";
+  if (hits.length) {
+    out = `Trade history (${hits.length}):\n` + hits.map(h => `• ${h.date} — ${teamName(h.from)} → ${teamName(h.to)}`).join("\n");
+  }
+  _PLAYER_TRADE_TITLE_CACHE.set(playerName, out);
+  return out;
+}
+
 // Helper: year-acquired suffix used everywhere in the spreadsheet (e.g. "2024m").
 function _xlsxYearM(year) {
   return year != null ? `${year}m` : "";
@@ -8718,7 +8765,7 @@ function renderRule5View() {
       <tbody>
         ${[...remaining].sort((a, b) => lastName(a.name).localeCompare(lastName(b.name))).map(p => `
           <tr>
-            <td><span class="player-name">${escapeHtml(p.name)}</span></td>
+            <td><span class="player-name"${_playerTitleAttr(p.name)}>${escapeHtml(p.name)}</span></td>
             <td><span class="team-link" style="color:var(--accent)">${p.originTeamName}</span></td>
             <td>${p.yearsRemaining != null ? `<span class="contract-tag contract-${p.yearsRemaining === 0 ? 'final' : p.yearsRemaining === 1 ? 'expiring' : 'mid'}">${CURRENT_SEASON + p.yearsRemaining}</span>` : '<span style="color:var(--text-dim)">—</span>'}</td>
             <td>${
