@@ -59,6 +59,18 @@ body {
   border-radius: 6px;
   flex-shrink: 0;
 }
+/* Key Dates sidebar: fixed-width column on PC, full-width card on mobile. */
+.key-dates-sidebar {
+  width: 280px;
+  flex-shrink: 0;
+}
+@media (max-width: 720px) {
+  .key-dates-sidebar {
+    width: 100%;
+    flex-shrink: 1;
+    max-width: none;
+  }
+}
 .app-header h1 {
   font-size: 1.25rem;
   font-weight: 700;
@@ -99,7 +111,8 @@ body {
 }
 .menu-btn:hover { background: rgba(255,255,255,0.22); }
 
-/* Slide-out nav drawer (mobile) */
+/* Slide-out nav drawer (mobile) — z-index above the message board (991)
+   so it can be opened from the menu icon while the board is showing. */
 .nav-drawer-backdrop {
   position: fixed;
   inset: 0;
@@ -107,7 +120,7 @@ body {
   opacity: 0;
   visibility: hidden;
   transition: opacity 0.18s ease, visibility 0.18s;
-  z-index: 200;
+  z-index: 1000;
 }
 .nav-drawer-backdrop.open {
   opacity: 1;
@@ -122,7 +135,7 @@ body {
   box-shadow: 4px 0 20px rgba(0,0,0,0.45);
   transform: translateX(-100%);
   transition: transform 0.22s ease;
-  z-index: 201;
+  z-index: 1001;
   display: flex;
   flex-direction: column;
   /* Respect iOS safe area for notched devices */
@@ -684,27 +697,19 @@ body {
     padding-left: 8px !important;
   }
 
-  /* Message Board: fullscreen on mobile rather than a small pop-up — the
-     inline styles use min(380px, ...) / min(560px, ...) and a fixed
-     bottom/right offset, all of which we override here. */
+  /* Message Board on mobile: full-width but anchored below the app header
+     so the hamburger menu icon stays visible/tappable while the panel is
+     open. */
   #msgboard-panel {
-    top: 0 !important;
+    top: var(--header-stack-height, 60px) !important;
     left: 0 !important;
     right: 0 !important;
     bottom: 0 !important;
     width: 100vw !important;
-    height: 100vh !important;
-    height: 100dvh !important;
+    height: auto !important;
     max-width: none !important;
     border-radius: 0 !important;
     border: none !important;
-  }
-  /* Push the header gradient down past the iOS status-bar / notch so the
-     close (×) and "Clear all" buttons are tappable. The header is the
-     first child div of the panel; bumping its padding-top extends the
-     gradient up to the very top of the screen as well. */
-  #msgboard-panel > div:first-child {
-    padding-top: calc(13px + env(safe-area-inset-top, 0px)) !important;
   }
 
   /* Notification preference tables (Settings page): collapse the dense

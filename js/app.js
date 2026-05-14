@@ -605,12 +605,14 @@ function updateKeepersView() {
 function renderMinorsKeepersTable(minors) {
   if (!minors.length) return '<p style="color:var(--text-dim)">No minor league keepers</p>';
   const sorted = [...minors].sort((a, b) => lastName(a.name).localeCompare(lastName(b.name)));
+  // Column widths intentionally mirror renderMajorsTable so the AB/IP column
+   // on minors lines up vertically under the "$" column on majors.
   return `
     <table class="player-table keepers-aligned-table" style="table-layout:fixed">
       <colgroup>
         <col style="width:42%">
-        <col style="width:14%">
         <col style="width:22%">
+        <col style="width:14%">
         <col style="width:22%">
       </colgroup>
       <thead>
@@ -1027,25 +1029,19 @@ function renderMinorsCompactTable(team) {
     .sort((a, b) => lastName(a.name).localeCompare(lastName(b.name)));
   if (!allPlayers.length) return "<p style='color:var(--text-dim)'>No minor league players</p>";
   return `
-    <table class="player-table mobile-stack-table" style="table-layout:fixed">
+    <table class="player-table" style="table-layout:fixed">
       ${_minorsTablesColgroup(false)}
-      <thead><tr><th>Player</th><th>Drafted</th><th>AB/IP</th><th>Expiry</th><th>Status</th></tr></thead>
+      <thead><tr><th>Player</th><th>Drafted</th><th>AB/IP</th><th>Status</th></tr></thead>
       <tbody>
         ${allPlayers.map(p => {
           const ms = getMinorLeagueContractStatus(p, CURRENT_SEASON);
           let statClass = "";
           if ((p.statType === "AB" && p.careerStat >= 200) || (p.statType === "IP" && p.careerStat >= 50)) statClass = "stat-warning";
           return `<tr>
-            <td class="notif-row-label"><span class="player-name"${_playerTitleAttr(p.name)}>${escapeHtml(p.name)}</span></td>
-            <td data-label="Drafted" class="player-year">${p.yearAcquired}</td>
-            <td data-label="AB/IP" class="${statClass}">${p.careerStat} ${p.statType}</td>
-            <td data-label="Expiry">${_milExpiryTag(ms)}</td>
-            <td data-label="Status">${
-              p._teamStatus === "dropped" ? '<span style="color:var(--orange);font-size:0.8rem">Dropped</span>' :
-              p._teamStatus === "traded"  ? '<span style="color:var(--accent);font-size:0.8rem">Traded</span>' :
-              ms.eligibilityWarning ? `<span class="hide-on-mobile" style="color:var(--orange);font-size:0.8rem">${ms.eligibilityWarning}</span>` :
-              '<span style="color:var(--green);font-size:0.8rem">Active</span>'
-            }</td>
+            <td><span class="player-name"${_playerTitleAttr(p.name)}>${escapeHtml(p.name)}</span></td>
+            <td class="player-year">${p.yearAcquired}</td>
+            <td class="${statClass}">${p.careerStat} ${p.statType}</td>
+            <td>${_minorsStatusCell(p, ms)}</td>
           </tr>`;
         }).join("")}
       </tbody>
@@ -1094,32 +1090,50 @@ function renderMajorsTable(players) {
 function _minorsTablesColgroup(showActions) {
   if (showActions) {
     return `<colgroup>
-      <col style="width:32%">
-      <col style="width:11%">
+      <col style="width:34%">
       <col style="width:12%">
-      <col style="width:14%">
-      <col style="width:21%">
-      <col style="width:10%">
+      <col style="width:13%">
+      <col style="width:25%">
+      <col style="width:16%">
     </colgroup>`;
   }
   return `<colgroup>
-    <col style="width:35%">
-    <col style="width:12%">
+    <col style="width:42%">
     <col style="width:13%">
-    <col style="width:16%">
-    <col style="width:24%">
+    <col style="width:15%">
+    <col style="width:30%">
   </colgroup>`;
 }
 
-function _milExpiryTag(ms) {
-  if (ms.yearsRemaining === null) {
-    return ms.contractNote
-      ? `<span class="contract-tag contract-new">${escapeHtml(ms.contractNote)}</span>`
-      : '<span style="color:var(--text-dim);font-size:0.8rem">—</span>';
+// Build the status cell contents for the Minors Rosters tab. Combines the
+// roster-status badge (Active / Dropped / Traded) with the contract info on
+// a second line ("Expires in 2026" / "1 yr left, $5" / "MiLB-only").
+function _minorsStatusCell(player, ms) {
+  const teamStatus = player._teamStatus;
+  let badge;
+  if (teamStatus === "dropped") {
+    badge = '<span style="color:var(--orange);font-size:0.8rem">Dropped</span>';
+  } else if (teamStatus === "traded") {
+    badge = '<span style="color:var(--accent);font-size:0.8rem">Traded</span>';
+  } else {
+    badge = '<span style="color:var(--green);font-size:0.8rem">Active</span>';
   }
-  const yrs = ms.yearsRemaining;
-  const cls = yrs === 0 ? "final" : yrs === 1 ? "expiring" : "mid";
-  return `<span class="contract-tag contract-${cls}">${CURRENT_SEASON + yrs}</span>`;
+  let contractLine = "";
+  if (ms.yearsRemaining === null) {
+    if (ms.contractNote) contractLine = escapeHtml(ms.contractNote);
+  } else {
+    const yrs = ms.yearsRemaining;
+    const priceStr = (player.price !== undefined && player.price !== null) ? `$${player.price}` : "$TBD";
+    if (yrs === 0) {
+      contractLine = `Expires in ${CURRENT_SEASON}`;
+    } else {
+      contractLine = `${yrs} yr${yrs === 1 ? "" : "s"} left, ${priceStr}`;
+    }
+  }
+  const sub = contractLine
+    ? `<div style="color:var(--text-dim);font-size:0.72rem;margin-top:2px;line-height:1.2">${contractLine}</div>`
+    : "";
+  return `${badge}${sub}`;
 }
 
 function renderCallupsTable(players, teamId) {
@@ -1131,9 +1145,9 @@ function renderCallupsTable(players, teamId) {
   const showSendDown = teamId && canEditTeam(teamId);
   const headerActionCol = showSendDown ? "<th></th>" : "";
   return `
-    <table class="player-table mobile-stack-table" style="table-layout:fixed">
+    <table class="player-table" style="table-layout:fixed">
       ${_minorsTablesColgroup(showSendDown)}
-      <thead><tr><th>Player</th><th>Drafted</th><th>AB/IP</th><th>Expiry</th><th>Status</th>${headerActionCol}</tr></thead>
+      <thead><tr><th>Player</th><th>Drafted</th><th>AB/IP</th><th>Status</th>${headerActionCol}</tr></thead>
       <tbody>
         ${players.map(p => {
           const ms = getMinorLeagueContractStatus(p, CURRENT_SEASON);
@@ -1143,17 +1157,18 @@ function renderCallupsTable(players, teamId) {
           const belowThreshold = (p.statType === "AB" && p.careerStat < 200) || (p.statType === "IP" && p.careerStat < 50);
           const onEspnRoster = typeof isPlayerDroppedFromEspn === "function" ? !isPlayerDroppedFromEspn(p.name) : true;
           const actionCell = showSendDown ? `
-            <td data-label="" style="text-align:right">
+            <td style="text-align:right">
               ${belowThreshold && onEspnRoster ? `<button class="trade-btn" onclick="sendDownPlayer('${escapeJsString(p.name)}','${escapeJsString(teamId)}')"
                 style="font-size:0.72rem;padding:3px 8px;background:var(--orange);color:#fff">Send Down</button>` : ""}
             </td>` : "";
+          const isDropped = p.dropped || (typeof isPlayerDroppedFromEspn === "function" && isPlayerDroppedFromEspn(p.name));
+          const statusCell = _minorsStatusCell({ ...p, _teamStatus: isDropped ? "dropped" : p._teamStatus }, ms);
           return `
             <tr>
-              <td class="notif-row-label"><span class="player-name"${_playerTitleAttr(p.name)}>${escapeHtml(p.name)}</span></td>
-              <td data-label="Drafted" class="player-year">${p.yearAcquired}</td>
-              <td data-label="AB/IP" class="${statClass}">${statDisplay}</td>
-              <td data-label="Expiry">${_milExpiryTag(ms)}</td>
-              <td data-label="Status"><span style="color:var(--text-dim);font-size:0.8rem">${formatCallupStatus(p, ms)}</span></td>
+              <td><span class="player-name"${_playerTitleAttr(p.name)}>${escapeHtml(p.name)}</span></td>
+              <td class="player-year">${p.yearAcquired}</td>
+              <td class="${statClass}">${statDisplay}</td>
+              <td>${statusCell}</td>
               ${actionCell}
             </tr>
           `;
@@ -1174,28 +1189,6 @@ function isPlayerDroppedFromEspn(playerName) {
   return !_espnRosterNameCache.has(playerName);
 }
 
-function formatCallupStatus(player, ms) {
-  if (player.dropped || isPlayerDroppedFromEspn(player.name)) {
-    // Distinguish a fresh app-side call-up that hasn't synced to ESPN yet
-    // (ESPN sync runs every 15min; commish may take longer to mirror the move
-    // on the ESPN side) from a real drop. If the app's roster_moves table has
-    // a callup for this player in the past 24h, show "Call Up Pending".
-    const moves = (typeof dbGetRosterMoves === "function") ? dbGetRosterMoves() : [];
-    const recent = moves.find(m =>
-      m && m.kind === "callup" && m.player_name === player.name &&
-      m.at && (Date.now() - new Date(m.at).getTime()) < 24 * 60 * 60 * 1000
-    );
-    return recent ? "Call Up Pending" : "Dropped";
-  }
-  const priceStr = (player.price !== undefined && player.price !== null) ? `$${player.price}` : "$TBD";
-  if (ms.yearsRemaining !== null) {
-    const yrs = ms.yearsRemaining;
-    if (yrs === 0) return `Expires in ${CURRENT_SEASON}`;
-    return `${yrs} yr${yrs === 1 ? "" : "s"} left, ${priceStr}`;
-  }
-  return `${ms.contractNote}, ${priceStr}`;
-}
-
 function renderMinorsTable(players, teamId) {
   if (!players.length) return "<p style='color:var(--text-dim)'>No minor league players</p>";
   players = [...players].sort((a, b) => lastName(a.name).localeCompare(lastName(b.name)));
@@ -1204,9 +1197,9 @@ function renderMinorsTable(players, teamId) {
   const showCallUp = teamId && canEditTeam(teamId);
   const headerActionCol = showCallUp ? "<th></th>" : "";
   return `
-    <table class="player-table mobile-stack-table" style="table-layout:fixed">
+    <table class="player-table" style="table-layout:fixed">
       ${_minorsTablesColgroup(showCallUp)}
-      <thead><tr><th>Player</th><th>Drafted</th><th>AB/IP</th><th>Expiry</th><th>Status</th>${headerActionCol}</tr></thead>
+      <thead><tr><th>Player</th><th>Drafted</th><th>AB/IP</th><th>Status</th>${headerActionCol}</tr></thead>
       <tbody>
         ${players.map(p => {
           const ms = getMinorLeagueContractStatus(p, CURRENT_SEASON);
@@ -1214,7 +1207,7 @@ function renderMinorsTable(players, teamId) {
           let statClass = "";
           if ((p.statType === "AB" && p.careerStat >= 200) || (p.statType === "IP" && p.careerStat >= 50)) statClass = "stat-warning";
           const actionCell = showCallUp ? `
-            <td data-label="" style="text-align:right;white-space:nowrap">
+            <td style="text-align:right;white-space:nowrap">
               <button class="trade-btn" onclick="callUpMinorPlayer('${escapeJsString(p.name)}','${escapeJsString(teamId)}')"
                 style="font-size:0.72rem;padding:3px 8px;background:var(--purple);color:#fff">Call Up</button>
               <button class="trade-btn trade-btn-cancel" onclick="dropMinorPlayer('${escapeJsString(p.name)}','${escapeJsString(teamId)}')"
@@ -1222,16 +1215,10 @@ function renderMinorsTable(players, teamId) {
             </td>` : "";
           return `
             <tr>
-              <td class="notif-row-label"><span class="player-name"${_playerTitleAttr(p.name)}>${escapeHtml(p.name)}</span>${p.sendDownCount ? ` <span class="hide-on-mobile" style="color:var(--red);font-size:0.65rem;font-weight:700">$${p.sendDownCount * 10} fee</span>` : ''}</td>
-              <td data-label="Drafted" class="player-year">${p.yearAcquired}</td>
-              <td data-label="AB/IP" class="${statClass}">${statDisplay}</td>
-              <td data-label="Expiry">${_milExpiryTag(ms)}</td>
-              <td data-label="Status">${
-                p._teamStatus === "dropped" ? '<span style="color:var(--orange);font-size:0.8rem">Dropped</span>' :
-                p._teamStatus === "traded"  ? '<span style="color:var(--accent);font-size:0.8rem">Traded</span>' :
-                ms.eligibilityWarning ? `<span class="hide-on-mobile" style="color:var(--orange);font-size:0.8rem">${ms.eligibilityWarning}</span>` :
-                '<span style="color:var(--green);font-size:0.8rem">Active</span>'
-              }</td>
+              <td><span class="player-name"${_playerTitleAttr(p.name)}>${escapeHtml(p.name)}</span>${p.sendDownCount ? ` <span class="hide-on-mobile" style="color:var(--red);font-size:0.65rem;font-weight:700">$${p.sendDownCount * 10} fee</span>` : ''}</td>
+              <td class="player-year">${p.yearAcquired}</td>
+              <td class="${statClass}">${statDisplay}</td>
+              <td>${_minorsStatusCell(p, ms)}</td>
               ${actionCell}
             </tr>
           `;
@@ -3952,12 +3939,32 @@ function renderAllTeamsEligibleSummary(container) {
     const rule5 = team.minors.filter(p => teamSel[p.name]?.rule5);
     const keeperCost = keepers.reduce((s, p) => s + (p.nextYearPrice || 0), 0);
     const draftDollars = dollarBalances[team.id] ?? 260;
+    // MiL keeper count for this team — flagged players who actually sit on
+    // the team's current MILB roster (incl. callups).
+    const milNames = new Set([
+      ...(team.minors || []).map(p => p.name),
+      ...(team.callups || []).map(p => p.name),
+    ]);
+    const milKeeperCount = Object.entries(teamSel)
+      .filter(([name, s]) => s.minorKeeper && milNames.has(name)).length;
+
+    const mlColor = keepers.length > 8 ? 'var(--red)'
+      : keepers.length === 8 ? 'var(--green)'
+      : keepers.length === 0 ? 'var(--text-dim)'
+      : 'var(--yellow)';
+    const milColor = milKeeperCount > 10 ? 'var(--red)'
+      : milKeeperCount === 10 ? 'var(--green)'
+      : milKeeperCount === 0 ? 'var(--text-dim)'
+      : 'var(--yellow)';
 
     return `
       <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:14px;margin-bottom:10px;cursor:pointer" onclick="document.getElementById('eligible-team-select').value='${team.id}';updateEligibleKeepersView()">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;gap:8px;flex-wrap:wrap">
           <span style="font-weight:700;color:var(--text-bright);font-size:1.05rem">${team.name}</span>
-          <span style="color:${keepers.length === 8 ? 'var(--green)' : keepers.length === 0 ? 'var(--text-dim)' : 'var(--yellow)'};font-weight:700">${keepers.length}/8 keepers</span>
+          <span style="display:flex;gap:10px;font-weight:700;font-size:0.92rem;flex-wrap:wrap;justify-content:flex-end">
+            <span style="color:${mlColor}">${keepers.length}/8 keepers</span>
+            <span style="color:${milColor}">${milKeeperCount}/10 MiL</span>
+          </span>
         </div>
         ${keepers.length ? `
           <div style="font-size:0.82rem;color:var(--text-dim);margin-bottom:4px">
@@ -4564,7 +4571,9 @@ function showToast(message, type) {
   if (!container) {
     container = document.createElement("div");
     container.id = "toast-container";
-    container.style.cssText = "position:fixed;top:14px;right:14px;z-index:2000;display:flex;flex-direction:column;gap:6px;pointer-events:none";
+    // env(safe-area-inset-top) adds iOS notch / status-bar padding so toasts
+    // don't sit underneath the system UI on installed-PWA mode.
+    container.style.cssText = "position:fixed;top:calc(14px + env(safe-area-inset-top, 0px));right:calc(14px + env(safe-area-inset-right, 0px));z-index:2000;display:flex;flex-direction:column;gap:6px;pointer-events:none";
     document.body.appendChild(container);
   }
   const toast = document.createElement("div");
@@ -9040,7 +9049,7 @@ function renderKeyDatesSidebar() {
     `;
   }).join("");
   return `
-    <aside style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:14px 18px;box-shadow:var(--shadow);width:280px;flex-shrink:0;align-self:flex-start">
+    <aside class="key-dates-sidebar" style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:14px 18px;box-shadow:var(--shadow);align-self:flex-start">
       <h3 style="margin:0 0 8px;font-size:1rem;color:var(--text-bright)">Key Dates <span style="color:var(--text-dim);font-size:0.7rem;font-weight:400">(ET)</span></h3>
       ${rows}
     </aside>
