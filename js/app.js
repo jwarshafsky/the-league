@@ -5148,13 +5148,20 @@ const DRAFT_CLOCK_STATES = [
 
 // On-screen toasts that fire while the app is open. Independent of email /
 // push (those go through the server-side notifier; these are pure client).
-// Defaults ON for major events per league convention.
+// Major events default ON; the noisier categories default OFF (opt-in).
 const INAPP_TOAST_EVENTS = [
-  { key: "trade_proposal",  label: "Trade proposal received",         default: true  },
-  { key: "trade_completed", label: "Trade accepted / completed",       default: true  },
-  { key: "draft_on_clock",  label: "Your team on the clock (Minors / Rule 5)",  default: true },
-  { key: "draft_on_deck",   label: "Your team on deck (Minors / Rule 5)",       default: true },
-  { key: "draft_in_hole",   label: "Your team in the hole (Minors / Rule 5)",   default: true },
+  { key: "trade_proposal",  label: "Trade proposal received",                    default: true  },
+  { key: "trade_update",    label: "Trade proposal updates",                      default: false },
+  { key: "trade_message",   label: "Trade thread message",                        default: false },
+  { key: "trade_completed", label: "Trade accepted / completed",                  default: true  },
+  { key: "keeper_protect",  label: "Keeper protection changes",                   default: false },
+  { key: "rule5_protect",   label: "Rule 5 protection changes",                   default: false },
+  { key: "callup",          label: "Call-ups",                                    default: false },
+  { key: "send_down",       label: "Send-downs",                                  default: false },
+  { key: "draft_picks",     label: "Other teams' draft picks",                    default: false },
+  { key: "draft_on_clock",  label: "Your team on the clock (Minors / Rule 5)",   default: true  },
+  { key: "draft_on_deck",   label: "Your team on deck (Minors / Rule 5)",        default: true  },
+  { key: "draft_in_hole",   label: "Your team in the hole (Minors / Rule 5)",    default: true  },
 ];
 
 function getDefaultNotifyPrefs() {
@@ -5202,14 +5209,11 @@ function renderUserSettingsView() {
   const FREQS = ["instant", "daily", "weekly", "never"];
   const FREQ_LABELS = { instant: "Instant", daily: "Daily", weekly: "Weekly", never: "Never" };
   const inApp = prefs.in_app || {};
-  // Map NOTIFY_EVENTS keys → INAPP_TOAST_EVENTS keys for the rows that have
-  // an on-screen-toast equivalent. The two rows that match are
-  // "trade_proposal" → "trade_proposal" and "trade_completed" → "trade_completed".
-  // Other rows show "—" in the on-screen column.
-  const NOTIFY_TO_INAPP = {
-    trade_proposal:  "trade_proposal",
-    trade_completed: "trade_completed",
-  };
+  // Map NOTIFY_EVENTS keys → INAPP_TOAST_EVENTS keys. All notification
+  // categories now have an in-app toggle (1:1 mapping by key).
+  const NOTIFY_TO_INAPP = Object.fromEntries(
+    NOTIFY_EVENTS.map(e => [e.key, e.key])
+  );
   const eventRowsHtml = NOTIFY_EVENTS.map(e => {
     const cur = prefs[e.key] || {};
     const cells = FREQS.map(freq => {
@@ -5383,34 +5387,101 @@ function _inAppToastEnabled(key) {
   return !!flags[key];
 }
 
-// Called from the realtime activity_log INSERT handler. Examines the row
-// and (if the user has the matching in_app toast enabled) fires a toast.
-// Filters out the current user's own actions so commish self-events don't
-// echo back.
+// Called from the realtime activity_log INSERT handler. Maps the activity
+// type to one of the INAPP_TOAST_EVENTS categories, decides whether THIS
+// user should see a toast (filters out own actions, narrows to recipients
+// for proposal events), then fires showToast if the user has the category
+// enabled.
 function _handleActivityToast(row) {
   if (!row || typeof currentOwner === "undefined" || !currentOwner) return;
   const myTeam = currentOwner.team_id;
   const actor = row.actor_team_id;
   const target = row.target_team_id;
   const p = row.payload || {};
-  if (row.type === "proposal_created" && target === myTeam) {
-    if (_inAppToastEnabled("trade_proposal")) {
-      const fromTeam = LEAGUE_DATA.teams.find(t => t.id === actor);
-      showToast(`Trade proposal from ${fromTeam ? fromTeam.name : actor}`);
-    }
+  const t = row.type || "";
+  const teamName = id => LEAGUE_DATA.teams.find(x => x.id === id)?.name || id || "?";
+  const playerName = p.player_name || "";
+  const fire = (category, message) => {
+    if (_inAppToastEnabled(category)) showToast(message);
+  };
+  // Most categories are "noisy for the actor" — silence so a commish doing
+  // bulk edits doesn't toast themselves into oblivion.
+  const myAction = actor === myTeam;
+
+  // --- Trade proposal lifecycle ---
+  if (t === "proposal_created") {
+    if (target === myTeam) fire("trade_proposal", `Trade proposal from ${teamName(actor)}`);
     return;
   }
-  if (row.type === "trade_recorded") {
-    // "Trade completed" — actor and target are both parties, plus
-    // commish-initiated trades can have actor be the commish.
-    if (actor === myTeam) return; // don't toast the actor about their own action
-    if (_inAppToastEnabled("trade_completed")) {
-      const team1 = LEAGUE_DATA.teams.find(t => t.id === p.team1);
-      const team2 = LEAGUE_DATA.teams.find(t => t.id === p.team2);
-      const t1n = team1 ? team1.name : p.team1;
-      const t2n = team2 ? team2.name : p.team2;
-      showToast(`Trade: ${t1n} ↔ ${t2n}`);
-    }
+  if (t === "proposal_accepted" || t === "proposal_rejected" || t === "proposal_withdrawn" || t === "proposal_countered") {
+    // Notify the OTHER party only (actor sees their own click in the UI).
+    if (myAction) return;
+    if (target !== myTeam && actor !== myTeam) return;
+    const verb = { proposal_accepted: "accepted", proposal_rejected: "rejected", proposal_withdrawn: "withdrew", proposal_countered: "countered" }[t];
+    fire("trade_update", `${teamName(actor)} ${verb} a trade proposal`);
+    return;
+  }
+  if (t === "proposal_message_sent" || t === "trade_message") {
+    if (myAction) return;
+    if (target !== myTeam) return;
+    fire("trade_message", `New trade message from ${teamName(actor)}`);
+    return;
+  }
+  if (t === "trade_recorded") {
+    if (myAction) return;
+    fire("trade_completed", `Trade: ${teamName(p.team1)} ↔ ${teamName(p.team2)}`);
+    return;
+  }
+
+  // --- Keeper / Rule 5 / trade-block protection toggles ---
+  if (t === "keeper_added" || t === "keeper_removed" || t === "minor_keeper_added" || t === "minor_keeper_removed" || t === "trade_block_added" || t === "trade_block_removed") {
+    if (myAction) return;
+    const verbMap = {
+      keeper_added: "tagged", keeper_removed: "untagged",
+      minor_keeper_added: "tagged (MiL)", minor_keeper_removed: "untagged (MiL)",
+      trade_block_added: "added to trade block", trade_block_removed: "removed from trade block",
+    };
+    fire("keeper_protect", `${teamName(actor)} ${verbMap[t]} ${playerName}`);
+    return;
+  }
+  if (t === "rule5_added" || t === "rule5_removed") {
+    if (myAction) return;
+    fire("rule5_protect", `${teamName(actor)} ${t === "rule5_added" ? "Rule 5–protected" : "unprotected"} ${playerName}`);
+    return;
+  }
+
+  // --- Roster moves ---
+  if (t === "player_called_up") {
+    if (myAction) return;
+    fire("callup", `${teamName(actor)} called up ${playerName}`);
+    return;
+  }
+  if (t === "player_sent_down") {
+    if (myAction) return;
+    fire("send_down", `${teamName(actor)} sent ${playerName} to the minors`);
+    return;
+  }
+
+  // --- Draft picks (other teams' picks; your own draft toasts come from
+  // _handleDraftToasts on league_state changes). ---
+  if (t === "minors_pick_made") {
+    if (target === myTeam) return; // your own pick — already in the UI
+    fire("draft_picks", `${teamName(target)} picked ${playerName} (R${p.round}.${p.pick_in_round})`);
+    return;
+  }
+  if (t === "minors_pick_passed" || t === "minors_pick_auto_skipped") {
+    if (target === myTeam) return;
+    fire("draft_picks", `${teamName(target)} passed at R${p.round}.${p.pick_in_round}`);
+    return;
+  }
+  if (t === "rule5_pick_made") {
+    if (target === myTeam) return;
+    fire("draft_picks", `${teamName(target)} Rule 5–picked ${playerName}`);
+    return;
+  }
+  if (t === "rule5_pick_auto_skipped" || t === "rule5_pick_passed") {
+    if (target === myTeam) return;
+    fire("draft_picks", `${teamName(target)} passed Rule 5 R${p.round}.${p.idx}`);
     return;
   }
 }
