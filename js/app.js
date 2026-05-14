@@ -5179,17 +5179,21 @@ function getDefaultNotifyPrefs() {
   return out;
 }
 
-// Commissioners can use the team-picker on the Settings tab to view/edit
-// another team's notification prefs. Stored module-side so the various
-// set*() handlers know which team to write to. Null = self.
+// Jeff-only team-picker on the Settings tab — Dave is a commissioner too
+// but isn't the league admin who handles cross-team config tweaks, so this
+// stays gated to a single team_id rather than to is_commissioner.
+function _canEditOtherSettings() {
+  return typeof currentOwner !== "undefined" && currentOwner && currentOwner.team_id === "jeff";
+}
+
 let _settingsTargetTeamId = null;
 
 function _getSettingsTargetTeamId() {
   if (typeof currentOwner === "undefined" || !currentOwner) return null;
   if (!_settingsTargetTeamId) return currentOwner.team_id;
-  // Only commissioners can edit other teams; if they lose commish mid-edit
-  // (or the value is stale), snap back to self.
-  if (_settingsTargetTeamId !== currentOwner.team_id && !isCommissioner()) {
+  // If the picker permission goes away mid-edit (or the value is stale),
+  // snap back to self.
+  if (_settingsTargetTeamId !== currentOwner.team_id && !_canEditOtherSettings()) {
     _settingsTargetTeamId = null;
     return currentOwner.team_id;
   }
@@ -5211,8 +5215,8 @@ function getMyNotifyPrefs(teamIdOverride) {
 // Called from the team-picker dropdown — switches the target team and
 // re-renders Settings. Commissioner-only.
 function switchSettingsTargetTeam(teamId) {
-  if (!isCommissioner() && teamId !== (currentOwner && currentOwner.team_id)) {
-    alert("Only commissioners can edit another team's settings.");
+  if (teamId !== (currentOwner && currentOwner.team_id) && !_canEditOtherSettings()) {
+    alert("Only the league admin can edit another team's settings.");
     return;
   }
   _settingsTargetTeamId = teamId || null;
@@ -5235,14 +5239,15 @@ function renderUserSettingsView() {
   const rowEmail = (typeof dbGetNotifyPrefs === "function") ? dbGetNotifyPrefs(teamId)?.email : null;
   const myEmail = isEditingOther ? (rowEmail || "") : ((currentUser && currentUser.email) || "");
 
-  // Commissioner-only team picker. Lets Jeff edit someone else's prefs
-  // without that person having to sign in. The "Web Push on this device"
-  // section is hidden when editing another team since push subscriptions
-  // are per-device (Jeff can't enable Matt's phone from his own browser).
-  const teamPickerHtml = isCommissioner()
+  // League-admin-only team picker (Jeff). Dave is a commissioner too but
+  // doesn't manage other teams' notification settings, so this is gated
+  // tighter than isCommissioner(). The "Web Push on this device" section
+  // is hidden when editing another team since push subscriptions are
+  // per-device (Jeff can't enable Matt's phone from his own browser).
+  const teamPickerHtml = _canEditOtherSettings()
     ? `
       <div class="keeper-projection" style="margin-bottom:14px">
-        <h3 style="margin-top:0">Manager (commissioner-only)</h3>
+        <h3 style="margin-top:0">Manager (league admin only)</h3>
         <div style="color:var(--text-dim);font-size:0.82rem;margin-bottom:10px">
           Edit another team's notification settings. Useful when a manager wants you to change something for them. Push subscriptions stay per-device.
         </div>
