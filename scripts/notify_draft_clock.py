@@ -243,10 +243,38 @@ def main():
     if not key:
         print("SUPABASE_SERVICE_ROLE_KEY not set", file=sys.stderr); sys.exit(1)
 
-    # Rule 5: only auto-skip is implemented server-side. Notifications for
-    # Rule 5 picks are not yet wired in (the prefs schema doesn't carry a
-    # rule5_clock slot). Skip handles the case where no commish is on-page.
+    # ------------------------------------------------------------------
+    # Auto-START drafts at scheduled times. Reads key_dates and starts
+    # the relevant draft if its scheduled time has passed and the draft
+    # isn't already running. Commissioner can still manually start
+    # earlier (or stop) at any time — we only auto-start, we don't
+    # auto-stop a started draft.
+    # ------------------------------------------------------------------
+    key_dates = fetch_league_state_row(key, "key_dates") or {}
+    now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
+    def _date_passed(iso):
+        if not iso: return False
+        try:
+            return int(parse_ts(iso).timestamp() * 1000) <= now_ms
+        except Exception:
+            return False
+
     rule5_state = fetch_league_state_row(key, "rule5")
+    rule5_scheduled = key_dates.get("rule5_draft")
+    if rule5_state and rule5_state.get("order") and not rule5_state.get("started"):
+        if _date_passed(rule5_scheduled):
+            try:
+                rule5_state["started"] = True
+                rule5_state["clock"] = {
+                    "startedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+                    "paused": False, "pausedAt": None,
+                }
+                upsert_league_state_row(key, "rule5", rule5_state)
+                print(f"Auto-started Rule 5 draft (scheduled {rule5_scheduled}).")
+            except Exception as e:
+                print(f"  ! rule5 auto-start failed: {e}", file=sys.stderr)
+
+    # Rule 5 auto-skip (after potentially auto-starting).
     if rule5_state and rule5_state.get("started") and rule5_state.get("order"):
         try:
             auto_skip_rule5(key, rule5_state)
@@ -258,6 +286,21 @@ def main():
         print("No draft state."); return
     if not (draft.get("baseOrder") and len(draft["baseOrder"]) == 12):
         print("Draft not initialized."); return
+
+    # Auto-START Minors Draft clock at the scheduled auction-draft time
+    # (the Minors Draft conventionally runs immediately after the auction).
+    minors_scheduled = key_dates.get("auction_draft")
+    if not (draft.get("clock") and draft["clock"].get("startedAt")):
+        if _date_passed(minors_scheduled):
+            try:
+                draft["clock"] = {
+                    "startedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+                    "paused": False, "pausedAt": None,
+                }
+                upsert_league_state_row(key, "draft_2027", draft)
+                print(f"Auto-started Minors Draft clock (scheduled {minors_scheduled}).")
+            except Exception as e:
+                print(f"  ! minors auto-start failed: {e}", file=sys.stderr)
 
     # ------------------------------------------------------------------
     # Auto-skip expired picks. The browser-side ticker only auto-skips
