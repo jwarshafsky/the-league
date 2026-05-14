@@ -5233,7 +5233,7 @@ function renderUserSettingsView() {
       <td class="notif-row-label" style="padding:9px 10px;color:var(--text);vertical-align:middle">${escapeHtml(e.label)}</td>
       ${cells}
       <td data-label="Push" style="padding:9px 10px;text-align:center;vertical-align:middle">${pushCol}</td>
-      <td data-label="On-screen" style="padding:9px 10px;text-align:center;vertical-align:middle">${inAppCol}</td>
+      <td data-label="In-App" style="padding:9px 10px;text-align:center;vertical-align:middle">${inAppCol}</td>
     </tr>`;
   }).join("");
 
@@ -5251,7 +5251,7 @@ function renderUserSettingsView() {
       <td data-label="Push" style="padding:8px 10px;text-align:center">
         <input type="checkbox" ${c.push ? "checked" : ""} onchange="setDraftClockChannel('${s.key}','push',this.checked)" style="accent-color:var(--accent)">
       </td>
-      <td data-label="On-screen" style="padding:8px 10px;text-align:center">
+      <td data-label="In-App" style="padding:8px 10px;text-align:center">
         <input type="checkbox" ${inApp[inAppKey] ? "checked" : ""} onchange="setInAppToast('${inAppKey}', this.checked)" style="accent-color:var(--accent)">
       </td>
     </tr>`;
@@ -5267,7 +5267,7 @@ function renderUserSettingsView() {
       <div class="keeper-projection" style="margin-bottom:14px">
         <h3 style="margin-top:0">Notifications</h3>
         <div style="color:var(--text-dim);font-size:0.82rem;margin-bottom:10px">
-          Choose how you want to hear about each kind of event. Email frequency for keeper-protection / Rule 5 / call-up / send-down / other teams' picks tops out at Daily. Push is only available for event types that fire in real time. On-screen banners pop up briefly while you have the app open.
+          Choose how you want to hear about each kind of event. Email frequency for keeper-protection / Rule 5 / call-up / send-down / other teams' picks tops out at Daily. Push is only available for event types that fire in real time. In-App banners pop up briefly while you have the app open.
         </div>
         <div class="mobile-stack-table-wrap" style="overflow-x:auto">
           <table class="player-table mobile-stack-table" style="font-size:0.85rem;width:100%;max-width:820px">
@@ -5288,7 +5288,7 @@ function renderUserSettingsView() {
                 <th style="text-align:center">Weekly</th>
                 <th style="text-align:center">Never</th>
                 <th style="text-align:center">Push</th>
-                <th style="text-align:center">On-screen</th>
+                <th style="text-align:center">In-App</th>
               </tr>
             </thead>
             <tbody>${eventRowsHtml}</tbody>
@@ -5307,7 +5307,7 @@ function renderUserSettingsView() {
               <th style="text-align:left">State</th>
               <th style="text-align:center;width:90px">Email</th>
               <th style="text-align:center;width:90px">Push</th>
-              <th style="text-align:center;width:90px">On-screen</th>
+              <th style="text-align:center;width:90px">In-App</th>
             </tr>
           </thead>
           <tbody>${dcRowsHtml}</tbody>
