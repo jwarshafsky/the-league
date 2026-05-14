@@ -5146,6 +5146,17 @@ const DRAFT_CLOCK_STATES = [
   { key: "on_clock", label: "On the clock" },
 ];
 
+// On-screen toasts that fire while the app is open. Independent of email /
+// push (those go through the server-side notifier; these are pure client).
+// Defaults ON for major events per league convention.
+const INAPP_TOAST_EVENTS = [
+  { key: "trade_proposal",  label: "Trade proposal received",         default: true  },
+  { key: "trade_completed", label: "Trade accepted / completed",       default: true  },
+  { key: "draft_on_clock",  label: "Your team on the clock (Minors / Rule 5)",  default: true },
+  { key: "draft_on_deck",   label: "Your team on deck (Minors / Rule 5)",       default: true },
+  { key: "draft_in_hole",   label: "Your team in the hole (Minors / Rule 5)",   default: true },
+];
+
 function getDefaultNotifyPrefs() {
   const out = {};
   for (const e of NOTIFY_EVENTS) {
@@ -5156,6 +5167,8 @@ function getDefaultNotifyPrefs() {
     on_deck:  { email: false, push: false },
     on_clock: { email: false, push: false },
   };
+  out.in_app = {};
+  for (const t of INAPP_TOAST_EVENTS) out.in_app[t.key] = t.default;
   return out;
 }
 
@@ -5262,6 +5275,26 @@ function renderUserSettingsView() {
       </div>
 
       <div class="keeper-projection" style="margin-bottom:14px">
+        <h3 style="margin-top:0">On-screen notifications</h3>
+        <div style="color:var(--text-dim);font-size:0.82rem;margin-bottom:10px">
+          Small banners that pop up briefly when something happens while you have the app open. These are independent of email and Push — no extra setup needed.
+        </div>
+        <div style="display:grid;grid-template-columns:1fr auto;gap:8px 18px;max-width:520px;align-items:center">
+          ${INAPP_TOAST_EVENTS.map(t => {
+            const on = !!(prefs.in_app || {})[t.key];
+            return `
+              <span style="color:var(--text);font-size:0.88rem">${escapeHtml(t.label)}</span>
+              <label style="display:inline-flex;align-items:center;cursor:pointer">
+                <input type="checkbox" ${on ? "checked" : ""}
+                  onchange="setInAppToast('${t.key}', this.checked)"
+                  style="accent-color:var(--accent);cursor:pointer;width:18px;height:18px">
+              </label>
+            `;
+          }).join("")}
+        </div>
+      </div>
+
+      <div class="keeper-projection" style="margin-bottom:14px">
         <h3 style="margin-top:0">Draft alerts (your team)</h3>
         <div style="color:var(--text-dim);font-size:0.82rem;margin-bottom:10px">
           Get notified when your team's pick is coming up. (No per-pick spam — just these three states.)
@@ -5327,6 +5360,178 @@ async function setDraftClockChannel(stateKey, channel, on) {
   if (!prefs.draft_clock[stateKey]) prefs.draft_clock[stateKey] = {};
   prefs.draft_clock[stateKey][channel] = !!on;
   await _saveMyNotifyPrefs(prefs);
+}
+
+async function setInAppToast(key, on) {
+  if (!currentOwner) return;
+  const prefs = getMyNotifyPrefs();
+  if (!prefs.in_app) prefs.in_app = {};
+  prefs.in_app[key] = !!on;
+  await _saveMyNotifyPrefs(prefs);
+}
+
+function _inAppToastEnabled(key) {
+  if (typeof currentOwner === "undefined" || !currentOwner) return false;
+  const prefs = getMyNotifyPrefs();
+  const flags = prefs.in_app || {};
+  // If the user has never visited Settings, prefs.in_app is undefined and
+  // the default-on toasts fire (per the INAPP_TOAST_EVENTS defaults baked
+  // into getDefaultNotifyPrefs).
+  return !!flags[key];
+}
+
+// Called from the realtime activity_log INSERT handler. Examines the row
+// and (if the user has the matching in_app toast enabled) fires a toast.
+// Filters out the current user's own actions so commish self-events don't
+// echo back.
+function _handleActivityToast(row) {
+  if (!row || typeof currentOwner === "undefined" || !currentOwner) return;
+  const myTeam = currentOwner.team_id;
+  const actor = row.actor_team_id;
+  const target = row.target_team_id;
+  const p = row.payload || {};
+  if (row.type === "proposal_created" && target === myTeam) {
+    if (_inAppToastEnabled("trade_proposal")) {
+      const fromTeam = LEAGUE_DATA.teams.find(t => t.id === actor);
+      showToast(`Trade proposal from ${fromTeam ? fromTeam.name : actor}`);
+    }
+    return;
+  }
+  if (row.type === "trade_recorded") {
+    // "Trade completed" — actor and target are both parties, plus
+    // commish-initiated trades can have actor be the commish.
+    if (actor === myTeam) return; // don't toast the actor about their own action
+    if (_inAppToastEnabled("trade_completed")) {
+      const team1 = LEAGUE_DATA.teams.find(t => t.id === p.team1);
+      const team2 = LEAGUE_DATA.teams.find(t => t.id === p.team2);
+      const t1n = team1 ? team1.name : p.team1;
+      const t2n = team2 ? team2.name : p.team2;
+      showToast(`Trade: ${t1n} ↔ ${t2n}`);
+    }
+    return;
+  }
+}
+
+// Memo of last-shown draft-clock toast key so we don't re-fire on every
+// realtime echo. Format: "minors:on_clock:R3.5" / "rule5:on_deck:R2.4".
+const _DRAFT_TOAST_SHOWN = new Set();
+
+function _draftSlotKey(round, pickInRound) {
+  return `R${round}.${pickInRound}`;
+}
+
+// Compute "where is my team in the queue?" for a given draft. Returns
+// { onClock, onDeck, inHole } each either { round, pickInRound } or null.
+function _draftTriplet(draft, getPickOwner_) {
+  const out = { onClock: null, onDeck: null, inHole: null };
+  if (!draft || !Array.isArray(draft.baseOrder) || !draft.baseOrder.length) return out;
+  const n = draft.baseOrder.length;
+  const rounds = draft.rounds || 0;
+  const made = new Set((draft.picks || []).map(p => `${p.round}p${p.pickInRound}`));
+  const passed = new Set((draft.passed || []).map(p => `${p.round}p${p.pickInRound}`));
+  const slots = [];
+  for (let r = 1; r <= rounds && slots.length < 3; r++) {
+    for (let pir = 1; pir <= n && slots.length < 3; pir++) {
+      const key = `${r}p${pir}`;
+      if (made.has(key) || passed.has(key)) continue;
+      slots.push({ round: r, pickInRound: pir });
+    }
+  }
+  const labels = ["onClock", "onDeck", "inHole"];
+  for (let i = 0; i < slots.length; i++) {
+    out[labels[i]] = slots[i];
+  }
+  return out;
+}
+
+function _rule5Triplet(state) {
+  const out = { onClock: null, onDeck: null, inHole: null };
+  if (!state || !Array.isArray(state.order) || !state.order.length) return out;
+  const n = state.order.length;
+  const picks = state.picks || [];
+  // Walk forward from the next unmade slot.
+  const labels = ["onClock", "onDeck", "inHole"];
+  let assigned = 0;
+  let cursor = picks.length;
+  for (let safety = 0; safety < 100 && assigned < 3; safety++, cursor++) {
+    const round = Math.floor(cursor / n) + 1;
+    const idx = cursor % n;
+    const teamIdx = (round % 2 === 0) ? (n - 1 - idx) : idx;
+    const teamId = state.order[teamIdx];
+    // End if a full prior round was all passes
+    if (cursor >= n) {
+      const prev = picks.slice(cursor - n, cursor);
+      if (prev.length === n && prev.every(p => p.pass)) break;
+    }
+    out[labels[assigned]] = { round, idx, teamId };
+    assigned++;
+  }
+  return out;
+}
+
+// Called after every league_state realtime refresh. Detects whether the
+// user's team has newly entered one of the on-clock / on-deck / in-hole
+// positions for the Minors Draft or Rule 5, and toasts accordingly.
+function _handleDraftToasts() {
+  if (typeof currentOwner === "undefined" || !currentOwner) return;
+  const myTeam = currentOwner.team_id;
+
+  // Minors Draft
+  try {
+    if (typeof getDraft === "function" && typeof getPickOwner === "function") {
+      const draft = getDraft();
+      if (draft && draft.baseOrder?.length) {
+        const trip = _draftTriplet(draft);
+        for (const [slot, label] of [["onClock", "draft_on_clock"], ["onDeck", "draft_on_deck"], ["inHole", "draft_in_hole"]]) {
+          const s = trip[slot];
+          if (!s) continue;
+          const owner = getPickOwner(draft, s.round, s.pickInRound);
+          if (owner !== myTeam) continue;
+          const dedupKey = `minors:${slot}:${_draftSlotKey(s.round, s.pickInRound)}`;
+          if (_DRAFT_TOAST_SHOWN.has(dedupKey)) continue;
+          _DRAFT_TOAST_SHOWN.add(dedupKey);
+          if (!_inAppToastEnabled(label)) continue;
+          const msg = slot === "onClock"
+            ? `On the clock — Minors Draft ${s.round}.${s.pickInRound}`
+            : slot === "onDeck"
+              ? `On deck — Minors Draft ${s.round}.${s.pickInRound}`
+              : `In the hole — Minors Draft ${s.round}.${s.pickInRound}`;
+          showToast(msg, slot === "onClock" ? "warn" : undefined);
+        }
+      }
+    }
+  } catch (e) { console.warn("minors draft toast check failed:", e); }
+
+  // Rule 5
+  try {
+    if (typeof getRule5State === "function") {
+      const state = getRule5State();
+      if (state && state.started && Array.isArray(state.order) && state.order.length) {
+        const trip = _rule5Triplet(state);
+        for (const [slot, label] of [["onClock", "draft_on_clock"], ["onDeck", "draft_on_deck"], ["inHole", "draft_in_hole"]]) {
+          const s = trip[slot];
+          if (!s) continue;
+          if (s.teamId !== myTeam) continue;
+          const dedupKey = `rule5:${slot}:R${s.round}.${s.idx + 1}`;
+          if (_DRAFT_TOAST_SHOWN.has(dedupKey)) continue;
+          _DRAFT_TOAST_SHOWN.add(dedupKey);
+          if (!_inAppToastEnabled(label)) continue;
+          const msg = slot === "onClock"
+            ? `On the clock — Rule 5 R${s.round}.${s.idx + 1}`
+            : slot === "onDeck"
+              ? `On deck — Rule 5 R${s.round}.${s.idx + 1}`
+              : `In the hole — Rule 5 R${s.round}.${s.idx + 1}`;
+          showToast(msg, slot === "onClock" ? "warn" : undefined);
+        }
+      }
+    }
+  } catch (e) { console.warn("rule5 toast check failed:", e); }
+}
+
+// Expose for db.js to call after realtime cache refreshes.
+if (typeof window !== "undefined") {
+  window._handleActivityToast = _handleActivityToast;
+  window._handleDraftToasts = _handleDraftToasts;
 }
 
 async function _saveMyNotifyPrefs(prefs) {

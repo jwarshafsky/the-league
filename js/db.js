@@ -467,10 +467,23 @@ function _subscribeToChanges() {
     _realtimeChannel = supabaseClient.channel("league-data")
       .on("postgres_changes", { event: "*", schema: "public", table: "trades" }, refresh)
       .on("postgres_changes", { event: "*", schema: "public", table: "keeper_selections" }, refresh)
-      .on("postgres_changes", { event: "*", schema: "public", table: "league_state" }, refresh)
+      // league_state covers draft / rule5 transitions — re-check whether the
+      // user's team has just entered an on-clock / on-deck / in-hole slot
+      // after every refresh.
+      .on("postgres_changes", { event: "*", schema: "public", table: "league_state" }, async (...args) => {
+        await refresh(...args);
+        if (typeof window !== "undefined" && typeof window._handleDraftToasts === "function") {
+          window._handleDraftToasts();
+        }
+      })
       .on("postgres_changes", { event: "*", schema: "public", table: "callup_overrides" }, refresh)
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "activity_log" }, async () => {
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "activity_log" }, async (payload) => {
         await _fetchAll();
+        // Fire an in-app toast for the newly-inserted row before the view
+        // re-renders, so the user sees it even if they're not on Activity.
+        if (typeof window !== "undefined" && typeof window._handleActivityToast === "function") {
+          try { window._handleActivityToast(payload?.new); } catch (e) { console.warn("activity toast failed:", e); }
+        }
         if (typeof currentView !== "undefined" && currentView === "activity" && typeof switchTab === "function") {
           switchTab("activity");
         }
