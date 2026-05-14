@@ -5025,6 +5025,30 @@ function switchTab(tab) {
 //
 // Chrome and Edge fire `beforeinstallprompt` when the PWA is eligible to
 // install. We stash the event so a click on the "Install" button can call
+// Measure the sticky .header-stack and expose its height as a CSS custom
+// property on :root so sticky elements inside the main content (Key Dates
+// sidebar, etc.) can offset by `calc(var(--header-stack-height) + 14px)`
+// and stay below the header instead of being covered by it.
+function _syncHeaderHeightVar() {
+  const hs = document.querySelector(".header-stack");
+  if (!hs) return;
+  const h = Math.round(hs.getBoundingClientRect().height);
+  document.documentElement.style.setProperty("--header-stack-height", `${h}px`);
+}
+window.addEventListener("resize", _syncHeaderHeightVar);
+window.addEventListener("load", _syncHeaderHeightVar);
+// Re-measure after each tab switch — nav-tabs hide on mobile so the
+// header height shrinks when the drawer takes over.
+const _origSwitchTabForHeader = (typeof window !== "undefined" && window.switchTab) || null;
+// Defer first measurement until DOM is ready.
+if (typeof document !== "undefined") {
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", _syncHeaderHeightVar);
+  } else {
+    _syncHeaderHeightVar();
+  }
+}
+
 // prompt() on it later. Safari (iOS + desktop) doesn't fire this event;
 // for those we show step-by-step instructions instead.
 let _deferredInstallPrompt = null;
@@ -8520,7 +8544,7 @@ function renderKeyDatesSidebar() {
     `;
   }).join("");
   return `
-    <aside style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:14px 18px;box-shadow:var(--shadow);width:280px;flex-shrink:0;align-self:flex-start;position:sticky;top:14px">
+    <aside style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:14px 18px;box-shadow:var(--shadow);width:280px;flex-shrink:0;align-self:flex-start;position:sticky;top:calc(var(--header-stack-height, 60px) + 14px)">
       <h3 style="margin:0 0 8px;font-size:1rem;color:var(--text-bright)">Key Dates</h3>
       ${rows}
     </aside>
