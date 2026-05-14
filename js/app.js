@@ -8760,7 +8760,14 @@ function _voteTallyHtml(vote, rows, compact) {
   return `${header}${lineHtml}${pendingHtml}`;
 }
 
-// Realtime hook: commish gets a toast each time a ballot lands.
+// Auto-end threshold: a 12-team league needs 7 votes for a clear majority.
+const VOTE_MAJORITY_THRESHOLD = 7;
+// Per-vote dedup so the auto-end check + email only fire once even though
+// the realtime channel may echo the trigger ballot multiple times.
+const _AUTO_ENDED_VOTES = new Set();
+
+// Realtime hook: commish gets a toast each time a ballot lands AND
+// auto-ends the vote if any option has reached majority.
 function _handleVoteCast(row) {
   if (!row || !isCommissioner()) return;
   const votes = _getActiveVotes();
@@ -8770,6 +8777,59 @@ function _handleVoteCast(row) {
   const teamName = LEAGUE_DATA.teams.find(t => t.id === row.team_id)?.name || row.team_id;
   const titlePrefix = vote.title ? `${vote.title}: ` : "";
   if (typeof showToast === "function") showToast(`Vote (${titlePrefix}${teamName} → ${optName})`);
+  // Race-tolerant majority check.
+  _maybeAutoEndVote(vote);
+}
+
+async function _maybeAutoEndVote(vote) {
+  if (!vote || !vote.id) return;
+  if (_AUTO_ENDED_VOTES.has(vote.id)) return;
+  try {
+    const rows = await fetchAllVotesAsync(vote.id);
+    const counts = (vote.options || []).map(() => 0);
+    const buckets = (vote.options || []).map(() => []);
+    for (const r of rows) {
+      if (counts[r.option_index] != null) {
+        counts[r.option_index] += 1;
+        buckets[r.option_index].push(r.team_id);
+      }
+    }
+    let winnerIdx = -1;
+    for (let i = 0; i < counts.length; i++) {
+      if (counts[i] >= VOTE_MAJORITY_THRESHOLD) { winnerIdx = i; break; }
+    }
+    if (winnerIdx === -1) return;
+    _AUTO_ENDED_VOTES.add(vote.id);
+    // Remove from active list and log result. The activity_log row is
+    // what triggers the commissioner email via notify_instant.py.
+    const all = (typeof dbGetActiveVotes === "function") ? dbGetActiveVotes() : [];
+    const next = all.filter(v => v.id !== vote.id);
+    if (typeof saveActiveVotesAsync === "function") await saveActiveVotesAsync(next);
+    const winnerName = (vote.options || [])[winnerIdx];
+    const teamName = id => LEAGUE_DATA.teams.find(t => t.id === id)?.name || id;
+    const breakdown = (vote.options || []).map((opt, i) =>
+      `${opt}: ${counts[i]} (${buckets[i].map(teamName).sort().join(", ") || "none"})`
+    ).join(" | ");
+    if (typeof logActivityAsync === "function") {
+      await logActivityAsync("vote_ended", {
+        vote_id: vote.id,
+        title: vote.title,
+        winning_option: winnerName,
+        winning_index: winnerIdx,
+        counts,
+        buckets,
+        auto: true,
+        breakdown,
+      });
+    }
+    if (typeof showToast === "function") {
+      showToast(`Vote auto-ended: "${winnerName}" wins ${counts[winnerIdx]}-${rows.length - counts[winnerIdx]}`);
+    }
+  } catch (e) {
+    // Allow another commish (or this one) to retry by clearing the flag.
+    _AUTO_ENDED_VOTES.delete(vote.id);
+    console.warn("auto-end vote failed:", e);
+  }
 }
 if (typeof window !== "undefined") {
   window._handleVoteCast = _handleVoteCast;
@@ -8859,9 +8919,34 @@ async function endActiveVote(voteId) {
   if (!confirm("End this vote now? Final tally will be visible to all managers.")) return;
   try {
     const existing = (typeof dbGetActiveVotes === "function") ? dbGetActiveVotes() : [];
+    const vote = existing.find(v => v.id === voteId);
     const next = existing.filter(v => v.id !== voteId);
     if (typeof saveActiveVotesAsync === "function") await saveActiveVotesAsync(next);
-    if (typeof logActivityAsync === "function") logActivityAsync("vote_ended", { vote_id: voteId });
+    // Compute the final tally so the activity row carries the result —
+    // notify_instant.py uses this to email commissioners with the outcome.
+    let payload = { vote_id: voteId, title: vote?.title, auto: false };
+    if (vote) {
+      try {
+        const rows = await fetchAllVotesAsync(voteId);
+        const counts = (vote.options || []).map(() => 0);
+        const buckets = (vote.options || []).map(() => []);
+        for (const r of rows) {
+          if (counts[r.option_index] != null) {
+            counts[r.option_index] += 1;
+            buckets[r.option_index].push(r.team_id);
+          }
+        }
+        let winnerIdx = 0;
+        for (let i = 1; i < counts.length; i++) if (counts[i] > counts[winnerIdx]) winnerIdx = i;
+        const winnerName = (vote.options || [])[winnerIdx];
+        const teamName = id => LEAGUE_DATA.teams.find(t => t.id === id)?.name || id;
+        const breakdown = (vote.options || []).map((opt, i) =>
+          `${opt}: ${counts[i]} (${buckets[i].map(teamName).sort().join(", ") || "none"})`
+        ).join(" | ");
+        payload = { ...payload, winning_option: winnerName, winning_index: winnerIdx, counts, buckets, breakdown };
+      } catch { /* fall back to minimal payload */ }
+    }
+    if (typeof logActivityAsync === "function") logActivityAsync("vote_ended", payload);
     if (typeof showToast === "function") showToast("Vote ended");
     switchTab("settings");
   } catch (e) {

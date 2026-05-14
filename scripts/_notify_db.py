@@ -162,6 +162,8 @@ def event_category(activity_type):
     if t in ("player_sent_down",): return "send_down"
     if t in ("minors_pick_made", "minors_pick_passed", "minors_pick_auto_skipped", "rule5_pick_made", "rule5_pick_auto_skipped"):
         return "draft_picks"
+    if t in ("vote_initiated", "vote_ended"):
+        return "league_vote"
     return None
 
 
@@ -198,4 +200,13 @@ def describe_activity(a):
     if t == "proposal_rejected":    return f"{actor} rejected a proposal from {target}"
     if t == "proposal_withdrawn":   return f"{actor} withdrew a proposal"
     if t == "proposal_countered":   return f"{actor} countered a proposal"
+    if t == "vote_initiated":       return f"League vote initiated: {p.get('title') or '?'}"
+    if t == "vote_ended":
+        title = p.get("title") or "vote"
+        winner = p.get("winning_option")
+        breakdown = p.get("breakdown") or ""
+        auto_marker = " (auto: majority reached)" if p.get("auto") else ""
+        if winner:
+            return f"Vote ended — \"{title}\"{auto_marker}: <strong>{winner}</strong> wins. {breakdown}"
+        return f"Vote ended: {title}{auto_marker}"
     return f"{actor} {t}".strip()

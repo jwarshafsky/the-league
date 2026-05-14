@@ -48,19 +48,26 @@ CATEGORY_META = {
     "trade_update":     {"subject_prefix": "Trade update",       "url": APP_URL + "?tab=trades&sub=inbox", "title": "Trade update",    "tag": "UPDATE"},
     "trade_message":    {"subject_prefix": "New trade message",  "url": APP_URL + "?tab=trades&sub=inbox", "title": "New message",     "tag": "MESSAGE"},
     "trade_completed":  {"subject_prefix": "Trade completed",    "url": APP_URL + "?tab=trades&sub=log",   "title": "Trade completed", "tag": "TRADE"},
+    # League votes — initiated + ended events email commissioners only.
+    "league_vote":      {"subject_prefix": "League vote",        "url": APP_URL + "?tab=rules",            "title": "League vote",     "tag": "VOTE"},
 }
 
 
-def recipients_for_activity(activity, all_prefs, channel):
+def recipients_for_activity(activity, all_prefs, channel, commish_team_ids=None):
     """Return list of team_ids that should be notified for this event on
     the given channel ('email' or 'push'). Builds a small set keyed by team_id
-    so each recipient gets at most one notification per event."""
+    so each recipient gets at most one notification per event.
+
+    commish_team_ids: set of team_ids whose owners are flagged commissioner
+    (used for vote_* events which fan out to commissioners only).
+    """
     a = activity
     cat = event_category(a.get("type"))
     if not cat: return []
     payload = a.get("payload") or {}
     actor = a.get("actor_team_id")
     target = a.get("target_team_id")
+    commish_team_ids = commish_team_ids or set()
 
     # Determine "candidate" recipients per event type. The recipient is
     # whoever is meaningfully affected; receive_all flag overrides this and
@@ -83,6 +90,10 @@ def recipients_for_activity(activity, all_prefs, channel):
         # Make sure trade parties are included even if they have no prefs row.
         if payload.get("team1"): candidates.add(payload["team1"])
         if payload.get("team2"): candidates.add(payload["team2"])
+    elif t in ("vote_initiated", "vote_ended"):
+        # League votes — commissioners only.
+        for tid in commish_team_ids:
+            candidates.add(tid)
     else:
         # For keeper_* / rule5_* / callup / send_down / draft picks etc., the
         # "candidate" pool is the actor team (their own actions don't notify
@@ -102,6 +113,11 @@ def recipients_for_activity(activity, all_prefs, channel):
         if tid == actor:
             # Don't notify the actor about their own action.
             continue
+        # League vote events: commissioners get them unconditionally on
+        # email regardless of prefs (this is a league-business notification,
+        # not a routine alert). Push still respects opt-in.
+        if cat == "league_vote" and channel == "email" and tid in commish_team_ids:
+            out.append(tid); continue
         row = (all_prefs or {}).get(tid) or {}
         if row.get("receive_all"):
             out.append(tid); continue
@@ -146,6 +162,8 @@ def main():
     emails_by_uid = fetch_emails_by_user_id(key)
     # Email per team — prefer the explicit row email, else look up via owners.
     all_prefs = fetch_notify_prefs(key)
+    # Set of team_ids whose owners are commissioners (used for vote events).
+    commish_team_ids = {o["team_id"] for o in owners if o.get("is_commissioner") and o.get("team_id")}
     push_subs = fetch_push_subs(key)
     push_by_team = {}
     for s in push_subs:
@@ -174,7 +192,7 @@ def main():
             continue  # Not an "instant"-eligible category (those are digest-only).
         headline = describe_activity(a)
         # Email — fan out to every manager on the team.
-        targets = recipients_for_activity(a, all_prefs, "email")
+        targets = recipients_for_activity(a, all_prefs, "email", commish_team_ids)
         for tid in targets:
             addrs = emails_by_team.get(tid) or set()
             if not addrs: continue
@@ -191,7 +209,7 @@ def main():
                     print(f"[preview email] {tid} <{addr}> — {subject}")
         # Push
         if vapid_priv:
-            targets = recipients_for_activity(a, all_prefs, "push")
+            targets = recipients_for_activity(a, all_prefs, "push", commish_team_ids)
             payload = {
                 "title": f"{meta['tag'].title()}: {team_name(a.get('actor_team_id') or '?')}",
                 "body": headline.replace("<strong>", "").replace("</strong>", ""),
