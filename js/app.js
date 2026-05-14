@@ -6246,7 +6246,11 @@ function renderSettingsView() {
   const enforceR5 = !!settings.enforceRule5RosterSpot;
   const enforceMiL = !!settings.enforceMinorsRosterSpot;
   const reviewTotal = _commishReviewTotal();
-  const reviewBanner = reviewTotal
+  // Only nag with the orange banner during the same offseason window
+  // that triggers auto-expand. Outside that, the section count is shown
+  // inline on its own summary header — no need for a top-of-page alert.
+  const showReviewBanner = reviewTotal > 0 && _shouldAutoOpenCommishReview();
+  const reviewBanner = showReviewBanner
     ? `<div style="background:rgba(249,115,22,0.12);border:1px solid rgba(249,115,22,0.4);border-radius:6px;padding:10px 12px;margin-bottom:14px;color:var(--orange);font-size:0.84rem">
         <strong>${reviewTotal} item${reviewTotal === 1 ? "" : "s"} need${reviewTotal === 1 ? "s" : ""} your review.</strong>
         See the section below.
