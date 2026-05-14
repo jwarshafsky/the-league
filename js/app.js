@@ -6388,14 +6388,53 @@ function _normalizePlayerName(name) {
     .trim();
 }
 
-// Parse a pasted list. Tolerant: accepts "1. Player Name (POS, TM)",
-// "1 Player", or just "Player Name" per line. Rank = line number for
-// unnumbered lines, or the leading number when present.
+// Parse a pasted ranking list. Supports two formats:
+//
+// (A) ESPN auction-value table — what gets pasted from
+//     fantasy.espn.com when you select rows. Each player spans multiple
+//     lines: rank / blank / name / team / pos / posRank / $10val / $12val
+//     plus a header at the top with "Rank/Player/Team/..." text.
+//
+// (B) Single-line — "1. Player Name (POS, TM)" or just "Player Name"
+//     per row, rank = leading number or line index.
+//
+// Detection: if ANY line is purely a number, use the multi-line parser
+// (ESPN format); otherwise fall back to single-line.
 function _parseRanksList(text) {
   const out = new Map();
-  const lines = (text || "").split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  if (!text) return out;
+  const lines = text.split(/\r?\n/);
+  const hasPureNumericLine = lines.some(l => /^\s*\d+\s*$/.test(l));
+
+  if (hasPureNumericLine) {
+    // ESPN format. Pure-numeric line = rank. Walk forward up to a few
+    // lines to find the player name (first non-empty, non-numeric line
+    // that isn't all-caps team abbreviation either — though "Shohei
+    // Ohtani" beats "LAD" at the j+1 position since the tab/blank line
+    // sits between rank and name).
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trim();
+      if (!/^\d+$/.test(line)) continue;
+      const rank = parseInt(line, 10);
+      for (let j = i + 1; j < lines.length && j < i + 5; j++) {
+        const candidate = lines[j].trim();
+        if (!candidate) continue;
+        if (/^\d+$/.test(candidate)) continue;
+        // Skip $-value lines and pos-rank like DH1/OF7.
+        if (/^\$/.test(candidate)) continue;
+        if (/^[A-Z]{1,4}\d+$/.test(candidate)) continue;
+        out.set(_normalizePlayerName(candidate), { rank, originalName: candidate });
+        break;
+      }
+    }
+    return out;
+  }
+
+  // Single-line fallback.
   let autoRank = 0;
-  for (const line of lines) {
+  for (const raw of lines) {
+    const line = raw.trim();
+    if (!line) continue;
     autoRank++;
     let rank = autoRank;
     let rest = line;
@@ -6405,9 +6444,7 @@ function _parseRanksList(text) {
       if (Number.isFinite(explicit)) rank = explicit;
       rest = m[2];
     }
-    // Strip trailing parentheticals: "(SS, TEX)" etc.
     rest = rest.replace(/\s*\([^)]*\)\s*$/g, "").trim();
-    // Strip trailing position+team after dash: "Bobby Witt Jr - SS, KC"
     rest = rest.replace(/\s*[-–]\s*[A-Z]{1,3}(?:,.*)?$/i, "").trim();
     if (rest) out.set(_normalizePlayerName(rest), { rank, originalName: rest });
   }
