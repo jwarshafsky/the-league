@@ -8584,6 +8584,14 @@ function _voteIsActive(vote) {
   return new Date(vote.closes_at).getTime() > Date.now();
 }
 
+// Returns the list of currently-active votes (auto-filters out any that
+// have passed their closes_at — those are technically still in the array
+// but shouldn't show up in the UI).
+function _getActiveVotes() {
+  const all = (typeof dbGetActiveVotes === "function") ? dbGetActiveVotes() : [];
+  return all.filter(v => _voteIsActive(v));
+}
+
 function _formatVoteCloses(iso) {
   if (!iso) return "no deadline";
   const d = new Date(iso);
@@ -8598,29 +8606,35 @@ function _formatVoteCloses(iso) {
   return `closes in ${hours}h ${mins}m (${d.toLocaleString()})`;
 }
 
-function renderActiveVoteNoticeForRules() {
-  const vote = (typeof dbGetActiveVote === "function") ? dbGetActiveVote() : null;
-  if (!_voteIsActive(vote)) return "";
-  const myVoteHtml = `<div id="rules-vote-my-status" style="margin-top:6px;color:var(--text-dim);font-size:0.78rem">Loading your vote…</div>`;
+function _renderSingleVoteCard(vote) {
+  const safeId = escapeJsString(vote.id);
   const optionsHtml = (vote.options || []).map((opt, i) => `
-    <button class="trade-btn" onclick="submitRulesVote('${escapeJsString(vote.id)}', ${i})"
+    <button class="trade-btn" onclick="submitRulesVote('${safeId}', ${i})"
       style="margin-right:6px;margin-bottom:6px;font-size:0.85rem">${escapeHtml(opt)}</button>
   `).join("");
+  const myStatusId = `rules-vote-my-status-${escapeHtml(vote.id)}`;
+  const tallyId = `rules-vote-tally-${escapeHtml(vote.id)}`;
   const tallyHtml = isCommissioner()
-    ? `<div id="rules-vote-tally" style="margin-top:8px;color:var(--text-dim);font-size:0.78rem">Loading tally…</div>`
+    ? `<div id="${tallyId}" style="margin-top:8px;color:var(--text-dim);font-size:0.78rem">Loading tally…</div>`
     : "";
   return `
-    <div style="background:rgba(34,197,94,0.10);border:1px solid rgba(34,197,94,0.4);border-radius:8px;padding:14px 16px;margin-bottom:16px">
+    <div style="background:rgba(34,197,94,0.10);border:1px solid rgba(34,197,94,0.4);border-radius:8px;padding:14px 16px;margin-bottom:12px">
       <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px;margin-bottom:6px">
         <h3 style="margin:0;color:var(--green);font-size:1.05rem">League Vote: ${escapeHtml(vote.title || "")}</h3>
         <span style="color:var(--text-dim);font-size:0.78rem">${_formatVoteCloses(vote.closes_at)}</span>
       </div>
       <div style="color:var(--text);font-size:0.88rem;margin-bottom:10px;white-space:pre-wrap">${escapeHtml(vote.description || "")}</div>
       <div>${optionsHtml}</div>
-      ${myVoteHtml}
+      <div id="${myStatusId}" style="margin-top:6px;color:var(--text-dim);font-size:0.78rem">Loading your vote…</div>
       ${tallyHtml}
     </div>
   `;
+}
+
+function renderActiveVoteNoticeForRules() {
+  const votes = _getActiveVotes();
+  if (!votes.length) return "";
+  return votes.map(_renderSingleVoteCard).join("");
 }
 
 async function submitRulesVote(voteId, optionIndex) {
@@ -8635,29 +8649,30 @@ async function submitRulesVote(voteId, optionIndex) {
 }
 
 async function _refreshRulesVoteStatus() {
-  const vote = (typeof dbGetActiveVote === "function") ? dbGetActiveVote() : null;
-  if (!_voteIsActive(vote)) return;
-  // Show non-commish their own ballot status.
-  const my = document.getElementById("rules-vote-my-status");
-  if (my && currentOwner) {
-    try {
-      const row = await fetchMyVoteAsync(vote.id);
-      if (row) {
-        const opt = (vote.options || [])[row.option_index];
-        my.textContent = `Your vote: "${opt}" — change by clicking another option.`;
-        my.style.color = "var(--accent)";
-      } else {
-        my.textContent = "You haven't voted yet.";
-      }
-    } catch (e) { my.textContent = ""; }
-  }
-  // Commish-only running tally — also lists WHO voted for each option.
-  const tally = document.getElementById("rules-vote-tally");
-  if (tally && isCommissioner()) {
-    try {
-      const rows = await fetchAllVotesAsync(vote.id);
-      tally.innerHTML = _voteTallyHtml(vote, rows, /*compact*/ false);
-    } catch (e) { tally.textContent = ""; }
+  const votes = _getActiveVotes();
+  for (const vote of votes) {
+    // Show non-commish their own ballot status.
+    const my = document.getElementById(`rules-vote-my-status-${vote.id}`);
+    if (my && currentOwner) {
+      try {
+        const row = await fetchMyVoteAsync(vote.id);
+        if (row) {
+          const opt = (vote.options || [])[row.option_index];
+          my.textContent = `Your vote: "${opt}" — change by clicking another option.`;
+          my.style.color = "var(--accent)";
+        } else {
+          my.textContent = "You haven't voted yet.";
+        }
+      } catch (e) { my.textContent = ""; }
+    }
+    // Commish-only running tally.
+    const tally = document.getElementById(`rules-vote-tally-${vote.id}`);
+    if (tally && isCommissioner()) {
+      try {
+        const rows = await fetchAllVotesAsync(vote.id);
+        tally.innerHTML = _voteTallyHtml(vote, rows, /*compact*/ false);
+      } catch (e) { tally.textContent = ""; }
+    }
   }
 }
 
@@ -8689,11 +8704,13 @@ function _voteTallyHtml(vote, rows, compact) {
 // Realtime hook: commish gets a toast each time a ballot lands.
 function _handleVoteCast(row) {
   if (!row || !isCommissioner()) return;
-  const vote = (typeof dbGetActiveVote === "function") ? dbGetActiveVote() : null;
-  if (!vote || row.vote_id !== vote.id) return;
+  const votes = _getActiveVotes();
+  const vote = votes.find(v => v.id === row.vote_id);
+  if (!vote) return;
   const optName = (vote.options || [])[row.option_index] || `option ${row.option_index}`;
   const teamName = LEAGUE_DATA.teams.find(t => t.id === row.team_id)?.name || row.team_id;
-  if (typeof showToast === "function") showToast(`Vote: ${teamName} → ${optName}`);
+  const titlePrefix = vote.title ? `${vote.title}: ` : "";
+  if (typeof showToast === "function") showToast(`Vote (${titlePrefix}${teamName} → ${optName})`);
 }
 if (typeof window !== "undefined") {
   window._handleVoteCast = _handleVoteCast;
@@ -8702,17 +8719,27 @@ if (typeof window !== "undefined") {
 // --- Commish: initiate vote form ---
 
 function renderInitiateVoteSection() {
-  const active = (typeof dbGetActiveVote === "function") ? dbGetActiveVote() : null;
-  if (_voteIsActive(active)) {
-    return `
-      <div style="color:var(--text);font-size:0.85rem;margin-bottom:8px">
-        Active vote: <strong>${escapeHtml(active.title)}</strong> — ${_formatVoteCloses(active.closes_at)}
+  const active = _getActiveVotes();
+  const activeListHtml = active.length
+    ? `
+      <div style="margin-bottom:14px">
+        <div style="font-weight:700;color:var(--text-bright);font-size:0.86rem;margin-bottom:6px">Active votes (${active.length})</div>
+        ${active.map(v => `
+          <div style="background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:10px 12px;margin-bottom:8px">
+            <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px;margin-bottom:4px">
+              <span style="color:var(--text);font-weight:600">${escapeHtml(v.title)}</span>
+              <span style="color:var(--text-dim);font-size:0.74rem">${_formatVoteCloses(v.closes_at)}</span>
+            </div>
+            <div id="rules-vote-tally-cmt-${escapeHtml(v.id)}" style="color:var(--text-dim);font-size:0.78rem;margin:6px 0 8px">Loading tally…</div>
+            <button class="trade-btn trade-btn-cancel" onclick="endActiveVote('${escapeJsString(v.id)}')" style="font-size:0.78rem;padding:4px 10px">End vote now</button>
+          </div>
+        `).join("")}
       </div>
-      <div id="rules-vote-tally-cmt" style="color:var(--text-dim);font-size:0.78rem;margin-bottom:8px">Loading tally…</div>
-      <button class="trade-btn trade-btn-cancel" onclick="endActiveVote()" style="font-size:0.82rem">End vote now</button>
-    `;
-  }
+    `
+    : "";
   return `
+    ${activeListHtml}
+    <div style="font-weight:700;color:var(--text-bright);font-size:0.86rem;margin-bottom:6px">Initiate a new vote</div>
     <div style="display:grid;gap:8px;max-width:520px">
       <input type="text" id="vote-title" placeholder="Vote title (e.g. 'Change roster limits to 26')"
         style="background:var(--bg);color:var(--text);border:1px solid var(--border);padding:8px 10px;border-radius:6px;font-size:0.9rem">
@@ -8754,7 +8781,11 @@ async function submitInitiateVote() {
     closes_at: closes.toISOString(),
   };
   try {
-    if (typeof saveActiveVoteAsync === "function") await saveActiveVoteAsync(vote);
+    const existing = (typeof dbGetActiveVotes === "function") ? dbGetActiveVotes() : [];
+    // Drop any expired votes from the array while we're saving so the list
+    // stays clean. Keeps unrelated active votes intact.
+    const next = existing.filter(v => _voteIsActive(v)).concat(vote);
+    if (typeof saveActiveVotesAsync === "function") await saveActiveVotesAsync(next);
     if (typeof logActivityAsync === "function") logActivityAsync("vote_initiated", { title, closes_at: vote.closes_at });
     if (typeof showToast === "function") showToast("Vote initiated");
     switchTab("settings");
@@ -8763,14 +8794,15 @@ async function submitInitiateVote() {
   }
 }
 
-async function endActiveVote() {
+async function endActiveVote(voteId) {
   if (!isCommissioner()) return;
+  if (!voteId) return;
   if (!confirm("End this vote now? Final tally will be visible to all managers.")) return;
   try {
-    // "Ending" = wipe active_vote. The ballots stay in league_votes for
-    // history but no longer show the live banner.
-    if (typeof saveActiveVoteAsync === "function") await saveActiveVoteAsync(null);
-    if (typeof logActivityAsync === "function") logActivityAsync("vote_ended", {});
+    const existing = (typeof dbGetActiveVotes === "function") ? dbGetActiveVotes() : [];
+    const next = existing.filter(v => v.id !== voteId);
+    if (typeof saveActiveVotesAsync === "function") await saveActiveVotesAsync(next);
+    if (typeof logActivityAsync === "function") logActivityAsync("vote_ended", { vote_id: voteId });
     if (typeof showToast === "function") showToast("Vote ended");
     switchTab("settings");
   } catch (e) {
@@ -8779,14 +8811,16 @@ async function endActiveVote() {
 }
 
 async function _refreshSettingsVoteTally() {
-  const tally = document.getElementById("rules-vote-tally-cmt");
-  if (!tally || !isCommissioner()) return;
-  const vote = (typeof dbGetActiveVote === "function") ? dbGetActiveVote() : null;
-  if (!_voteIsActive(vote)) return;
-  try {
-    const rows = await fetchAllVotesAsync(vote.id);
-    tally.innerHTML = `<div style="margin-bottom:4px">${rows.length}/12 voted</div>` + _voteTallyHtml(vote, rows, /*compact*/ true);
-  } catch (e) { tally.textContent = ""; }
+  if (!isCommissioner()) return;
+  const votes = _getActiveVotes();
+  for (const vote of votes) {
+    const tally = document.getElementById(`rules-vote-tally-cmt-${vote.id}`);
+    if (!tally) continue;
+    try {
+      const rows = await fetchAllVotesAsync(vote.id);
+      tally.innerHTML = `<div style="margin-bottom:4px">${rows.length}/12 voted</div>` + _voteTallyHtml(vote, rows, /*compact*/ true);
+    } catch (e) { tally.textContent = ""; }
+  }
 }
 
 function enterRulesEdit() {
