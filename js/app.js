@@ -4351,7 +4351,7 @@ function showDraftBoard() {
         <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
           <button class="trade-btn trade-btn-submit" onclick="makeDraftPick()">Submit Pick</button>
           ${commish ? `<button class="trade-btn trade-btn-cancel" onclick="passCurrentPick()" style="font-size:0.85rem">Pass</button>` : ""}
-          ${commish && draft.picks.length ? `<button class="trade-btn trade-btn-cancel" onclick="undoLastPick()" style="font-size:0.85rem;margin-left:auto">Undo Last</button>` : ""}
+          ${commish && draft.picks.length ? `<button class="trade-btn trade-btn-cancel" onclick="undoLastPick()" style="font-size:0.85rem">Undo Last Pick</button>` : ""}
         </div>
     ` : `
         <div style="margin-top:10px;color:var(--text-dim);font-size:0.85rem;font-style:italic">
@@ -4374,7 +4374,7 @@ function showDraftBoard() {
       <div class="keeper-projection" style="background:rgba(34,197,94,0.1);border-color:var(--green);margin-bottom:14px">
         <h3 style="margin:0;color:var(--green)">${pendingPasses ? "Regular Rounds Complete" : "Draft Complete"}</h3>
         <div style="color:var(--text-dim);font-size:0.85rem;margin-top:6px">All ${totalPicks} regular slots filled${pendingPasses ? `. ${pendingPasses} passed pick${pendingPasses === 1 ? "" : "s"} still pending below.` : "."}</div>
-        ${draft.picks.length ? `<button class="trade-btn trade-btn-cancel" onclick="undoLastPick()" style="font-size:0.85rem;margin-top:10px">Undo Last</button>` : ""}
+        ${draft.picks.length ? `<button class="trade-btn trade-btn-cancel" onclick="undoLastPick()" style="font-size:0.85rem;margin-top:10px">Undo Last Pick</button>` : ""}
       </div>
     `;
   }
@@ -9858,7 +9858,7 @@ function renderRule5View() {
           <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
             <button class="trade-btn trade-btn-submit" onclick="(() => { const v = document.getElementById('rule5-pick-select').value; if (!v) { alert('Choose a player'); return; } makeRule5Pick(v); })()">Submit Pick</button>
             ${commish ? `<button class="trade-btn trade-btn-cancel" onclick="passRule5Pick()">Pass</button>` : ""}
-            ${commish && state.picks.length ? `<button class="trade-btn trade-btn-cancel" style="margin-left:auto" onclick="undoRule5Pick()">Undo Last</button>` : ""}
+            ${commish && state.picks.length ? `<button class="trade-btn trade-btn-cancel" onclick="undoRule5Pick()">Undo Last Pick</button>` : ""}
           </div>
         ` : `<div style="color:var(--text-dim);font-size:0.85rem;font-style:italic;margin-top:8px">Waiting on ${team ? escapeHtml(team.name) : escapeHtml(cur.teamId)} to make their pick.</div>`;
     onClockHtml = `
