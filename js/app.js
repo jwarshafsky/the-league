@@ -6499,7 +6499,7 @@ function renderSettingsView() {
       </details>
 
       <details id="cs-vote" class="keeper-projection" style="margin-bottom:14px"${_detailsOpenAttr("cs-vote", false)}>
-        <summary style="cursor:pointer;font-weight:700;color:var(--text-bright);font-size:0.92rem">League Vote</summary>
+        <summary style="cursor:pointer;font-weight:700;color:var(--text-bright);font-size:0.92rem">League Vote${(() => { const n = _findEndedVotesNeedingBroadcast().length; return n ? ` <span style="color:var(--red);font-weight:700;font-size:0.78rem">(${n})</span>` : ""; })()}</summary>
         <div style="color:var(--text-dim);font-size:0.84rem;margin:8px 0 10px">
           Per §9c, constitution changes need a majority vote. Initiate one here — all managers see a banner on League Rules and vote inline. You'll get a toast each time a ballot lands; non-commish only see whether they've voted, not the running tally. A vote auto-ends as soon as 7 of 12 teams pick the same option, and commissioners get an email summary.
         </div>
