@@ -10345,8 +10345,46 @@ function renderLoginScreen(message = "") {
           <button id="login-code-btn" class="trade-btn trade-btn-submit" onclick="submitEmailCode()">Verify</button>
         </div>
       </div>
+      <details style="margin-top:18px;color:var(--text-dim);font-size:0.74rem">
+        <summary style="cursor:pointer">Diagnostics</summary>
+        <pre id="login-diag" style="margin:8px 0 0;padding:8px;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:0.7rem;line-height:1.4;white-space:pre-wrap;word-break:break-all"></pre>
+      </details>
     </div>
   `;
+  // Populate the diagnostics panel — surfaces why the user landed here so a
+  // sign-out caused by storage being wiped, an SDK error, etc. is visible
+  // without needing Web Inspector on the iPad.
+  setTimeout(() => {
+    const el = document.getElementById("login-diag");
+    if (!el) return;
+    try {
+      const ua = navigator.userAgent || "";
+      const lsKeys = [];
+      try { for (let i = 0; i < localStorage.length; i++) lsKeys.push(localStorage.key(i)); } catch {}
+      const supabaseKeys = lsKeys.filter(k => /^sb-/.test(k));
+      let lsAvailable = "yes";
+      try { localStorage.setItem("__probe", "1"); localStorage.removeItem("__probe"); }
+      catch (e) { lsAvailable = "no: " + e.message; }
+      const swControlled = !!(navigator.serviceWorker && navigator.serviceWorker.controller);
+      const standalone = (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches) || !!navigator.standalone;
+      const data = {
+        when: new Date().toISOString(),
+        url: window.location.href,
+        cacheVersion: (document.querySelector('script[src*="app.js"]') || {}).src?.match(/v=\d+/)?.[0] || null,
+        ua: ua.slice(0, 140),
+        platform: navigator.platform,
+        maxTouchPoints: navigator.maxTouchPoints,
+        cookieEnabled: navigator.cookieEnabled,
+        localStorageOk: lsAvailable,
+        localStorageKeys: lsKeys.length,
+        supabaseAuthKeys: supabaseKeys,
+        standalonePwa: standalone,
+        swControlled,
+        priorAuthError: window.__leagueAuthError || null,
+      };
+      el.textContent = JSON.stringify(data, null, 2);
+    } catch (e) { el.textContent = "diag failed: " + e.message; }
+  }, 0);
   setTimeout(() => document.getElementById("login-email")?.focus(), 0);
   document.getElementById("login-email")?.addEventListener("keydown", e => {
     if (e.key === "Enter") { e.preventDefault(); submitMagicLink(); }
