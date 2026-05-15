@@ -10545,13 +10545,48 @@ function _smartDefaultTab() {
 
 const LAST_TAB_KEY = "flm_last_tab_v1";
 
+// Email CTAs link to URLs like "?tab=draft" or "?tab=trades&sub=inbox" so
+// landing in the app should drop the user on the matching tab. Capture the
+// param at module load (before any post-auth redirect can clobber it) and
+// clear it from the visible URL so a refresh doesn't keep snapping back.
+const _VALID_DEEP_LINK_TABS = new Set([
+  "eligible", "keepers", "rule5", "draft", "rosters", "trades",
+  "financials", "activity", "trophy-room", "rules", "user-settings",
+  "settings", "teams",
+]);
+const _VALID_TRADES_SUB_TABS = new Set(["block", "inbox", "log"]);
+let _pendingDeepLink = (() => {
+  try {
+    const p = new URLSearchParams(window.location.search);
+    const tab = p.get("tab");
+    if (!tab || !_VALID_DEEP_LINK_TABS.has(tab)) return null;
+    const sub = p.get("sub");
+    const hit = { tab, sub: (tab === "trades" && _VALID_TRADES_SUB_TABS.has(sub)) ? sub : null };
+    // Strip ?tab/?sub from the URL but keep any other params.
+    p.delete("tab"); p.delete("sub");
+    const rest = p.toString();
+    const newUrl = window.location.pathname + (rest ? `?${rest}` : "") + window.location.hash;
+    try { window.history.replaceState({}, "", newUrl); } catch {}
+    return hit;
+  } catch { return null; }
+})();
+
 function showAppForAuthedUser() {
   document.querySelector(".nav-tabs").style.display = "";
   renderHeaderUser();
-  // Tab to load: in-memory currentView > sessionStorage (so refresh keeps
-  // the tab but a fresh-tab/cold-load goes through smart routing) > smart
+  // Tab to load: explicit ?tab= deep link (from an email CTA, etc.) wins.
+  // Otherwise: in-memory currentView > sessionStorage (so refresh keeps the
+  // tab but a fresh-tab/cold-load goes through smart routing) > smart
   // default based on key dates > legacy "eligible" fallback.
-  let initialTab = currentView;
+  let initialTab = "";
+  if (_pendingDeepLink) {
+    initialTab = _pendingDeepLink.tab;
+    if (_pendingDeepLink.sub && typeof _tradesSubTab !== "undefined") {
+      _tradesSubTab = _pendingDeepLink.sub;
+    }
+    _pendingDeepLink = null;
+  }
+  if (!initialTab) initialTab = currentView;
   if (!initialTab) {
     try { initialTab = sessionStorage.getItem(LAST_TAB_KEY) || ""; } catch {}
   }
