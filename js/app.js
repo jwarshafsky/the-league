@@ -5383,7 +5383,7 @@ const NOTIFY_EVENTS = [
   { key: "callup",           label: "Call-ups",                       email: ["daily","weekly","never"],            push: false, defaults: { email: "never" } },
   { key: "send_down",        label: "Send-downs",                     email: ["daily","weekly","never"],            push: false, defaults: { email: "never" } },
   { key: "draft_picks",      label: "Other teams' draft picks",       email: ["daily","weekly","never"],            push: false, defaults: { email: "never" } },
-  { key: "vote_result",      label: "League vote results",            email: ["instant","never"],                   push: false, defaults: { email: "instant" } },
+  { key: "vote_result",      label: "League vote results",            email: ["instant","never"],                   push: true,  defaults: { email: "instant", push: true } },
 ];
 
 const DRAFT_CLOCK_STATES = [

@@ -101,6 +101,9 @@ def recipients_for_activity(activity, all_prefs, channel, commish_team_ids=None)
         # Commish-triggered league-wide announcement — fan out to every team.
         for team_id in (all_prefs or {}).keys():
             candidates.add(team_id)
+        # Also include the actor so they get a confirmation copy even if
+        # their team has no notify_prefs row yet.
+        if actor: candidates.add(actor)
     else:
         # For keeper_* / rule5_* / callup / send_down / draft picks etc., the
         # "candidate" pool is the actor team (their own actions don't notify
@@ -116,8 +119,13 @@ def recipients_for_activity(activity, all_prefs, channel, commish_team_ids=None)
 
     # Filter by pref + channel.
     out = []
+    # vote_result is the one category where the actor (the commish who hit
+    # "Send result to league") should ALSO get the email — it's their
+    # confirmation that the league email went out. Other categories follow
+    # the normal "skip actor" rule.
+    skip_actor = (a.get("type") != "vote_result_broadcast")
     for tid in candidates:
-        if tid == actor:
+        if tid == actor and skip_actor:
             # Don't notify the actor about their own action.
             continue
         # League vote events: commissioners get them unconditionally on
