@@ -59,21 +59,33 @@ async function fetchOwnerRow(userId) {
   return data;
 }
 
-async function refreshAuthState() {
+// Set to true the first time we validate an email against the allowlist for
+// the current page load. Skips re-checking on every reload / token refresh,
+// which previously signed users out when the RPC timed out (e.g. an iPad
+// reconnecting to cellular). The DB's RLS is the real authorization gate;
+// this is only a UX message for OAuth signups not yet on the invite list.
+let _allowlistChecked = false;
+
+async function refreshAuthState(opts) {
+  const isNewSignIn = !!(opts && opts.checkAllowlist);
   const { data: { session } } = await supabaseClient.auth.getSession();
   if (session && session.user) {
     currentUser = { id: session.user.id, email: session.user.email };
 
-    // For OAuth (Google), users can land here without being on the allowlist —
-    // gate them post-hoc. Magic-link flow is already gated client-side by isEmailAllowed.
-    const allowed = await isEmailAllowed(currentUser.email);
-    if (!allowed) {
-      await supabaseClient.auth.signOut();
-      currentUser = null;
-      currentOwner = null;
-      window.__leagueAuthError = "This email isn't on the league invite list yet. Ask a commissioner to add you.";
-      fireAuthChange();
-      return;
+    // Only validate the allowlist on a fresh sign-in. Restored sessions
+    // (page reload, token refresh) already passed this check the first
+    // time they signed in.
+    if (isNewSignIn && !_allowlistChecked) {
+      const allowed = await isEmailAllowed(currentUser.email);
+      _allowlistChecked = true;
+      if (!allowed) {
+        await supabaseClient.auth.signOut();
+        currentUser = null;
+        currentOwner = null;
+        window.__leagueAuthError = "This email isn't on the league invite list yet. Ask a commissioner to add you.";
+        fireAuthChange();
+        return;
+      }
     }
 
     currentOwner = await fetchOwnerRow(currentUser.id);
@@ -149,8 +161,12 @@ async function signOut() {
   await supabaseClient.auth.signOut();
 }
 
-// React to login/logout events from the SDK.
-supabaseClient.auth.onAuthStateChange(() => { refreshAuthState(); });
+// React to login/logout events from the SDK. Only revalidate the allowlist
+// on a fresh SIGNED_IN — restored sessions (INITIAL_SESSION, TOKEN_REFRESHED)
+// trust the prior validation so a flaky network can't sign the user out.
+supabaseClient.auth.onAuthStateChange((event) => {
+  refreshAuthState({ checkAllowlist: event === "SIGNED_IN" });
+});
 
 // Run once on script load to populate state from any existing session.
 refreshAuthState();
