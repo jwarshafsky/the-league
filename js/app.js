@@ -5145,6 +5145,10 @@ function switchTab(tab) {
     // Wipe the legacy localStorage entry on first migration so users who
     // had it set don't keep seeing a stale tab from months ago.
     try { localStorage.removeItem(LAST_TAB_KEY); } catch {}
+    // Navigating to a different tab dismisses the message-board overlay so
+    // it doesn't stay anchored over content the user just navigated to.
+    // (mobile: drawer items make this matter; desktop: harmless.)
+    if (typeof window.closeMessageBoard === "function") window.closeMessageBoard();
   }
 
   const content = document.getElementById("main-content");
