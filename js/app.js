@@ -9496,9 +9496,11 @@ async function endActiveVote(voteId) {
         payload = { ...payload, winning_option: winnerName, winning_index: winnerIdx, counts, buckets, breakdown };
       } catch { /* fall back to minimal payload */ }
     }
-    if (typeof logActivityAsync === "function") logActivityAsync("vote_ended", payload);
+    if (typeof logActivityAsync === "function") await logActivityAsync("vote_ended", payload);
     if (typeof showToast === "function") showToast("Vote ended");
-    switchTab("settings");
+    // Drop the commish on the Rules tab where the result card + "Send result
+    // to league" button live, instead of bouncing to Commish Tools.
+    switchTab("rules");
   } catch (e) {
     alert("Couldn't end vote: " + (e.message || e));
   }
