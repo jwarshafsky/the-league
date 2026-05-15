@@ -1222,6 +1222,16 @@ async function appendRosterMoveAsync({ kind, player_name, team_id }) {
 }
 function dbGetRosterMoves() { return _cache.rosterMoves || []; }
 
+// Delete a single roster move (used by commissioners to remove an erroneous
+// send-down from the financials page). RLS enforces commissioner-only writes.
+async function deleteRosterMoveAsync(id) {
+  if (!currentUser) throw new Error("Not signed in");
+  if (!id) throw new Error("Missing roster move id");
+  const { error } = await supabaseClient.from("roster_moves").delete().eq("id", id);
+  if (error) throw error;
+  _cache.rosterMoves = (_cache.rosterMoves || []).filter(m => String(m.id) !== String(id));
+}
+
 // --- Trade Inbox writers ---
 
 async function createProposalAsync({ from_team_id, to_team_id, team1_receives, team2_receives, notes }) {

@@ -2211,6 +2211,22 @@ function getSendDownsByTeam() {
   return byTeam;
 }
 
+// Commissioner-only: delete a send-down (e.g. mistakenly recorded). Confirms first.
+async function deleteSendDown(moveId, playerName) {
+  if (!isCommissioner()) {
+    alert("Only commissioners can delete send-downs.");
+    return;
+  }
+  const ok = confirm(`Delete send-down for ${playerName}? This cannot be undone.`);
+  if (!ok) return;
+  try {
+    await deleteRosterMoveAsync(moveId);
+    if (typeof switchTab === "function") switchTab("financials");
+  } catch (e) {
+    alert("Couldn't delete send-down: " + (e.message || e));
+  }
+}
+
 function renderFinancialsView() {
   const commish = isCommissioner();
   const paidMap = (typeof dbGetFeesPaid === "function") ? dbGetFeesPaid() : {};
@@ -2228,7 +2244,16 @@ function renderFinancialsView() {
     const totalDue = leagueOwed + callupOwed + luxuryOwed;
     const allPaid = totalDue === 0;
     const sdSummary = sd.length
-      ? sd.map(m => `<div style="font-size:0.72rem;color:var(--text-dim)">${escapeHtml(m.player_name)} — ${m.at ? new Date(m.at).toLocaleDateString() : ""}</div>`).join("")
+      ? sd.map(m => {
+          const dateStr = m.at ? new Date(m.at).toLocaleDateString() : "";
+          // Commissioner-only red minus button to delete an erroneous send-down
+          const delBtn = (commish && m.id != null)
+            ? ` <button onclick="deleteSendDown('${escapeJsString(String(m.id))}','${escapeJsString(m.player_name || "")}')"
+                 title="Delete this send-down"
+                 style="display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:50%;background:var(--red);color:#fff;border:none;cursor:pointer;font-size:0.7rem;font-weight:bold;line-height:1;padding:0;margin-left:4px;vertical-align:middle">−</button>`
+            : "";
+          return `<div style="font-size:0.72rem;color:var(--text-dim);display:flex;align-items:center;gap:2px"><span>${escapeHtml(m.player_name)} — ${dateStr}</span>${delBtn}</div>`;
+        }).join("")
       : '<div style="font-size:0.72rem;color:var(--text-dim);font-style:italic">No send-downs</div>';
     const leaguePaidCtl = commish
       ? `<input type="checkbox" ${paid.league ? "checked" : ""} onchange="toggleFeePaid('${escapeJsString(team.id)}','league',this.checked)" style="width:16px;height:16px;cursor:pointer;accent-color:var(--green)">`
