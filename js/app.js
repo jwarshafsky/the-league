@@ -622,13 +622,14 @@ function renderMinorsKeepersTable(minors) {
         ${sorted.map(p => {
           const ms = getMinorLeagueContractStatus(p, CURRENT_SEASON);
           let statClass = "";
-          if ((p.statType === "AB" && p.careerStat >= 200) || (p.statType === "IP" && p.careerStat >= 50)) statClass = "stat-warning";
+          if ((p.statType === "AB" && p.careerStat >= 300) || (p.statType === "IP" && p.careerStat >= 75)) statClass = "stat-must-call-up";
+          else if ((p.statType === "AB" && p.careerStat >= 200) || (p.statType === "IP" && p.careerStat >= 50)) statClass = "stat-warning";
           // Once a player is in the callups bucket, the "Must Call Up"
           // eligibility warning no longer applies — they've already been
           // called up. Show a "Called up" badge instead.
           const statusBadge = p._calledUp
             ? ` <span class="hide-on-mobile" style="color:var(--purple);font-size:0.7rem;font-weight:600">Called up</span>`
-            : (ms.eligibilityWarning ? ` <span class="hide-on-mobile" style="color:var(--orange);font-size:0.7rem;font-weight:600">${escapeHtml(ms.eligibilityWarning)}</span>` : "");
+            : (ms.eligibilityWarning ? ` <span class="hide-on-mobile" style="color:var(--red);font-size:0.7rem;font-weight:700">${escapeHtml(ms.eligibilityWarning)}</span>` : "");
           const milTag = (() => {
             if (ms.yearsRemaining === null) {
               return `<span class="contract-tag contract-new">${escapeHtml(ms.contractNote)}</span>`;
@@ -1036,7 +1037,8 @@ function renderMinorsCompactTable(team) {
         ${allPlayers.map(p => {
           const ms = getMinorLeagueContractStatus(p, CURRENT_SEASON);
           let statClass = "";
-          if ((p.statType === "AB" && p.careerStat >= 200) || (p.statType === "IP" && p.careerStat >= 50)) statClass = "stat-warning";
+          if ((p.statType === "AB" && p.careerStat >= 300) || (p.statType === "IP" && p.careerStat >= 75)) statClass = "stat-must-call-up";
+          else if ((p.statType === "AB" && p.careerStat >= 200) || (p.statType === "IP" && p.careerStat >= 50)) statClass = "stat-warning";
           return `<tr>
             <td><span class="player-name"${_playerTitleAttr(p.name)}>${escapeHtml(p.name)}</span></td>
             <td class="player-year">${p.yearAcquired}</td>
@@ -1153,7 +1155,8 @@ function renderCallupsTable(players, teamId) {
           const ms = getMinorLeagueContractStatus(p, CURRENT_SEASON);
           const statDisplay = `${p.careerStat}`;
           let statClass = "";
-          if ((p.statType === "AB" && p.careerStat >= 200) || (p.statType === "IP" && p.careerStat >= 50)) statClass = "stat-warning";
+          if ((p.statType === "AB" && p.careerStat >= 300) || (p.statType === "IP" && p.careerStat >= 75)) statClass = "stat-must-call-up";
+          else if ((p.statType === "AB" && p.careerStat >= 200) || (p.statType === "IP" && p.careerStat >= 50)) statClass = "stat-warning";
           const belowThreshold = (p.statType === "AB" && p.careerStat < 200) || (p.statType === "IP" && p.careerStat < 50);
           const onEspnRoster = typeof isPlayerDroppedFromEspn === "function" ? !isPlayerDroppedFromEspn(p.name) : true;
           const actionCell = showSendDown ? `
@@ -1205,7 +1208,8 @@ function renderMinorsTable(players, teamId) {
           const ms = getMinorLeagueContractStatus(p, CURRENT_SEASON);
           const statDisplay = `${p.careerStat}`;
           let statClass = "";
-          if ((p.statType === "AB" && p.careerStat >= 200) || (p.statType === "IP" && p.careerStat >= 50)) statClass = "stat-warning";
+          if ((p.statType === "AB" && p.careerStat >= 300) || (p.statType === "IP" && p.careerStat >= 75)) statClass = "stat-must-call-up";
+          else if ((p.statType === "AB" && p.careerStat >= 200) || (p.statType === "IP" && p.careerStat >= 50)) statClass = "stat-warning";
           const actionCell = showCallUp ? `
             <td style="text-align:right;white-space:nowrap">
               <button class="trade-btn" onclick="callUpMinorPlayer('${escapeJsString(p.name)}','${escapeJsString(teamId)}')"
@@ -3801,7 +3805,8 @@ function renderMinorsEligibleTable(minors, teamId, teamSelections) {
           const isRule5 = sel.rule5 || false;
           const isTradeBlock = sel.tradeBlock || false;
           let statClass = "";
-          if ((p.statType === "AB" && p.careerStat >= 200) || (p.statType === "IP" && p.careerStat >= 50)) statClass = "stat-warning";
+          if ((p.statType === "AB" && p.careerStat >= 300) || (p.statType === "IP" && p.careerStat >= 75)) statClass = "stat-must-call-up";
+          else if ((p.statType === "AB" && p.careerStat >= 200) || (p.statType === "IP" && p.careerStat >= 50)) statClass = "stat-warning";
           const rowBg = isMinorKeeper ? 'background:rgba(34,197,94,0.08)'
             : isRule5 ? 'background:rgba(59,130,246,0.08)'
             : isTradeBlock ? 'background:rgba(249,115,22,0.08)'
@@ -3832,7 +3837,7 @@ function renderMinorsEligibleTable(minors, teamId, teamSelections) {
                 ${p.sendDownCount ? ` <span class="hide-on-mobile" style="color:var(--red);font-size:0.65rem;font-weight:700">$${p.sendDownCount * 10} fee</span>` : ''}
                 <div style="font-size:0.7rem;color:var(--text-dim);margin-top:2px">
                   <span class="${statClass}">${p.careerStat} ${p.statType}</span>
-                  ${ms.eligibilityWarning ? ` <span class="hide-on-mobile" style="color:var(--orange);font-weight:700;margin-left:4px">${escapeHtml(ms.eligibilityWarning)}</span>` : ''}
+                  ${ms.eligibilityWarning ? ` <span class="hide-on-mobile" style="color:var(--red);font-weight:700;margin-left:4px">${escapeHtml(ms.eligibilityWarning)}</span>` : ''}
                 </div>
               </td>
               <td>${sourceTag}</td>
@@ -6345,7 +6350,7 @@ function renderMustCallUpReview() {
   return items.map(it => _reviewItemCard(`
     <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px;margin-bottom:6px">
       <span><strong>${escapeHtml(it.name)}</strong> &middot; <span style="color:var(--accent)">${escapeHtml(it.teamName)}</span></span>
-      <span style="color:var(--orange);font-size:0.74rem;font-weight:700">${escapeHtml(it.warning)}</span>
+      <span style="color:var(--red);font-size:0.74rem;font-weight:700">${escapeHtml(it.warning)}</span>
     </div>
     <div style="color:var(--text-dim);font-size:0.78rem;margin-bottom:6px">
       ${it.careerStat ?? 0} career ${it.statType || "AB"} — past the §3(f) 300 AB / 75 IP threshold.

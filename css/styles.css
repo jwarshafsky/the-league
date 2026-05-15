@@ -435,7 +435,14 @@ body {
   margin-left: 4px;
   font-weight: 600;
 }
+/* AB/IP color tiers:
+   - stat-warning  (orange) — past §3(c) send-down boundary (200 AB / 50 IP)
+   - stat-must-call-up (red) — past §3(f) must-call-up trigger (300 AB / 75 IP) */
 .stat-warning {
+  color: var(--orange);
+  font-weight: 700;
+}
+.stat-must-call-up {
   color: var(--red);
   font-weight: 700;
 }
