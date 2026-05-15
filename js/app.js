@@ -10367,6 +10367,8 @@ function renderLoginScreen(message = "") {
       catch (e) { lsAvailable = "no: " + e.message; }
       const swControlled = !!(navigator.serviceWorker && navigator.serviceWorker.controller);
       const standalone = (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches) || !!navigator.standalone;
+      let recentAuthEvents = [];
+      try { recentAuthEvents = JSON.parse(localStorage.getItem("flm_auth_events") || "[]"); } catch {}
       const data = {
         when: new Date().toISOString(),
         url: window.location.href,
@@ -10381,6 +10383,7 @@ function renderLoginScreen(message = "") {
         standalonePwa: standalone,
         swControlled,
         priorAuthError: window.__leagueAuthError || null,
+        recentAuthEvents,
       };
       el.textContent = JSON.stringify(data, null, 2);
     } catch (e) { el.textContent = "diag failed: " + e.message; }

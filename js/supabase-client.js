@@ -164,7 +164,22 @@ async function signOut() {
 // React to login/logout events from the SDK. Only revalidate the allowlist
 // on a fresh SIGNED_IN — restored sessions (INITIAL_SESSION, TOKEN_REFRESHED)
 // trust the prior validation so a flaky network can't sign the user out.
-supabaseClient.auth.onAuthStateChange((event) => {
+supabaseClient.auth.onAuthStateChange((event, session) => {
+  // Diagnostic: append the last few auth events to localStorage so the
+  // login-screen Diagnostics panel can show what triggered an unexpected
+  // sign-out (token refresh failure, etc.). Cap at 10 entries.
+  try {
+    const log = JSON.parse(localStorage.getItem("flm_auth_events") || "[]");
+    log.push({
+      t: new Date().toISOString(),
+      e: event,
+      hasSession: !!(session && session.user),
+      online: navigator.onLine,
+      visible: document.visibilityState,
+    });
+    while (log.length > 10) log.shift();
+    localStorage.setItem("flm_auth_events", JSON.stringify(log));
+  } catch {}
   refreshAuthState({ checkAllowlist: event === "SIGNED_IN" });
 });
 
