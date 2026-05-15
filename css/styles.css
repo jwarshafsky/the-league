@@ -59,9 +59,11 @@ body {
   border-radius: 6px;
   flex-shrink: 0;
 }
-/* Key Dates sidebar: fixed-width column on PC, full-width card on mobile. */
+/* Key Dates sidebar: fixed-width column on PC, full-width card on mobile.
+   Wide enough to fit the longest label + a "Sep 1, 2026, 4:00 PM"
+   value on a single line without wrapping. */
 .key-dates-sidebar {
-  width: 280px;
+  width: 320px;
   flex-shrink: 0;
 }
 @media (max-width: 720px) {

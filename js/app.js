@@ -9013,8 +9013,10 @@ function _formatKeyDate(iso) {
   const opts = (p.hour === 0 && p.minute === 0)
     ? { timeZone: _ET_TZ, year: "numeric", month: "short", day: "numeric" }
     : { timeZone: _ET_TZ, year: "numeric", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" };
-  const formatted = d.toLocaleString("en-US", opts);
-  return (p.hour === 0 && p.minute === 0) ? formatted : `${formatted} ET`;
+  // The "(ET)" disclaimer in the sidebar header makes a per-row "ET" suffix
+  // redundant — and dropping it keeps the value on a single line in the
+  // 320px column.
+  return d.toLocaleString("en-US", opts);
 }
 
 // Convert a "YYYY-MM-DDTHH:MM" wall-clock string (interpreted as ET) into
@@ -9050,8 +9052,8 @@ function renderKeyDatesSidebar() {
     const formatted = _formatKeyDate(dates[d.key]);
     return `
       <div style="display:flex;justify-content:space-between;align-items:baseline;gap:12px;padding:8px 0;border-bottom:1px solid var(--border);font-size:0.85rem">
-        <span style="color:var(--text)">${escapeHtml(d.label)}</span>
-        <span style="color:${formatted ? "var(--text-bright)" : "var(--text-dim)"};font-weight:${formatted ? "600" : "400"};text-align:right">${formatted || "—"}</span>
+        <span style="color:var(--text);white-space:nowrap">${escapeHtml(d.label)}</span>
+        <span style="color:${formatted ? "var(--text-bright)" : "var(--text-dim)"};font-weight:${formatted ? "600" : "400"};text-align:right;white-space:nowrap">${formatted || "—"}</span>
       </div>
     `;
   }).join("");
