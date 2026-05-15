@@ -50,6 +50,9 @@ CATEGORY_META = {
     "trade_completed":  {"subject_prefix": "Trade completed",    "url": APP_URL + "?tab=trades&sub=log",   "title": "Trade completed", "tag": "TRADE"},
     # League votes — initiated + ended events email commissioners only.
     "league_vote":      {"subject_prefix": "League vote",        "url": APP_URL + "?tab=rules",            "title": "League vote",     "tag": "VOTE"},
+    # Commish-broadcast vote result — emails the whole league with totals
+    # only. No voter names in the body.
+    "vote_result":      {"subject_prefix": "League vote result", "url": APP_URL + "?tab=rules",            "title": "League vote result", "tag": "VOTE"},
 }
 
 
@@ -94,6 +97,10 @@ def recipients_for_activity(activity, all_prefs, channel, commish_team_ids=None)
         # League votes — commissioners only.
         for tid in commish_team_ids:
             candidates.add(tid)
+    elif t == "vote_result_broadcast":
+        # Commish-triggered league-wide announcement — fan out to every team.
+        for team_id in (all_prefs or {}).keys():
+            candidates.add(team_id)
     else:
         # For keeper_* / rule5_* / callup / send_down / draft picks etc., the
         # "candidate" pool is the actor team (their own actions don't notify
@@ -117,6 +124,10 @@ def recipients_for_activity(activity, all_prefs, channel, commish_team_ids=None)
         # email regardless of prefs (this is a league-business notification,
         # not a routine alert). Push still respects opt-in.
         if cat == "league_vote" and channel == "email" and tid in commish_team_ids:
+            out.append(tid); continue
+        # Commish-broadcast vote results: every owner gets the email — this
+        # is league business, not a routine alert. Push still respects opt-in.
+        if cat == "vote_result" and channel == "email":
             out.append(tid); continue
         row = (all_prefs or {}).get(tid) or {}
         if row.get("receive_all"):

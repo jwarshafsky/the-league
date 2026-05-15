@@ -9067,8 +9067,10 @@ function renderRulesView() {
     ? `<button class="trade-btn" onclick="enterRulesEdit()" style="font-size:0.78rem">Edit</button>`
     : "";
   const voteNoticeHtml = renderActiveVoteNoticeForRules();
+  const endedVoteHtml = renderEndedVoteBroadcastCardsForRules();
   return `
     <div id="rules-view-container">
+      ${endedVoteHtml}
       ${voteNoticeHtml}
       ${editBtn ? `<div style="display:flex;justify-content:flex-end;margin-bottom:14px">${editBtn}</div>` : ""}
       <div style="display:flex;gap:18px;flex-wrap:wrap;align-items:flex-start">
@@ -9145,6 +9147,103 @@ function renderActiveVoteNoticeForRules() {
   const votes = _getActiveVotes();
   if (!votes.length) return "";
   return votes.map(_renderSingleVoteCard).join("");
+}
+
+// ---------------------------------------------------------------------------
+// Ended-vote broadcast — commish sees the result + a button to email the
+// league a sanitized summary (totals only, no voter names).
+// ---------------------------------------------------------------------------
+
+// Walks dbGetActivity() for vote_ended rows that haven't yet been followed
+// by a vote_result_broadcast for the same vote_id. Most-recent first.
+function _findEndedVotesNeedingBroadcast() {
+  const activity = (typeof dbGetActivity === "function") ? (dbGetActivity() || []) : [];
+  const broadcastedIds = new Set();
+  for (const a of activity) {
+    if (a && a.type === "vote_result_broadcast") {
+      const vid = a.payload && a.payload.vote_id;
+      if (vid) broadcastedIds.add(vid);
+    }
+  }
+  const out = [];
+  for (const a of activity) {
+    if (!a || a.type !== "vote_ended") continue;
+    const vid = a.payload && a.payload.vote_id;
+    if (!vid || broadcastedIds.has(vid)) continue;
+    out.push(a);
+  }
+  return out;
+}
+
+// Card shown to commissioners on the Rules tab for each ended-but-not-yet-
+// broadcast vote. Includes the per-option breakdown (with voter names — this
+// is the commish view) and a button to email the league a sanitized version.
+function _renderEndedVoteCommishCard(activity) {
+  const p = activity.payload || {};
+  const title = p.title || "Untitled vote";
+  const winner = p.winning_option || "—";
+  const counts = Array.isArray(p.counts) ? p.counts : [];
+  const buckets = Array.isArray(p.buckets) ? p.buckets : [];
+  const teamName = id => LEAGUE_DATA.teams.find(t => t.id === id)?.name || id;
+  // Reconstruct option labels from the breakdown text if needed.
+  const breakdown = String(p.breakdown || "").split(" | ");
+  const optionLabels = breakdown.map(seg => (seg.split(":")[0] || "").trim()).filter(Boolean);
+  const lineHtml = optionLabels.map((opt, i) => {
+    const voterNames = (buckets[i] || []).map(teamName).sort();
+    const voters = voterNames.length ? voterNames.join(", ") : "—";
+    return `<div style="padding:3px 0"><strong>${escapeHtml(opt)}</strong> (${counts[i] ?? 0}): <span style="color:var(--text-dim)">${escapeHtml(voters)}</span></div>`;
+  }).join("");
+  const aid = escapeJsString(activity.id);
+  return `
+    <div style="background:rgba(59,130,246,0.10);border:1px solid rgba(59,130,246,0.4);border-radius:8px;padding:14px 16px;margin-bottom:12px">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px;margin-bottom:6px">
+        <h3 style="margin:0;color:var(--accent);font-size:1.05rem">Vote Ended: ${escapeHtml(title)}</h3>
+        <span style="color:var(--text-dim);font-size:0.78rem">Winner: <strong style="color:var(--text)">${escapeHtml(winner)}</strong></span>
+      </div>
+      <div style="font-size:0.86rem;color:var(--text);margin-bottom:10px">${lineHtml}</div>
+      <div style="font-size:0.74rem;color:var(--text-dim);margin-bottom:10px">Voters are visible to commissioners only. The league email will show totals only.</div>
+      <button class="trade-btn trade-btn-submit" style="font-size:0.85rem"
+        onclick="broadcastVoteResultToLeague('${aid}')">Send result to league</button>
+    </div>
+  `;
+}
+
+function renderEndedVoteBroadcastCardsForRules() {
+  if (!isCommissioner()) return "";
+  const ended = _findEndedVotesNeedingBroadcast();
+  if (!ended.length) return "";
+  return ended.map(_renderEndedVoteCommishCard).join("");
+}
+
+async function broadcastVoteResultToLeague(activityId) {
+  if (!isCommissioner()) return;
+  const activity = (dbGetActivity() || []).find(a => a && String(a.id) === String(activityId));
+  if (!activity) { alert("Couldn't find that ended vote."); return; }
+  const p = activity.payload || {};
+  if (!p.vote_id) { alert("Vote payload is missing vote_id."); return; }
+  if (!confirm(`Email the league the result of "${p.title || "this vote"}"?\n\nTotals will be shown; individual voter names will NOT.`)) return;
+  // Reconstruct option labels from the breakdown text.
+  const breakdown = String(p.breakdown || "").split(" | ");
+  const optionLabels = breakdown.map(seg => (seg.split(":")[0] || "").trim()).filter(Boolean);
+  const counts = Array.isArray(p.counts) ? p.counts : [];
+  const total = counts.reduce((s, n) => s + (n || 0), 0);
+  // Anonymized payload: include counts + winner, NOT buckets/voter names.
+  const sanitizedBreakdown = optionLabels.map((opt, i) => `${opt}: ${counts[i] ?? 0}`).join(" | ");
+  try {
+    await logActivityAsync("vote_result_broadcast", {
+      vote_id: p.vote_id,
+      title: p.title,
+      winning_option: p.winning_option,
+      counts,
+      options: optionLabels,
+      total_votes: total,
+      breakdown: sanitizedBreakdown,
+    });
+    if (typeof showToast === "function") showToast("Result sent to the league");
+    if (typeof switchTab === "function") switchTab("rules");
+  } catch (e) {
+    alert("Couldn't broadcast result: " + (e.message || e));
+  }
 }
 
 async function submitRulesVote(voteId, optionIndex) {
