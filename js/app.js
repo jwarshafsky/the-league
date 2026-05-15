@@ -5352,43 +5352,35 @@ function _refreshInstallSection() {
 }
 
 function renderInstallSection() {
-  // SVG icons re-used in the iOS / macOS instruction blocks.
-  const shareIconSvg = '<svg viewBox="0 0 24 24" width="18" height="18" style="vertical-align:middle;margin:0 3px" aria-hidden="true"><path fill="currentColor" d="M12 3l-4 4h3v6h2V7h3l-4-4zm-6 9H4v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8h-2v8H6v-8z"/></svg>';
+  // iOS-only section — every other platform has its own native install gesture
+  // (Chrome's beforeinstallprompt, macOS Safari's File → Add to Dock) which
+  // surfaces itself; only iPhone / iPad users need explicit hand-holding,
+  // since Add to Home Screen is buried in the Share sheet.
   const platform = detectInstallPlatform();
+  const isIOS = (platform === "ios-safari" || platform === "ios-other");
   const installed = isPwaInstalled();
+  if (!isIOS && !installed) return "";
+
+  // SVG icon re-used in the iOS instruction block.
+  const shareIconSvg = '<svg viewBox="0 0 24 24" width="18" height="18" style="vertical-align:middle;margin:0 3px" aria-hidden="true"><path fill="currentColor" d="M12 3l-4 4h3v6h2V7h3l-4-4zm-6 9H4v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8h-2v8H6v-8z"/></svg>';
   let body;
   if (installed) {
     body = `<div style="color:var(--green);font-weight:600">✓ The League is installed on this device.</div>
       <div style="color:var(--text-dim);font-size:0.82rem;margin-top:6px">Open it from your home screen for the full app experience (push notifications, no URL bar).</div>`;
-  } else if (_deferredInstallPrompt) {
-    body = `<div style="color:var(--text);font-size:0.9rem;margin-bottom:10px">Install The League as an app on this device for push notifications and faster access.</div>
-      <button class="trade-btn trade-btn-submit" onclick="tapInstallButton()" style="font-size:0.9rem">Install The League</button>`;
   } else if (platform === "ios-safari") {
-    body = `<div style="color:var(--text);font-size:0.9rem;line-height:1.6;margin-bottom:10px">To install on your iPhone / iPad:</div>
+    body = `<div style="color:var(--text);font-size:0.9rem;line-height:1.6;margin-bottom:10px">Add The League to your home screen for push notifications and a full-app experience:</div>
       <ol style="margin:0;padding-left:22px;color:var(--text);font-size:0.88rem;line-height:1.8">
         <li>Tap the Share button ${shareIconSvg} in Safari's bottom toolbar.</li>
         <li>Scroll down and tap <strong>Add to Home Screen</strong>.</li>
         <li>Tap <strong>Add</strong> in the top right.</li>
       </ol>
       <div style="color:var(--text-dim);font-size:0.78rem;margin-top:10px;line-height:1.5">Once installed, open The League from your home screen — that's the only way push notifications work on iOS.</div>`;
-  } else if (platform === "ios-other") {
-    body = `<div style="color:var(--text);font-size:0.9rem;line-height:1.55;margin-bottom:8px">On iPhone / iPad, the install option is only available in <strong>Safari</strong>.</div>
+  } else { // ios-other (Chrome / Edge / Firefox on iOS)
+    body = `<div style="color:var(--text);font-size:0.9rem;line-height:1.55;margin-bottom:8px">On iPhone / iPad, install is only available in <strong>Safari</strong>.</div>
       <div style="color:var(--text-dim);font-size:0.82rem;line-height:1.5">Open this site in Safari, then tap Share ${shareIconSvg} → <strong>Add to Home Screen</strong>.</div>`;
-  } else if (platform === "macos-safari") {
-    body = `<div style="color:var(--text);font-size:0.9rem;line-height:1.55;margin-bottom:8px">To install on Mac Safari (macOS Sonoma+):</div>
-      <ol style="margin:0;padding-left:22px;color:var(--text);font-size:0.88rem;line-height:1.8">
-        <li>Click <strong>File</strong> in the menu bar, then <strong>Add to Dock…</strong></li>
-        <li>Confirm the name and click <strong>Add</strong>.</li>
-      </ol>`;
-  } else if (platform === "android") {
-    body = `<div style="color:var(--text);font-size:0.9rem;line-height:1.55">Chrome should offer an "Install" prompt when you visit. If you don't see it, tap the <strong>⋮</strong> menu in Chrome and look for <strong>Install app</strong> or <strong>Add to Home screen</strong>.</div>`;
-  } else if (platform === "firefox") {
-    body = `<div style="color:var(--text);font-size:0.9rem;line-height:1.55">Firefox doesn't support installing web apps on desktop. Try Chrome, Edge, or Brave for an installable version.</div>`;
-  } else {
-    body = `<div style="color:var(--text);font-size:0.9rem;line-height:1.55">Tap your browser's menu and look for <strong>Install app</strong> or <strong>Add to Home Screen</strong>.</div>`;
   }
   return `<div id="settings-install-section" class="keeper-projection" style="margin-bottom:14px">
-    <h3 style="margin-top:0">Install on this device</h3>
+    <h3 style="margin-top:0">Install The League</h3>
     ${body}
   </div>`;
 }
