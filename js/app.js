@@ -9067,10 +9067,8 @@ function renderRulesView() {
     ? `<button class="trade-btn" onclick="enterRulesEdit()" style="font-size:0.78rem">Edit</button>`
     : "";
   const voteNoticeHtml = renderActiveVoteNoticeForRules();
-  const endedVoteHtml = renderEndedVoteBroadcastCardsForRules();
   return `
     <div id="rules-view-container">
-      ${endedVoteHtml}
       ${voteNoticeHtml}
       ${editBtn ? `<div style="display:flex;justify-content:flex-end;margin-bottom:14px">${editBtn}</div>` : ""}
       <div style="display:flex;gap:18px;flex-wrap:wrap;align-items:flex-start">
@@ -9208,11 +9206,36 @@ function _renderEndedVoteCommishCard(activity) {
   `;
 }
 
-function renderEndedVoteBroadcastCardsForRules() {
-  if (!isCommissioner()) return "";
-  const ended = _findEndedVotesNeedingBroadcast();
-  if (!ended.length) return "";
-  return ended.map(_renderEndedVoteCommishCard).join("");
+// Past votes that have already been broadcast — rendered as the Vote
+// History list inside Commissioner Tools. Sanitized payload (counts only)
+// matches what the league email contained.
+function _findBroadcastedVotes() {
+  const activity = (typeof dbGetActivity === "function") ? (dbGetActivity() || []) : [];
+  return activity.filter(a => a && a.type === "vote_result_broadcast");
+}
+
+function _renderBroadcastedVoteHistoryRow(activity) {
+  const p = activity.payload || {};
+  const title = p.title || "Untitled vote";
+  const winner = p.winning_option || "—";
+  const counts = Array.isArray(p.counts) ? p.counts : [];
+  const options = Array.isArray(p.options) ? p.options : [];
+  const lineHtml = options.map((opt, i) =>
+    `<span style="margin-right:10px"><strong>${escapeHtml(opt)}</strong> ${counts[i] ?? 0}</span>`
+  ).join("");
+  const sentAt = activity.created_at ? new Date(activity.created_at).toLocaleString() : "";
+  return `
+    <div style="background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:10px 12px;margin-bottom:8px">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px;margin-bottom:4px">
+        <span style="color:var(--text);font-weight:600">${escapeHtml(title)}</span>
+        <span style="color:var(--text-dim);font-size:0.74rem">${escapeHtml(sentAt)}</span>
+      </div>
+      <div style="font-size:0.84rem;color:var(--text)">
+        Winner: <strong style="color:var(--green)">${escapeHtml(winner)}</strong>
+        <span style="color:var(--text-dim);margin-left:8px">— ${lineHtml || "no totals"}</span>
+      </div>
+    </div>
+  `;
 }
 
 async function broadcastVoteResultToLeague(activityId) {
@@ -9240,7 +9263,11 @@ async function broadcastVoteResultToLeague(activityId) {
       breakdown: sanitizedBreakdown,
     });
     if (typeof showToast === "function") showToast("Result sent to the league");
-    if (typeof switchTab === "function") switchTab("rules");
+    // Re-render Commissioner Tools with the League Vote section open so the
+    // commish sees the just-broadcast vote shift into Vote History.
+    _detailsOpenState.set("cs-vote", true);
+    _detailsOpenState.set("cs-vote-history", true);
+    if (typeof switchTab === "function") switchTab("settings");
   } catch (e) {
     alert("Couldn't broadcast result: " + (e.message || e));
   }
@@ -9406,8 +9433,34 @@ function renderInitiateVoteSection() {
       </div>
     `
     : "";
+  // Ended-but-not-broadcast votes — commish view with full breakdown +
+  // "Send result to league" button.
+  const ended = _findEndedVotesNeedingBroadcast();
+  const endedHtml = ended.length
+    ? `
+      <div style="margin-bottom:14px">
+        <div style="font-weight:700;color:var(--text-bright);font-size:0.86rem;margin-bottom:6px">Ended — ready to broadcast (${ended.length})</div>
+        ${ended.map(_renderEndedVoteCommishCard).join("")}
+      </div>
+    `
+    : "";
+  // Vote History — broadcasted votes, collapsed by default. Sanitized data
+  // (counts only) so this matches what the league saw via email.
+  const broadcasted = _findBroadcastedVotes();
+  const historyHtml = broadcasted.length
+    ? `
+      <details id="cs-vote-history" class="keeper-projection" style="margin-bottom:14px"${_detailsOpenAttr("cs-vote-history", false)}>
+        <summary style="cursor:pointer;font-weight:700;color:var(--text-bright);font-size:0.86rem">Vote History (${broadcasted.length})</summary>
+        <div style="margin-top:8px">
+          ${broadcasted.map(_renderBroadcastedVoteHistoryRow).join("")}
+        </div>
+      </details>
+    `
+    : "";
   return `
     ${activeListHtml}
+    ${endedHtml}
+    ${historyHtml}
     <div style="font-weight:700;color:var(--text-bright);font-size:0.86rem;margin-bottom:6px">Initiate a new vote</div>
     <div style="display:grid;gap:8px;max-width:520px">
       <input type="text" id="vote-title" placeholder="Vote title (e.g. 'Change roster limits to 26')"
@@ -9498,9 +9551,10 @@ async function endActiveVote(voteId) {
     }
     if (typeof logActivityAsync === "function") await logActivityAsync("vote_ended", payload);
     if (typeof showToast === "function") showToast("Vote ended");
-    // Drop the commish on the Rules tab where the result card + "Send result
-    // to league" button live, instead of bouncing to Commish Tools.
-    switchTab("rules");
+    // Land back on Commissioner Tools where the League Vote section now
+    // shows the ended vote with the "Send result to league" button.
+    _detailsOpenState.set("cs-vote", true);
+    switchTab("settings");
   } catch (e) {
     alert("Couldn't end vote: " + (e.message || e));
   }
