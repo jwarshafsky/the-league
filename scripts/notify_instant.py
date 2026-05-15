@@ -125,15 +125,16 @@ def recipients_for_activity(activity, all_prefs, channel, commish_team_ids=None)
         # not a routine alert). Push still respects opt-in.
         if cat == "league_vote" and channel == "email" and tid in commish_team_ids:
             out.append(tid); continue
-        # Commish-broadcast vote results: every owner gets the email — this
-        # is league business, not a routine alert. Push still respects opt-in.
-        if cat == "vote_result" and channel == "email":
-            out.append(tid); continue
         row = (all_prefs or {}).get(tid) or {}
         if row.get("receive_all"):
             out.append(tid); continue
         prefs = row.get("prefs") or {}
         cur = prefs.get(cat) or {}
+        # vote_result defaults to "instant" when no pref row is set, since
+        # the UI offers only Instant or Never (opt-out) and most users won't
+        # have toggled it off.
+        if cat == "vote_result" and channel == "email" and cur.get("email") in (None, "instant"):
+            out.append(tid); continue
         if channel == "email" and cur.get("email") == "instant":
             out.append(tid)
         elif channel == "push" and cur.get("push"):

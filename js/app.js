@@ -5383,6 +5383,7 @@ const NOTIFY_EVENTS = [
   { key: "callup",           label: "Call-ups",                       email: ["daily","weekly","never"],            push: false, defaults: { email: "never" } },
   { key: "send_down",        label: "Send-downs",                     email: ["daily","weekly","never"],            push: false, defaults: { email: "never" } },
   { key: "draft_picks",      label: "Other teams' draft picks",       email: ["daily","weekly","never"],            push: false, defaults: { email: "never" } },
+  { key: "vote_result",      label: "League vote results",            email: ["instant","never"],                   push: false, defaults: { email: "instant" } },
 ];
 
 const DRAFT_CLOCK_STATES = [
@@ -5515,10 +5516,11 @@ function renderUserSettingsView() {
   const FREQS = ["instant", "daily", "weekly", "never"];
   const FREQ_LABELS = { instant: "Instant", daily: "Daily", weekly: "Weekly", never: "Never" };
   const inApp = prefs.in_app || {};
-  // Map NOTIFY_EVENTS keys → INAPP_TOAST_EVENTS keys. All notification
-  // categories now have an in-app toggle (1:1 mapping by key).
+  // Map NOTIFY_EVENTS keys → INAPP_TOAST_EVENTS keys. Categories without an
+  // in-app toast (e.g., vote_result) get a "—" cell instead of a checkbox.
+  const _INAPP_KEYS = new Set(INAPP_TOAST_EVENTS.map(e => e.key));
   const NOTIFY_TO_INAPP = Object.fromEntries(
-    NOTIFY_EVENTS.map(e => [e.key, e.key])
+    NOTIFY_EVENTS.filter(e => _INAPP_KEYS.has(e.key)).map(e => [e.key, e.key])
   );
   const eventRowsHtml = NOTIFY_EVENTS.map(e => {
     const cur = prefs[e.key] || {};
