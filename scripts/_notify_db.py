@@ -166,6 +166,8 @@ def event_category(activity_type):
         return "league_vote"
     if t == "vote_result_broadcast":
         return "vote_result"
+    if t == "vote_result_broadcast_test":
+        return "vote_result_test"
     return None
 
 
@@ -211,14 +213,15 @@ def describe_activity(a):
         if winner:
             return f"Vote ended — \"{title}\"{auto_marker}: <strong>{winner}</strong> wins. {breakdown}"
         return f"Vote ended: {title}{auto_marker}"
-    if t == "vote_result_broadcast":
+    if t in ("vote_result_broadcast", "vote_result_broadcast_test"):
         # Sanitized league-wide announcement — totals only, no voter names.
+        prefix = "[TEST PREVIEW] " if t == "vote_result_broadcast_test" else ""
         title = p.get("title") or "vote"
         winner = p.get("winning_option")
         breakdown = p.get("breakdown") or ""  # sanitized form: "Yes: 7 | No: 5"
         total = p.get("total_votes")
         total_part = f" ({total} ballots)" if total else ""
         if winner:
-            return f"League vote result — \"{title}\": <strong>{winner}</strong> wins{total_part}. {breakdown}"
-        return f"League vote result: {title}{total_part}. {breakdown}"
+            return f"{prefix}League vote result — \"{title}\": <strong>{winner}</strong> wins{total_part}. {breakdown}"
+        return f"{prefix}League vote result: {title}{total_part}. {breakdown}"
     return f"{actor} {t}".strip()

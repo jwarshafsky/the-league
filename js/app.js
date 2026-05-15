@@ -9200,8 +9200,12 @@ function _renderEndedVoteCommishCard(activity) {
       </div>
       <div style="font-size:0.86rem;color:var(--text);margin-bottom:10px">${lineHtml}</div>
       <div style="font-size:0.74rem;color:var(--text-dim);margin-bottom:10px">Voters are visible to commissioners only. The league email will show totals only.</div>
-      <button class="trade-btn trade-btn-submit" style="font-size:0.85rem"
-        onclick="broadcastVoteResultToLeague('${aid}')">Send result to league</button>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="trade-btn trade-btn-submit" style="font-size:0.85rem"
+          onclick="broadcastVoteResultToLeague('${aid}')">Send result to league</button>
+        <button class="trade-btn" style="font-size:0.85rem;background:var(--bg);border:1px solid var(--border);color:var(--text)"
+          onclick="broadcastVoteResultToLeague('${aid}', true)" title="Sends the same email to only you so you can preview it without the league seeing.">Send test (only to me)</button>
+      </div>
     </div>
   `;
 }
@@ -9238,13 +9242,16 @@ function _renderBroadcastedVoteHistoryRow(activity) {
   `;
 }
 
-async function broadcastVoteResultToLeague(activityId) {
+async function broadcastVoteResultToLeague(activityId, testOnly) {
   if (!isCommissioner()) return;
   const activity = (dbGetActivity() || []).find(a => a && String(a.id) === String(activityId));
   if (!activity) { alert("Couldn't find that ended vote."); return; }
   const p = activity.payload || {};
   if (!p.vote_id) { alert("Vote payload is missing vote_id."); return; }
-  if (!confirm(`Email the league the result of "${p.title || "this vote"}"?\n\nTotals will be shown; individual voter names will NOT.`)) return;
+  const confirmMsg = testOnly
+    ? `Send a TEST copy of the result email to yourself only? The vote will stay in "Ready to broadcast" so you can do the real send afterward.`
+    : `Email the league the result of "${p.title || "this vote"}"?\n\nTotals will be shown; individual voter names will NOT.`;
+  if (!confirm(confirmMsg)) return;
   // Reconstruct option labels from the breakdown text.
   const breakdown = String(p.breakdown || "").split(" | ");
   const optionLabels = breakdown.map(seg => (seg.split(":")[0] || "").trim()).filter(Boolean);
@@ -9252,8 +9259,9 @@ async function broadcastVoteResultToLeague(activityId) {
   const total = counts.reduce((s, n) => s + (n || 0), 0);
   // Anonymized payload: include counts + winner, NOT buckets/voter names.
   const sanitizedBreakdown = optionLabels.map((opt, i) => `${opt}: ${counts[i] ?? 0}`).join(" | ");
+  const activityType = testOnly ? "vote_result_broadcast_test" : "vote_result_broadcast";
   try {
-    await logActivityAsync("vote_result_broadcast", {
+    await logActivityAsync(activityType, {
       vote_id: p.vote_id,
       title: p.title,
       winning_option: p.winning_option,
@@ -9262,14 +9270,17 @@ async function broadcastVoteResultToLeague(activityId) {
       total_votes: total,
       breakdown: sanitizedBreakdown,
     });
-    if (typeof showToast === "function") showToast("Result sent to the league");
+    if (typeof showToast === "function") {
+      showToast(testOnly ? "Test sent — check your inbox" : "Result sent to the league");
+    }
     // Re-render Commissioner Tools with the League Vote section open so the
-    // commish sees the just-broadcast vote shift into Vote History.
+    // commish sees the just-broadcast vote shift into Vote History (or stays
+    // in "Ready to broadcast" if this was a test).
     _detailsOpenState.set("cs-vote", true);
-    _detailsOpenState.set("cs-vote-history", true);
+    if (!testOnly) _detailsOpenState.set("cs-vote-history", true);
     if (typeof switchTab === "function") switchTab("settings");
   } catch (e) {
-    alert("Couldn't broadcast result: " + (e.message || e));
+    alert("Couldn't send result: " + (e.message || e));
   }
 }
 

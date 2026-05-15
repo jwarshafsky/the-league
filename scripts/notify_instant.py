@@ -53,6 +53,9 @@ CATEGORY_META = {
     # Commish-broadcast vote result — emails the whole league with totals
     # only. No voter names in the body.
     "vote_result":      {"subject_prefix": "League vote result", "url": APP_URL + "?tab=rules",            "title": "League vote result", "tag": "VOTE"},
+    # Test preview — same email, but ONLY the commish who triggered it gets
+    # a copy. Used to sanity-check the email before doing the real broadcast.
+    "vote_result_test": {"subject_prefix": "League vote result (TEST)", "url": APP_URL + "?tab=rules",     "title": "League vote result (TEST)", "tag": "VOTE-TEST"},
 }
 
 
@@ -101,6 +104,10 @@ def recipients_for_activity(activity, all_prefs, channel, commish_team_ids=None)
         # Commish-triggered league-wide announcement — fan out to every team.
         for team_id in (all_prefs or {}).keys():
             candidates.add(team_id)
+    elif t == "vote_result_broadcast_test":
+        # Test preview — ONLY the actor (commish) gets the email so they can
+        # preview the layout before doing the real broadcast.
+        if actor: candidates.add(actor)
     else:
         # For keeper_* / rule5_* / callup / send_down / draft picks etc., the
         # "candidate" pool is the actor team (their own actions don't notify
@@ -116,9 +123,11 @@ def recipients_for_activity(activity, all_prefs, channel, commish_team_ids=None)
 
     # Filter by pref + channel.
     out = []
+    is_test_preview = (a.get("type") == "vote_result_broadcast_test")
     for tid in candidates:
-        if tid == actor:
-            # Don't notify the actor about their own action.
+        if tid == actor and not is_test_preview:
+            # Don't notify the actor about their own action — except for
+            # the explicit test-preview send, which is meant for the actor.
             continue
         # League vote events: commissioners get them unconditionally on
         # email regardless of prefs (this is a league-business notification,
@@ -128,6 +137,10 @@ def recipients_for_activity(activity, all_prefs, channel, commish_team_ids=None)
         # Commish-broadcast vote results: every owner gets the email — this
         # is league business, not a routine alert. Push still respects opt-in.
         if cat == "vote_result" and channel == "email":
+            out.append(tid); continue
+        # Test-preview vote result: only the actor (already filtered into
+        # candidates above) needs the email; bypass prefs.
+        if cat == "vote_result_test" and channel == "email":
             out.append(tid); continue
         row = (all_prefs or {}).get(tid) or {}
         if row.get("receive_all"):
