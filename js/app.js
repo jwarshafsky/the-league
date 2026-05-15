@@ -4231,6 +4231,8 @@ function getPickOwner(draft, round, pickInRound) {
 }
 
 function getCurrentPickInfo(draft) {
+  // Commish-ended draft: no current pick, picks history stays visible.
+  if (draft && draft.endedAt) return null;
   const teamsCount = draft.baseOrder.length;
   const totalSlots = draft.rounds * teamsCount;
   const passed = draft.passed || [];
@@ -4248,21 +4250,47 @@ function getCurrentPickInfo(draft) {
 
 function renderDraftView() {
   const commish = isCommissioner();
+  const draft = (typeof getDraft === "function") ? getDraft() : null;
+  const draftEnded = !!(draft && draft.endedAt);
   const setupBtn = commish
     ? `<button class="trade-btn trade-btn-cancel" id="dv-btn-setup" onclick="showDraftOrderSetup()">Order / Traded Picks</button>`
     : "";
+  // End Draft is red to signal finality; preserves the pick history but
+  // closes off further picks/passes/undos. Only commish sees it, and only
+  // while the draft is still active.
+  const endBtn = (commish && !draftEnded)
+    ? `<button class="trade-btn" onclick="endMinorsDraftConfirm()" style="background:var(--red);color:#fff;margin-left:auto">End Draft</button>`
+    : "";
   const resetBtn = commish
-    ? `<button class="trade-btn trade-btn-cancel" onclick="resetDraftConfirm()" style="margin-left:auto">Reset</button>`
+    ? `<button class="trade-btn trade-btn-cancel" onclick="resetDraftConfirm()"${endBtn ? "" : ' style="margin-left:auto"'}>Reset</button>`
     : "";
   return `
     <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap">
       <button class="trade-btn" id="dv-btn-board" onclick="showDraftBoard()">Draft Board</button>
       ${setupBtn}
+      ${endBtn}
       ${resetBtn}
     </div>
     <div id="prospect-status" style="font-size:0.75rem;color:var(--text-dim);margin-bottom:14px"></div>
     <div id="draft-content"></div>
   `;
+}
+
+async function endMinorsDraftConfirm() {
+  if (!isCommissioner()) return;
+  const draft = getDraft();
+  if (draft.endedAt) { alert("Draft is already ended."); return; }
+  if (!confirm("End the Minors Draft now? The pick history will stay visible to everyone but no more picks, passes, or undos can be made.")) return;
+  draft.endedAt = new Date().toISOString();
+  try {
+    if (typeof saveDraftAsync === "function") await saveDraftAsync(draft);
+    else saveDraft(draft);
+    if (typeof logActivityAsync === "function") await logActivityAsync("minors_draft_ended", { endedAt: draft.endedAt, totalPicks: draft.picks.length });
+    if (typeof showToast === "function") showToast("Draft ended");
+    switchTab("draft");
+  } catch (e) {
+    alert("Couldn't end draft: " + (e.message || e));
+  }
 }
 
 function renderProspectStatus() {
@@ -4366,6 +4394,16 @@ function showDraftBoard() {
         </div>
         ${renderDraftClockBlock(draft, commish)}
         ${inputBlock}
+      </div>
+    `;
+  } else if (draft.endedAt) {
+    // Commish ended the draft early — picks history below stays visible
+    // to all managers but no more picks / passes / undos can happen.
+    const endedAtStr = (() => { try { return new Date(draft.endedAt).toLocaleString(); } catch { return draft.endedAt; } })();
+    html += `
+      <div class="keeper-projection" style="background:rgba(239,68,68,0.10);border-color:var(--red);margin-bottom:14px">
+        <h3 style="margin:0;color:var(--red)">Draft Ended</h3>
+        <div style="color:var(--text-dim);font-size:0.85rem;margin-top:6px">Closed by the commissioner on ${escapeHtml(endedAtStr)}. The pick history below is the final record.</div>
       </div>
     `;
   } else {
@@ -9644,6 +9682,24 @@ function getRule5State() {
   catch { return null; }
 }
 
+async function endRule5DraftConfirm() {
+  if (!isCommissioner()) return;
+  const state = getRule5State();
+  if (!state) { alert("No active Rule 5 draft to end."); return; }
+  if (state.endedAt) { alert("Draft is already ended."); return; }
+  if (!confirm("End the Rule 5 Draft now? The pick history will stay visible to everyone but no more picks, passes, or undos can be made.")) return;
+  state.endedAt = new Date().toISOString();
+  try {
+    if (typeof saveRule5Async === "function") await saveRule5Async(state);
+    else localStorage.setItem("flm_rule5", JSON.stringify(state));
+    if (typeof logActivityAsync === "function") await logActivityAsync("rule5_draft_ended", { endedAt: state.endedAt, totalPicks: (state.picks || []).length });
+    if (typeof showToast === "function") showToast("Draft ended");
+    switchTab("rule5");
+  } catch (e) {
+    alert("Couldn't end draft: " + (e.message || e));
+  }
+}
+
 async function resetRule5Draft() {
   if (!confirm("Reset entire Rule 5 draft?")) return;
   // Sweep the auto-recorded $1 Rule 5 trades alongside the state. Match by
@@ -9827,7 +9883,16 @@ function renderRule5View() {
   const draftComplete = cur === null;
 
   let onClockHtml = "";
-  if (draftComplete) {
+  if (state.endedAt) {
+    // Commish-ended draft — picks history below stays intact.
+    const endedAtStr = (() => { try { return new Date(state.endedAt).toLocaleString(); } catch { return state.endedAt; } })();
+    onClockHtml = `
+      <div class="keeper-projection" style="background:rgba(239,68,68,0.10);border-color:var(--red);margin-bottom:14px">
+        <h3 style="color:var(--red);margin:0">Draft Ended</h3>
+        <div style="color:var(--text-dim);font-size:0.85rem;margin-top:4px">Closed by the commissioner on ${escapeHtml(endedAtStr)}. The pick history below is the final record.</div>
+      </div>
+    `;
+  } else if (draftComplete) {
     onClockHtml = `
       <div class="keeper-projection" style="background:rgba(34,197,94,0.1);border-color:var(--green);margin-bottom:14px">
         <h3 style="color:var(--green);margin:0">Rule 5 Draft Complete</h3>
@@ -9870,10 +9935,17 @@ function renderRule5View() {
     `;
   }
 
+  const r5EndBtn = (commish && !state.endedAt)
+    ? `<button class="trade-btn" onclick="endRule5DraftConfirm()" style="background:var(--red);color:#fff;margin-left:auto">End Draft</button>`
+    : "";
+  const r5ResetBtn = commish
+    ? `<button class="trade-btn trade-btn-cancel"${r5EndBtn ? "" : ' style="margin-left:auto"'} onclick="resetRule5Draft()">Reset</button>`
+    : "";
   return `
     <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap">
       <span style="color:var(--text-dim);font-size:0.8rem;align-self:center">Pool loaded ${new Date(state.loadedAt).toLocaleString()}</span>
-      ${commish ? `<button class="trade-btn trade-btn-cancel" style="margin-left:auto" onclick="resetRule5Draft()">Reset</button>` : ''}
+      ${r5EndBtn}
+      ${r5ResetBtn}
     </div>
     <div class="summary-bar">
       <div class="summary-item">
@@ -9979,6 +10051,7 @@ function startRule5Draft() {
 }
 
 function getRule5CurrentPick(state) {
+  if (state && state.endedAt) return null; // commish-ended draft
   const order = state.order || [];
   const numTeams = order.length;
   if (numTeams === 0) return null;
