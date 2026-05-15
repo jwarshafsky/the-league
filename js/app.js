@@ -5323,7 +5323,12 @@ function isPwaInstalled() {
 
 function detectInstallPlatform() {
   const ua = navigator.userAgent || "";
-  const isIOS = /iPhone|iPad|iPod/.test(ua) && !window.MSStream;
+  // iPadOS 13+ Safari spoofs a Mac UA by default ("Request Desktop Site"),
+  // so the classic /iPad/ regex misses every modern iPad. Detect it via
+  // the touch-support + MacIntel platform combo that desktops never have.
+  const isIPadSpoofed = (navigator.maxTouchPoints || 0) > 1
+    && /MacIntel|Mac OS X/.test(navigator.platform || "");
+  const isIOS = (/iPhone|iPad|iPod/.test(ua) && !window.MSStream) || isIPadSpoofed;
   const isAndroid = /Android/.test(ua);
   const isSafari = /^((?!chrome|android|crios|fxios|edgios).)*safari/i.test(ua);
   const isFirefox = /Firefox/i.test(ua);
