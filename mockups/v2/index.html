@@ -1,0 +1,969 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The League — ESPN-style facelift mockup (v2)</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<div class="app">
+  <!-- ================ Topbar ================ -->
+  <header class="topbar">
+    <div class="logo">TL</div>
+    <h1>The League <small>2026 — Auction Keeper · 12 Teams</small></h1>
+    <div class="user-chip">
+      <div class="avatar">J</div>
+      <span>Jeff</span>
+    </div>
+  </header>
+
+  <!-- ================ Nav ================ -->
+  <nav class="nav">
+    <a href="#eligible" data-view="eligible" class="active">Select Keepers</a>
+    <a href="#keepers" data-view="keepers">2026 Keepers</a>
+    <a href="#rule5" data-view="rule5">Rule 5 Draft</a>
+    <a href="#draft" data-view="draft">Minors Draft</a>
+    <a href="#rosters" data-view="rosters">Minors Rosters</a>
+    <a href="#trades" data-view="trades">Trades<span class="count">3</span></a>
+    <a href="#financials" data-view="financials">Financials</a>
+    <a href="#activity" data-view="activity">Activity</a>
+    <a href="#trophy" data-view="trophy">League History</a>
+    <a href="#rules" data-view="rules">League Rules</a>
+    <a href="#settings" data-view="settings">Settings</a>
+    <a href="#commish" data-view="commish">Commissioner Tools<span class="count gray">2</span></a>
+  </nav>
+
+  <main class="page">
+
+    <!-- ============================================================
+         VIEW: Select Keepers
+         ============================================================ -->
+    <section class="view active" data-view="eligible">
+      <div class="page-title">
+        <h2>Select Keepers</h2>
+        <span class="meta">Tag up to 8 ML + 10 MiL keepers · 25 Rule 5 protections</span>
+      </div>
+      <div class="page-toolbar">
+        <select class="select">
+          <option>Jeff's Team</option>
+          <option>All Teams Summary</option>
+          <option>Matt</option>
+          <option>Dave</option>
+        </select>
+        <button class="btn ghost">Edit overrides</button>
+        <div class="toolbar-spacer"></div>
+        <button class="btn">Export CSV</button>
+        <button class="btn primary">Save Selections</button>
+      </div>
+
+      <div class="layout-split">
+        <div>
+          <div class="stat-row">
+            <div class="stat-card good"><div class="label">ML Keepers</div><div class="value">8<span class="unit">/8</span></div><div class="sub">Cap reached</div></div>
+            <div class="stat-card warn"><div class="label">MiL Keepers</div><div class="value">7<span class="unit">/10</span></div><div class="sub">3 slots open</div></div>
+            <div class="stat-card"><div class="label">Rule 5 Protected</div><div class="value">12<span class="unit">/25</span></div><div class="sub">13 exposed</div></div>
+            <div class="stat-card purple"><div class="label">Draft Dollars</div><div class="value">$172</div><div class="sub">$260 − $88 keepers</div></div>
+          </div>
+
+          <section class="section-card">
+            <div class="section-head">
+              <h2>Eligible Players</h2>
+              <span class="pill">37</span>
+              <div class="actions">
+                <input class="input-search" type="search" placeholder="Search players…">
+                <button class="btn ghost small">Filter</button>
+              </div>
+            </div>
+            <table class="players">
+              <thead>
+                <tr>
+                  <th style="width:32%">Player</th>
+                  <th>Source</th>
+                  <th class="num">2026 $</th>
+                  <th class="num">2027 $</th>
+                  <th>Expiry</th>
+                  <th class="center">Rule 5</th>
+                  <th class="center">Keep</th>
+                  <th class="center">Block</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><div class="player-cell"><div class="player-avatar" style="background:linear-gradient(135deg,#fde047,#f59e0b)">AJ</div><div class="player-info"><div class="player-name">Aaron Judge</div><div class="player-meta"><span class="pos-badge">OF</span><span class="team-chip">NYY</span><span class="dot"></span><span>33y</span></div></div></div></td>
+                  <td><span class="source-badge">Auction 2025</span></td>
+                  <td class="num">$48</td><td class="num">$50</td>
+                  <td><span class="pill-tag expiring">2027</span></td>
+                  <td class="center"><div class="check-cell"><input type="checkbox"></div></td>
+                  <td class="center"><div class="check-cell"><input type="checkbox" checked></div></td>
+                  <td class="center"><div class="check-cell"><input type="checkbox"></div></td>
+                </tr>
+                <tr>
+                  <td><div class="player-cell"><div class="player-avatar" style="background:linear-gradient(135deg,#60a5fa,#1d4ed8)">BW</div><div class="player-info"><div class="player-name">Bobby Witt Jr.</div><div class="player-meta"><span class="pos-badge">SS</span><span class="team-chip">KCR</span><span class="dot"></span><span>25y</span></div></div></div></td>
+                  <td><span class="source-badge callup">Call-up 2024</span></td>
+                  <td class="num">$12</td><td class="num">$14</td>
+                  <td><span class="pill-tag keep">2028</span></td>
+                  <td class="center"><div class="check-cell"><input type="checkbox"></div></td>
+                  <td class="center"><div class="check-cell"><input type="checkbox" checked></div></td>
+                  <td class="center"><div class="check-cell"><input type="checkbox"></div></td>
+                </tr>
+                <tr>
+                  <td><div class="player-cell"><div class="player-avatar" style="background:linear-gradient(135deg,#34d399,#059669)">PS</div><div class="player-info"><div class="player-name">Paul Skenes</div><div class="player-meta"><span class="pos-badge p">SP</span><span class="team-chip">PIT</span><span class="dot"></span><span>24y</span></div></div></div></td>
+                  <td><span class="source-badge fa">FA 2026</span></td>
+                  <td class="num">—</td><td class="num">$8</td>
+                  <td><span class="pill-tag new">3-yr contract</span></td>
+                  <td class="center"><div class="check-cell"><input type="checkbox" checked></div></td>
+                  <td class="center"><div class="check-cell"><input type="checkbox"></div></td>
+                  <td class="center"><div class="check-cell"><input type="checkbox"></div></td>
+                </tr>
+                <tr>
+                  <td><div class="player-cell"><div class="player-avatar" style="background:linear-gradient(135deg,#fb923c,#c2410c)">CY</div><div class="player-info"><div class="player-name">Cole Young</div><div class="player-meta"><span class="pos-badge">SS</span><span class="team-chip">SEA</span><span class="dot"></span><span>22y · AAA</span></div></div></div></td>
+                  <td><span class="source-badge minor">MiL Pick 2024</span></td>
+                  <td class="num">—</td><td class="num">$5</td>
+                  <td><span class="pill-tag final">2027 Must Call Up</span></td>
+                  <td class="center"><div class="check-cell"><input type="checkbox" disabled></div></td>
+                  <td class="center"><div class="check-cell"><input type="checkbox"></div></td>
+                  <td class="center"><div class="check-cell"><input type="checkbox"></div></td>
+                </tr>
+                <tr>
+                  <td><div class="player-cell"><div class="player-avatar" style="background:linear-gradient(135deg,#a78bfa,#7c3aed)">RA</div><div class="player-info"><div class="player-name">Ronald Acuña Jr.</div><div class="player-meta"><span class="pos-badge">OF</span><span class="team-chip">ATL</span><span class="dot"></span><span>28y</span></div></div></div></td>
+                  <td><span class="source-badge trade">Trade 2025</span></td>
+                  <td class="num">$32</td><td class="num">$34</td>
+                  <td><span class="pill-tag keep">2028</span></td>
+                  <td class="center"><div class="check-cell"><input type="checkbox"></div></td>
+                  <td class="center"><div class="check-cell"><input type="checkbox" checked></div></td>
+                  <td class="center"><div class="check-cell"><input type="checkbox"></div></td>
+                </tr>
+                <tr>
+                  <td><div class="player-cell"><div class="player-avatar" style="background:linear-gradient(135deg,#94a3b8,#475569)">DR</div><div class="player-info"><div class="player-name">Dalton Rushing</div><div class="player-meta"><span class="pos-badge c">C</span><span class="team-chip">LAD</span><span class="dot"></span><span>24y · AAA</span></div></div></div></td>
+                  <td><span class="source-badge minor">MiL Pick 2023</span></td>
+                  <td class="num">—</td><td class="num">$3</td>
+                  <td><span class="pill-tag expiring">2026</span></td>
+                  <td class="center"><div class="check-cell"><input type="checkbox"></div></td>
+                  <td class="center"><div class="check-cell"><input type="checkbox"></div></td>
+                  <td class="center"><div class="check-cell"><input type="checkbox" checked></div></td>
+                </tr>
+                <tr>
+                  <td><div class="player-cell"><div class="player-avatar" style="background:linear-gradient(135deg,#f87171,#dc2626)">JS</div><div class="player-info"><div class="player-name">Juan Soto</div><div class="player-meta"><span class="pos-badge">OF</span><span class="team-chip">NYM</span><span class="dot"></span><span>27y</span></div></div></div></td>
+                  <td><span class="source-badge">Auction 2025</span></td>
+                  <td class="num">$45</td><td class="num">$47</td>
+                  <td><span class="pill-tag keep">2029</span></td>
+                  <td class="center"><div class="check-cell"><input type="checkbox"></div></td>
+                  <td class="center"><div class="check-cell"><input type="checkbox" checked></div></td>
+                  <td class="center"><div class="check-cell"><input type="checkbox"></div></td>
+                </tr>
+              </tbody>
+            </table>
+          </section>
+        </div>
+        <aside class="key-dates">
+          <h3>Key Dates · ET</h3>
+          <div class="key-date-row"><span class="lbl">Rule 5 Deadline</span><span class="val">Sep 15</span></div>
+          <div class="key-date-row"><span class="lbl">Rule 5 Draft</span><span class="val">Sep 30 · 8:00 PM</span></div>
+          <div class="key-date-row"><span class="lbl">Keeper Deadline</span><span class="val">Dec 15</span></div>
+          <div class="key-date-row"><span class="lbl">Auction Draft</span><span class="val">Mar 22 · 6:00 PM</span></div>
+          <div class="key-date-row"><span class="lbl">Minors Draft</span><span class="val">Apr 21 · 6:00 PM</span></div>
+          <div class="key-date-row"><span class="lbl">Trade Deadline</span><span class="val">Sep 1 · 4:00 PM</span></div>
+        </aside>
+      </div>
+    </section>
+
+    <!-- ============================================================
+         VIEW: 2026 Keepers
+         ============================================================ -->
+    <section class="view" data-view="keepers">
+      <div class="page-title">
+        <h2>2026 Keepers</h2>
+        <span class="meta">All teams' final keeper protections</span>
+      </div>
+      <div class="page-toolbar">
+        <select class="select"><option>All Teams</option><option>Jeff</option></select>
+        <div class="toolbar-spacer"></div>
+        <button class="btn ghost small">Sort by total $</button>
+      </div>
+
+      <div class="team-card">
+        <div class="team-card-head">
+          <span class="name">Jeff <span style="color:var(--text-3);font-weight:500;font-size:12px;margin-left:6px">$88 keeper · $172 draft</span></span>
+          <div class="counters"><span class="ct good">8/8 ML</span><span class="ct">7/10 MiL</span></div>
+        </div>
+        <div class="team-card-meta">
+          <span class="kept-chip">Aaron Judge $48</span>
+          <span class="kept-chip">Juan Soto $45</span>
+          <span class="kept-chip">Ronald Acuña Jr. $32</span>
+          <span class="kept-chip">Bobby Witt Jr. $12</span>
+          <span class="kept-chip">Mookie Betts $30</span>
+          <span class="kept-chip">Gunnar Henderson $14</span>
+          <span class="kept-chip">Tarik Skubal $18</span>
+          <span class="kept-chip">Spencer Strider $8</span>
+        </div>
+      </div>
+
+      <div class="team-card">
+        <div class="team-card-head">
+          <span class="name">Matt <span style="color:var(--text-3);font-weight:500;font-size:12px;margin-left:6px">$104 keeper · $156 draft</span></span>
+          <div class="counters"><span class="ct good">8/8 ML</span><span class="ct good">10/10 MiL</span></div>
+        </div>
+        <div class="team-card-meta">
+          <span class="kept-chip">Shohei Ohtani $52</span>
+          <span class="kept-chip">Mike Trout $40</span>
+          <span class="kept-chip">Vlad Guerrero Jr. $25</span>
+          <span class="kept-chip">Corbin Carroll $10</span>
+          <span class="kept-chip">+4 more</span>
+        </div>
+      </div>
+
+      <div class="team-card">
+        <div class="team-card-head">
+          <span class="name">Dave <span style="color:var(--text-3);font-weight:500;font-size:12px;margin-left:6px">$72 keeper · $188 draft</span></span>
+          <div class="counters"><span class="ct">6/8 ML</span><span class="ct">7/10 MiL</span></div>
+        </div>
+        <div class="team-card-meta">
+          <span class="kept-chip">José Ramírez $35</span>
+          <span class="kept-chip">Adley Rutschman $12</span>
+          <span class="kept-chip">Elly De La Cruz $6</span>
+          <span class="kept-chip">+3 more</span>
+        </div>
+      </div>
+
+      <div class="team-card">
+        <div class="team-card-head">
+          <span class="name">Glicksman <span style="color:var(--text-3);font-weight:500;font-size:12px;margin-left:6px">$58 keeper · $202 draft</span></span>
+          <div class="counters"><span class="ct">5/8 ML</span><span class="ct">8/10 MiL</span></div>
+        </div>
+        <div class="team-card-meta">
+          <span class="kept-chip">Yordan Alvarez $22</span>
+          <span class="kept-chip">Wyatt Langford $8</span>
+          <span class="kept-chip">+3 more</span>
+        </div>
+      </div>
+
+      <div class="team-card">
+        <div class="team-card-head">
+          <span class="name">Sam <span style="color:var(--text-3);font-weight:500;font-size:12px;margin-left:6px">$95 keeper · $165 draft</span></span>
+          <div class="counters"><span class="ct good">8/8 ML</span><span class="ct">6/10 MiL</span></div>
+        </div>
+        <div class="team-card-meta">
+          <span class="kept-chip">Freddie Freeman $25</span>
+          <span class="kept-chip">Kyle Tucker $20</span>
+          <span class="kept-chip">+6 more</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================================================
+         VIEW: Rule 5 Draft
+         ============================================================ -->
+    <section class="view" data-view="rule5">
+      <div class="page-title">
+        <h2>Rule 5 Draft</h2>
+        <span class="meta">Pool loaded Sep 16 · 47 players · Round 2</span>
+      </div>
+      <div class="page-toolbar">
+        <button class="btn ghost small">Refresh Pool</button>
+        <div class="toolbar-spacer"></div>
+        <button class="btn danger small">End Draft</button>
+        <button class="btn ghost small">Reset</button>
+      </div>
+
+      <div class="stat-row">
+        <div class="stat-card"><div class="label">Pool</div><div class="value">47</div></div>
+        <div class="stat-card good"><div class="label">Picked</div><div class="value">8</div></div>
+        <div class="stat-card warn"><div class="label">Passes</div><div class="value">4</div></div>
+        <div class="stat-card"><div class="label">Remaining</div><div class="value">39</div></div>
+      </div>
+
+      <div class="on-clock-card">
+        <h3>On the Clock</h3>
+        <div class="who">Saxton <span style="color:var(--text-3);font-size:14px;font-weight:500">· Round 2, Pick 9</span></div>
+        <div class="when">Pick deadline: 4-hour clock (pauses overnight)</div>
+        <div class="clock-bar">
+          <span class="time">3:42:18</span>
+          <span style="color:var(--text-3)">remaining · running</span>
+          <button class="btn small ghost" style="margin-left:auto">Pause clock</button>
+        </div>
+        <div class="input-row">
+          <select class="select" style="min-width:300px"><option>Select player to pick…</option><option>Junior Caminero (TBR · Acuña Jr., exp 2028, $4)</option><option>Jasson Domínguez (NYY · Glicksman, exp 2027, $3)</option></select>
+          <button class="btn primary">Submit Pick</button>
+          <button class="btn ghost">Pass</button>
+          <button class="btn ghost" style="margin-left:auto">Undo Last Pick</button>
+        </div>
+      </div>
+
+      <section class="section-card">
+        <div class="section-head">
+          <h2>Pick History</h2>
+          <span class="pill gray">12</span>
+        </div>
+        <table class="standard">
+          <thead>
+            <tr>
+              <th>Rd.Pk</th>
+              <th>Team</th>
+              <th>Player</th>
+              <th>From</th>
+              <th class="num">Paid</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td>2.8</td><td><strong>Larry</strong></td><td><span class="player-name">Roman Anthony</span> <span class="pos-badge">OF</span></td><td><span class="team-chip">Corey</span></td><td class="num">$1</td></tr>
+            <tr><td>2.7</td><td><strong>Glicksman</strong></td><td><em style="color:var(--text-3)">— pass —</em></td><td>—</td><td class="num">—</td></tr>
+            <tr><td>2.6</td><td><strong>Jesse</strong></td><td><span class="player-name">Jackson Holliday</span> <span class="pos-badge">SS</span></td><td><span class="team-chip">Dave</span></td><td class="num">$1</td></tr>
+            <tr><td>2.5</td><td><strong>Zack</strong></td><td><span class="player-name">Coby Mayo</span> <span class="pos-badge">3B</span></td><td><span class="team-chip">AJ</span></td><td class="num">$1</td></tr>
+            <tr><td>1.12</td><td><strong>Jeff</strong></td><td><em style="color:var(--text-3)">— pass —</em></td><td>—</td><td class="num">—</td></tr>
+            <tr><td>1.11</td><td><strong>Sam</strong></td><td><span class="player-name">James Wood</span> <span class="pos-badge">OF</span></td><td><span class="team-chip">Josh/Doug</span></td><td class="num">$1</td></tr>
+            <tr><td>1.10</td><td><strong>Josh/Doug</strong></td><td><span class="player-name">Carson Williams</span> <span class="pos-badge">SS</span></td><td><span class="team-chip">Saxton</span></td><td class="num">$1</td></tr>
+          </tbody>
+        </table>
+      </section>
+    </section>
+
+    <!-- ============================================================
+         VIEW: Minors Draft
+         ============================================================ -->
+    <section class="view" data-view="draft">
+      <div class="page-title">
+        <h2>Minors Draft</h2>
+        <span class="meta">2027 · 7 rounds · 84 picks</span>
+      </div>
+      <div class="page-toolbar">
+        <button class="btn ghost small">Draft Board</button>
+        <button class="btn ghost small">Order / Traded Picks</button>
+        <div class="toolbar-spacer"></div>
+        <button class="btn danger small">End Draft</button>
+        <button class="btn ghost small">Reset</button>
+      </div>
+
+      <div class="on-clock-card">
+        <h3>On the Clock</h3>
+        <div class="who">Corey <span style="color:var(--text-3);font-size:14px;font-weight:500">· Round 3, Pick 4 (Overall #28)</span></div>
+        <div class="clock-bar danger">
+          <span class="time">0:42:11</span>
+          <span style="color:var(--red);font-weight:700">⚠ under 1 hour · auto-skip imminent</span>
+          <button class="btn small ghost" style="margin-left:auto">Pause</button>
+        </div>
+        <div class="input-row">
+          <input class="input-text" placeholder="Player name (type to search…)">
+          <input class="input-text" placeholder="Position, age, org (e.g. SS, HS, 18)" style="flex:0 0 240px">
+          <button class="btn primary">Submit Pick</button>
+          <button class="btn ghost">Pass</button>
+          <button class="btn ghost">Undo Last Pick</button>
+        </div>
+      </div>
+
+      <section class="section-card">
+        <div class="section-head">
+          <h2>Draft Board</h2>
+          <span class="pill gray">27 / 84</span>
+        </div>
+        <div class="section-body">
+          <div class="draft-board">
+            <div class="draft-cell made"><div class="pick-id">R1.1</div><div class="pick-team">Glicksman</div><div class="pick-player">Konnor Griffin</div><div class="pick-notes">SS · HS</div></div>
+            <div class="draft-cell made"><div class="pick-id">R1.2</div><div class="pick-team">Zack</div><div class="pick-player">Walker Jenkins</div><div class="pick-notes">OF · MIN</div></div>
+            <div class="draft-cell made"><div class="pick-id">R1.3</div><div class="pick-team">Matt</div><div class="pick-player">Jesús Made</div><div class="pick-notes">SS · MIL</div></div>
+            <div class="draft-cell made"><div class="pick-id">R1.4</div><div class="pick-team">Saxton</div><div class="pick-player">Roki Sasaki</div><div class="pick-notes">SP · LAD</div></div>
+            <div class="draft-cell made"><div class="pick-id">R1.5</div><div class="pick-team">Corey</div><div class="pick-player">Bubba Chandler</div><div class="pick-notes">SP · PIT</div></div>
+            <div class="draft-cell made"><div class="pick-id">R1.6</div><div class="pick-team">Dave</div><div class="pick-player">Travis Bazzana</div><div class="pick-notes">2B · CLE</div></div>
+            <div class="draft-cell made"><div class="pick-id">R1.7</div><div class="pick-team">AJ</div><div class="pick-player">Andrew Painter</div><div class="pick-notes">SP · PHI</div></div>
+            <div class="draft-cell made"><div class="pick-id">R1.8</div><div class="pick-team">Josh/Doug</div><div class="pick-player">Charlie Condon</div><div class="pick-notes">OF · COL</div></div>
+            <div class="draft-cell made"><div class="pick-id">R1.9</div><div class="pick-team">Sam</div><div class="pick-player">Sebastian Walcott</div><div class="pick-notes">SS · TEX</div></div>
+            <div class="draft-cell made"><div class="pick-id">R1.10</div><div class="pick-team">Larry</div><div class="pick-player">Leodalis De Vries</div><div class="pick-notes">SS · SDP</div></div>
+            <div class="draft-cell made"><div class="pick-id">R1.11</div><div class="pick-team">Jesse</div><div class="pick-player">Cam Smith</div><div class="pick-notes">3B · HOU</div></div>
+            <div class="draft-cell made"><div class="pick-id">R1.12</div><div class="pick-team">Jeff</div><div class="pick-player">Termarr Johnson</div><div class="pick-notes">2B · PIT</div></div>
+
+            <div class="draft-cell made"><div class="pick-id">R2.1</div><div class="pick-team">Glicksman</div><div class="pick-player">Bryce Eldridge</div><div class="pick-notes">1B · SFG</div></div>
+            <div class="draft-cell made"><div class="pick-id">R2.2</div><div class="pick-team">Zack</div><div class="pick-player">Carson Benge</div><div class="pick-notes">OF · NYM</div></div>
+            <div class="draft-cell made"><div class="pick-id">R2.3</div><div class="pick-team">Matt</div><div class="pick-player">Owen Caissie</div><div class="pick-notes">OF · CHC</div></div>
+            <div class="draft-cell made"><div class="pick-id">R2.4</div><div class="pick-team">Saxton</div><div class="pick-player">Thomas White</div><div class="pick-notes">SP · MIA</div></div>
+            <div class="draft-cell made"><div class="pick-id">R2.5</div><div class="pick-team">Corey</div><div class="pick-player">Brandon Sproat</div><div class="pick-notes">SP · NYM</div></div>
+            <div class="draft-cell made"><div class="pick-id">R2.6</div><div class="pick-team">Dave</div><div class="pick-player">Coby Mayo</div><div class="pick-notes">3B · BAL</div></div>
+            <div class="draft-cell made"><div class="pick-id">R2.7</div><div class="pick-team">AJ</div><div class="pick-player">Dalton Rushing</div><div class="pick-notes">C · LAD</div></div>
+            <div class="draft-cell made"><div class="pick-id">R2.8</div><div class="pick-team">Josh/Doug</div><div class="pick-player">Kevin McGonigle</div><div class="pick-notes">SS · DET</div></div>
+            <div class="draft-cell made"><div class="pick-id">R2.9</div><div class="pick-team">Sam</div><div class="pick-player">Drake Baldwin</div><div class="pick-notes">C · ATL</div></div>
+            <div class="draft-cell made"><div class="pick-id">R2.10</div><div class="pick-team">Larry</div><div class="pick-player">Brody Hopkins</div><div class="pick-notes">SP · TBR</div></div>
+            <div class="draft-cell made"><div class="pick-id">R2.11</div><div class="pick-team">Jesse</div><div class="pick-player">Bryan Woo</div><div class="pick-notes">SP · SEA</div></div>
+            <div class="draft-cell made"><div class="pick-id">R2.12</div><div class="pick-team">Jeff</div><div class="pick-player">Slade Caldwell</div><div class="pick-notes">OF · ARI</div></div>
+
+            <div class="draft-cell made"><div class="pick-id">R3.1</div><div class="pick-team">Glicksman</div><div class="pick-player">Bo Naylor</div><div class="pick-notes">C · CLE</div></div>
+            <div class="draft-cell made"><div class="pick-id">R3.2</div><div class="pick-team">Zack</div><div class="pick-player">George Lombard Jr.</div><div class="pick-notes">SS · NYY</div></div>
+            <div class="draft-cell made"><div class="pick-id">R3.3</div><div class="pick-team">Matt</div><div class="pick-player">Caden Dana</div><div class="pick-notes">SP · LAA</div></div>
+            <div class="draft-cell current"><div class="pick-id">R3.4</div><div class="pick-team">Corey</div><div class="pick-player" style="color:var(--brand)">— on the clock —</div></div>
+            <div class="draft-cell"><div class="pick-id">R3.5</div><div class="pick-team">Dave</div></div>
+            <div class="draft-cell"><div class="pick-id">R3.6</div><div class="pick-team">AJ</div></div>
+            <div class="draft-cell"><div class="pick-id">R3.7</div><div class="pick-team">Josh/Doug</div></div>
+            <div class="draft-cell"><div class="pick-id">R3.8</div><div class="pick-team">Sam</div></div>
+            <div class="draft-cell"><div class="pick-id">R3.9</div><div class="pick-team">Larry</div></div>
+            <div class="draft-cell"><div class="pick-id">R3.10</div><div class="pick-team">Jesse</div></div>
+            <div class="draft-cell"><div class="pick-id">R3.11</div><div class="pick-team">Saxton</div><div class="pick-notes">via Jesse</div></div>
+            <div class="draft-cell"><div class="pick-id">R3.12</div><div class="pick-team">Jeff</div></div>
+          </div>
+        </div>
+      </section>
+    </section>
+
+    <!-- ============================================================
+         VIEW: Minors Rosters
+         ============================================================ -->
+    <section class="view" data-view="rosters">
+      <div class="page-title">
+        <h2>Minors Rosters</h2>
+        <span class="meta">Current MiLB roster + call-ups per team</span>
+      </div>
+      <div class="page-toolbar">
+        <select class="select"><option>Jeff's Team</option><option>All Teams</option></select>
+        <div class="toolbar-spacer"></div>
+        <button class="btn ghost small">Export CSV</button>
+      </div>
+
+      <section class="section-card">
+        <div class="section-head">
+          <h3>Called Up to Majors</h3>
+          <span class="pill">2</span>
+        </div>
+        <table class="players">
+          <thead>
+            <tr>
+              <th style="width:36%">Player</th>
+              <th>Drafted</th>
+              <th class="num">AB/IP</th>
+              <th>Status</th>
+              <th class="num"></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><div class="player-cell"><div class="player-avatar" style="background:linear-gradient(135deg,#60a5fa,#1d4ed8)">JD</div><div class="player-info"><div class="player-name">Jasson Domínguez</div><div class="player-meta"><span class="pos-badge">OF</span><span class="team-chip">NYY</span></div></div></div></td>
+              <td>2022</td>
+              <td class="num">142</td>
+              <td><span class="status-dot active"></span>Active<div style="font-size:11px;color:var(--text-3);margin-top:2px">1 yr left, $5</div></td>
+              <td class="num"><button class="btn small ghost">Send Down</button></td>
+            </tr>
+            <tr>
+              <td><div class="player-cell"><div class="player-avatar" style="background:linear-gradient(135deg,#34d399,#059669)">JH</div><div class="player-info"><div class="player-name">Jackson Holliday</div><div class="player-meta"><span class="pos-badge">2B</span><span class="team-chip">BAL</span></div></div></div></td>
+              <td>2023</td>
+              <td class="num">218</td>
+              <td><span class="status-dot active"></span>Active<div style="font-size:11px;color:var(--text-3);margin-top:2px">2 yrs left, $4</div></td>
+              <td class="num"></td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section class="section-card">
+        <div class="section-head">
+          <h3>Minor League Roster</h3>
+          <span class="pill gray">9/10</span>
+        </div>
+        <table class="players">
+          <thead>
+            <tr>
+              <th style="width:36%">Player</th>
+              <th>Drafted</th>
+              <th class="num">AB/IP</th>
+              <th>Status</th>
+              <th class="num"></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><div class="player-cell"><div class="player-avatar" style="background:linear-gradient(135deg,#fb923c,#c2410c)">CY</div><div class="player-info"><div class="player-name">Cole Young</div><div class="player-meta"><span class="pos-badge">SS</span><span class="team-chip">SEA</span><span class="dot"></span><span>AAA</span></div></div></div></td>
+              <td>2024</td>
+              <td class="num" style="color:var(--red);font-weight:700">312</td>
+              <td><span class="status-dot active"></span>Active<div style="font-size:11px;color:var(--red);margin-top:2px;font-weight:600">2027 Must Call Up</div></td>
+              <td class="num"><button class="btn small ghost">Call Up</button> <button class="btn small ghost">Drop</button></td>
+            </tr>
+            <tr>
+              <td><div class="player-cell"><div class="player-avatar" style="background:linear-gradient(135deg,#94a3b8,#475569)">DR</div><div class="player-info"><div class="player-name">Dalton Rushing</div><div class="player-meta"><span class="pos-badge c">C</span><span class="team-chip">LAD</span><span class="dot"></span><span>AAA</span></div></div></div></td>
+              <td>2023</td>
+              <td class="num" style="color:var(--orange);font-weight:700">205</td>
+              <td><span class="status-dot active"></span>Active<div style="font-size:11px;color:var(--text-3);margin-top:2px">Expires in 2026</div></td>
+              <td class="num"><button class="btn small ghost">Call Up</button> <button class="btn small ghost">Drop</button></td>
+            </tr>
+            <tr>
+              <td><div class="player-cell"><div class="player-avatar" style="background:linear-gradient(135deg,#a78bfa,#7c3aed)">KM</div><div class="player-info"><div class="player-name">Kevin McGonigle</div><div class="player-meta"><span class="pos-badge">SS</span><span class="team-chip">DET</span><span class="dot"></span><span>A+</span></div></div></div></td>
+              <td>2024</td>
+              <td class="num">86</td>
+              <td><span class="status-dot active"></span>Active<div style="font-size:11px;color:var(--text-3);margin-top:2px">2 yrs left, $4</div></td>
+              <td class="num"><button class="btn small ghost">Call Up</button> <button class="btn small ghost">Drop</button></td>
+            </tr>
+            <tr>
+              <td><div class="player-cell"><div class="player-avatar" style="background:linear-gradient(135deg,#f87171,#dc2626)">SC</div><div class="player-info"><div class="player-name">Slade Caldwell</div><div class="player-meta"><span class="pos-badge">OF</span><span class="team-chip">ARI</span><span class="dot"></span><span>A</span></div></div></div></td>
+              <td>2024</td>
+              <td class="num">52</td>
+              <td><span class="status-dot active"></span>Active<div style="font-size:11px;color:var(--text-3);margin-top:2px">2 yrs left, $4</div></td>
+              <td class="num"><button class="btn small ghost">Call Up</button> <button class="btn small ghost">Drop</button></td>
+            </tr>
+            <tr>
+              <td><div class="player-cell"><div class="player-avatar" style="background:linear-gradient(135deg,#fde047,#f59e0b)">TJ</div><div class="player-info"><div class="player-name">Termarr Johnson</div><div class="player-meta"><span class="pos-badge">2B</span><span class="team-chip">PIT</span><span class="dot"></span><span>AA</span></div></div></div></td>
+              <td>2022</td>
+              <td class="num">178</td>
+              <td><span class="status-dot active"></span>Active<div style="font-size:11px;color:var(--text-3);margin-top:2px">1 yr left, $5</div></td>
+              <td class="num"><button class="btn small ghost">Call Up</button> <button class="btn small ghost">Drop</button></td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+    </section>
+
+    <!-- ============================================================
+         VIEW: Trades
+         ============================================================ -->
+    <section class="view" data-view="trades">
+      <div class="page-title">
+        <h2>Trades</h2>
+        <span class="meta">Inbox · Block · Log</span>
+      </div>
+      <div class="subnav" style="margin:-4px -22px 14px">
+        <a href="#trades" class="active">Trade Inbox <span class="count">3</span></a>
+        <a href="#trades">Trade Block</a>
+        <a href="#trades">Trade Log</a>
+      </div>
+
+      <div class="trade-card unread">
+        <div class="head">
+          <span class="parties"><strong>Matt</strong> → <strong>Jeff</strong></span>
+          <span class="badge pending">Pending</span>
+          <span class="when">2h ago</span>
+        </div>
+        <div class="trade-half">
+          <div class="col">
+            <div class="who">Matt receives</div>
+            <div class="what">Bobby Witt Jr. ($12) <br>$4 in 2027 draft dollars</div>
+          </div>
+          <div class="arrow">⇄</div>
+          <div class="col">
+            <div class="who">Jeff receives</div>
+            <div class="what">Bryce Harper ($28)<br>2027 R1 pick</div>
+          </div>
+        </div>
+        <div class="actions">
+          <button class="btn ghost small">Decline</button>
+          <button class="btn ghost small">Counter</button>
+          <button class="btn primary small">Accept</button>
+        </div>
+      </div>
+
+      <div class="trade-card unread">
+        <div class="head">
+          <span class="parties"><strong>Saxton</strong> ↔ <strong>Jeff</strong> · 3 messages</span>
+          <span class="badge pending">Pending</span>
+          <span class="when">yesterday</span>
+        </div>
+        <div class="trade-half">
+          <div class="col">
+            <div class="who">Saxton receives</div>
+            <div class="what">Wyatt Langford ($8)</div>
+          </div>
+          <div class="arrow">⇄</div>
+          <div class="col">
+            <div class="who">Jeff receives</div>
+            <div class="what">Corbin Carroll ($14)<br>$3 in draft dollars</div>
+          </div>
+        </div>
+        <div class="actions">
+          <button class="btn ghost small">Open thread</button>
+        </div>
+      </div>
+
+      <div class="trade-card">
+        <div class="head">
+          <span class="parties"><strong>Dave</strong> ↔ <strong>Jeff</strong></span>
+          <span class="badge completed">Completed</span>
+          <span class="when">last week</span>
+        </div>
+        <div class="trade-half">
+          <div class="col">
+            <div class="who">Dave receives</div>
+            <div class="what">Yordan Alvarez ($22)</div>
+          </div>
+          <div class="arrow">⇄</div>
+          <div class="col">
+            <div class="who">Jeff receives</div>
+            <div class="what">Adley Rutschman ($12)<br>2028 R2 pick</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================================================
+         VIEW: Financials
+         ============================================================ -->
+    <section class="view" data-view="financials">
+      <div class="page-title">
+        <h2>Financials</h2>
+        <span class="meta">Luxury tax snapshot frozen at trade deadline · Sep 1</span>
+      </div>
+
+      <div class="stat-row">
+        <div class="stat-card"><div class="label">Total League Money</div><div class="value">$3,120</div></div>
+        <div class="stat-card good"><div class="label">Luxury Tax Pool</div><div class="value">$0</div><div class="sub">No team over $350</div></div>
+        <div class="stat-card warn"><div class="label">Teams Near Cap</div><div class="value">2</div><div class="sub">Matt $342 · Sam $338</div></div>
+        <div class="stat-card"><div class="label">FAAB Spent YTD</div><div class="value">$214</div></div>
+      </div>
+
+      <section class="section-card">
+        <div class="section-head">
+          <h2>Per-Team Standing</h2>
+          <span class="pill gray">12</span>
+        </div>
+        <table class="standard">
+          <thead>
+            <tr>
+              <th>Team</th>
+              <th class="num">Keeper $</th>
+              <th class="num">Draft $</th>
+              <th class="num">FAAB Spent</th>
+              <th class="num">Total Money</th>
+              <th>Luxury Tax</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr class="fin-row"><td><strong>Matt</strong></td><td class="num">$104</td><td class="num">$156</td><td class="num">$82</td><td class="num">$342</td><td><span class="pill-tag expiring">8 below cap</span></td></tr>
+            <tr class="fin-row"><td><strong>Sam</strong></td><td class="num">$95</td><td class="num">$165</td><td class="num">$78</td><td class="num">$338</td><td><span class="pill-tag expiring">12 below cap</span></td></tr>
+            <tr class="fin-row"><td><strong>Jeff</strong></td><td class="num">$88</td><td class="num">$172</td><td class="num">$45</td><td class="num">$305</td><td><span class="pill-tag keep">OK</span></td></tr>
+            <tr class="fin-row"><td><strong>Dave</strong></td><td class="num">$72</td><td class="num">$188</td><td class="num">$42</td><td class="num">$302</td><td><span class="pill-tag keep">OK</span></td></tr>
+            <tr class="fin-row"><td><strong>Corey</strong></td><td class="num">$84</td><td class="num">$176</td><td class="num">$26</td><td class="num">$286</td><td><span class="pill-tag keep">OK</span></td></tr>
+            <tr class="fin-row"><td><strong>Glicksman</strong></td><td class="num">$58</td><td class="num">$202</td><td class="num">$18</td><td class="num">$278</td><td><span class="pill-tag keep">OK</span></td></tr>
+            <tr class="fin-row"><td><strong>AJ</strong></td><td class="num">$76</td><td class="num">$184</td><td class="num">$0</td><td class="num">$260</td><td><span class="pill-tag keep">OK</span></td></tr>
+          </tbody>
+        </table>
+      </section>
+    </section>
+
+    <!-- ============================================================
+         VIEW: Activity
+         ============================================================ -->
+    <section class="view" data-view="activity">
+      <div class="page-title">
+        <h2>League Activity</h2>
+        <span class="meta">Every keeper toggle, trade, call-up, draft pick</span>
+      </div>
+      <div class="page-toolbar">
+        <select class="select"><option>All teams</option><option>Jeff</option></select>
+        <select class="select"><option>All categories</option><option>Trades only</option></select>
+        <input class="input-search" type="search" placeholder="Search activity…">
+        <div class="toolbar-spacer"></div>
+        <button class="btn ghost small">Export CSV</button>
+      </div>
+
+      <div class="activity-list">
+        <div class="activity-item">
+          <div class="activity-icon trade">↔</div>
+          <div class="activity-body">
+            <div class="activity-text"><strong>Dave</strong> ↔ <strong>Jeff</strong>: Dave gets Yordan Alvarez; Jeff gets Adley Rutschman + 2028 R2 pick</div>
+            <div class="activity-time">2 hours ago</div>
+          </div>
+        </div>
+        <div class="activity-item">
+          <div class="activity-icon keeper">K</div>
+          <div class="activity-body">
+            <div class="activity-text"><strong>Jesse</strong> tagged <strong>Corbin Carroll</strong> as a keeper</div>
+            <div class="activity-time">3 hours ago</div>
+          </div>
+        </div>
+        <div class="activity-item">
+          <div class="activity-icon callup">U</div>
+          <div class="activity-body">
+            <div class="activity-text"><strong>Corey</strong> called up <strong>Coby Mayo</strong> from minors</div>
+            <div class="activity-time">5 hours ago</div>
+          </div>
+        </div>
+        <div class="activity-item">
+          <div class="activity-icon draft">D</div>
+          <div class="activity-body">
+            <div class="activity-text"><strong>Matt</strong> picked <strong>Caden Dana</strong> at R3.3 — SP, LAA org, 21y</div>
+            <div class="activity-time">yesterday</div>
+          </div>
+        </div>
+        <div class="activity-item">
+          <div class="activity-icon vote">V</div>
+          <div class="activity-body">
+            <div class="activity-text">Vote ended — <strong>"Change keeper count to 9"</strong>: <strong>No</strong> wins. Yes: 4 | No: 8</div>
+            <div class="activity-time">2 days ago</div>
+          </div>
+        </div>
+        <div class="activity-item">
+          <div class="activity-icon">$</div>
+          <div class="activity-body">
+            <div class="activity-text"><strong>Saxton</strong> set Wyatt Langford's call-up price to $8</div>
+            <div class="activity-time">3 days ago</div>
+          </div>
+        </div>
+        <div class="activity-item">
+          <div class="activity-icon trade">↔</div>
+          <div class="activity-body">
+            <div class="activity-text"><strong>Glicksman</strong> proposed a trade to <strong>Larry</strong></div>
+            <div class="activity-time">3 days ago</div>
+          </div>
+        </div>
+        <div class="activity-item">
+          <div class="activity-icon keeper">K</div>
+          <div class="activity-body">
+            <div class="activity-text"><strong>Sam</strong> Rule 5–protected <strong>Bryce Eldridge</strong></div>
+            <div class="activity-time">4 days ago</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================================================
+         VIEW: League History
+         ============================================================ -->
+    <section class="view" data-view="trophy">
+      <div class="page-title">
+        <h2>League History</h2>
+        <span class="meta">Champions, runners-up, draft hits</span>
+      </div>
+
+      <section class="section-card">
+        <div class="section-head">
+          <h2>Champions</h2>
+          <span class="pill gray">2015–2025</span>
+        </div>
+        <div class="section-body">
+          <div class="trophy-grid">
+            <div class="trophy-card"><div class="icon">🏆</div><div class="year">2025</div><div class="champ">Matt</div></div>
+            <div class="trophy-card"><div class="icon">🏆</div><div class="year">2024</div><div class="champ">Jeff</div></div>
+            <div class="trophy-card"><div class="icon">🏆</div><div class="year">2023</div><div class="champ">Sam</div></div>
+            <div class="trophy-card"><div class="icon">🏆</div><div class="year">2022</div><div class="champ">Dave</div></div>
+            <div class="trophy-card"><div class="icon">🏆</div><div class="year">2021</div><div class="champ">Glicksman</div></div>
+            <div class="trophy-card"><div class="icon">🏆</div><div class="year">2020</div><div class="champ">Matt</div></div>
+            <div class="trophy-card"><div class="icon">🏆</div><div class="year">2019</div><div class="champ">Saxton</div></div>
+            <div class="trophy-card"><div class="icon">🏆</div><div class="year">2018</div><div class="champ">Larry</div></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section-card">
+        <div class="section-head">
+          <h2>Title Count (2015–present)</h2>
+        </div>
+        <table class="standard">
+          <thead>
+            <tr><th>Owner</th><th class="num">Titles</th><th class="num">Runners-up</th><th class="num">Top-3</th><th class="num">Avg Finish</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><strong>Matt</strong></td><td class="num">3</td><td class="num">2</td><td class="num">7</td><td class="num">3.1</td></tr>
+            <tr><td><strong>Jeff</strong></td><td class="num">2</td><td class="num">3</td><td class="num">6</td><td class="num">4.0</td></tr>
+            <tr><td><strong>Sam</strong></td><td class="num">2</td><td class="num">1</td><td class="num">4</td><td class="num">5.2</td></tr>
+            <tr><td><strong>Dave</strong></td><td class="num">1</td><td class="num">2</td><td class="num">5</td><td class="num">4.8</td></tr>
+            <tr><td><strong>Glicksman</strong></td><td class="num">1</td><td class="num">1</td><td class="num">3</td><td class="num">6.4</td></tr>
+            <tr><td><strong>Saxton</strong></td><td class="num">1</td><td class="num">0</td><td class="num">2</td><td class="num">7.1</td></tr>
+            <tr><td><strong>Larry</strong></td><td class="num">1</td><td class="num">1</td><td class="num">3</td><td class="num">6.6</td></tr>
+          </tbody>
+        </table>
+      </section>
+    </section>
+
+    <!-- ============================================================
+         VIEW: League Rules
+         ============================================================ -->
+    <section class="view" data-view="rules">
+      <div class="page-title">
+        <h2>League Rules</h2>
+        <span class="meta">Constitution — last amended Jan 2026</span>
+      </div>
+      <div class="layout-split">
+        <div class="constitution">
+          <h2>1) General Settings</h2>
+          <h3>a) 26-Round Auction-style Draft</h3>
+          <ul>
+            <li>Nomination order is randomly assigned by ESPN</li>
+            <li>$260 budget per team</li>
+            <li>Positions: C, 1B, 2B, SS, 3B, MI, CI, 5 OF, Util, 9 P, 4 Bench</li>
+            <li>7 IL spots are available during the season but cannot be filled until after the draft</li>
+          </ul>
+          <h3>b) Trading Draft Dollars</h3>
+          <ul>
+            <li>Trading draft dollars is permitted only for the next upcoming draft — not for other future drafts</li>
+            <li>No manager can acquire more than $30 for any draft (on top of the standard $260 budget — i.e., $290 max)</li>
+          </ul>
+          <h3>c) 5×5 Rotisserie</h3>
+          <ul>
+            <li>Batting Categories: Runs, HR, RBI, SB, OBP</li>
+            <li>Pitching Categories: Quality Starts, K's, Saves+Holds, ERA, WHIP</li>
+          </ul>
+          <h2>2) Keepers</h2>
+          <h3>a) Major League Keepers</h3>
+          <ul>
+            <li>Up to 8 major league keepers per team</li>
+            <li>Salary increases $2/year per keeper</li>
+            <li>4-year contract cap</li>
+          </ul>
+          <h3>b) Minor League Keepers</h3>
+          <ul>
+            <li>Up to 10 minor league keepers per team</li>
+            <li>Players drafted before 2027 use a 4-year contract</li>
+            <li>Players drafted 2027+ use Call-up + 3 (until called up)</li>
+          </ul>
+          <h2>3) Rule 5</h2>
+          <ul>
+            <li>Up to 25 Rule 5 protections per team</li>
+            <li>Unprotected eligible players go into the Rule 5 pool</li>
+            <li>Snake-order draft, $1 paid to the original team</li>
+          </ul>
+        </div>
+        <aside class="key-dates">
+          <h3>Key Dates · ET</h3>
+          <div class="key-date-row"><span class="lbl">Rule 5 Deadline</span><span class="val">Sep 15</span></div>
+          <div class="key-date-row"><span class="lbl">Rule 5 Draft</span><span class="val">Sep 30 · 8:00 PM</span></div>
+          <div class="key-date-row"><span class="lbl">Keeper Deadline</span><span class="val">Dec 15</span></div>
+          <div class="key-date-row"><span class="lbl">Auction Draft</span><span class="val">Mar 22 · 6:00 PM</span></div>
+          <div class="key-date-row"><span class="lbl">Minors Draft</span><span class="val">Apr 21 · 6:00 PM</span></div>
+          <div class="key-date-row"><span class="lbl">Trade Deadline</span><span class="val">Sep 1 · 4:00 PM</span></div>
+        </aside>
+      </div>
+    </section>
+
+    <!-- ============================================================
+         VIEW: Settings
+         ============================================================ -->
+    <section class="view" data-view="settings">
+      <div class="page-title">
+        <h2>Settings</h2>
+        <span class="meta">Manager preferences for Jeff · emails to <code>jwarshafsky@gmail.com</code></span>
+      </div>
+
+      <div class="settings-section">
+        <h3>Notifications</h3>
+        <div class="sub">Choose how you want to hear about each kind of event. Push is per-device. In-app banners pop briefly while the app is open.</div>
+        <table class="notif">
+          <thead>
+            <tr><th>Event</th><th>Instant</th><th>Daily</th><th>Weekly</th><th>Never</th><th>Push</th><th>In-App</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>Trade proposal received</td><td><input type="radio" name="tp"></td><td><input type="radio" name="tp" checked></td><td><input type="radio" name="tp"></td><td><input type="radio" name="tp"></td><td><input type="checkbox" checked></td><td><input type="checkbox" checked></td></tr>
+            <tr><td>Trade thread message</td><td><input type="radio" name="tm" checked></td><td><input type="radio" name="tm"></td><td><input type="radio" name="tm"></td><td><input type="radio" name="tm"></td><td><input type="checkbox" checked></td><td><input type="checkbox" checked></td></tr>
+            <tr><td>Trade completed (any league trade)</td><td><input type="radio" name="tc"></td><td><input type="radio" name="tc" checked></td><td><input type="radio" name="tc"></td><td><input type="radio" name="tc"></td><td><input type="checkbox"></td><td><input type="checkbox" checked></td></tr>
+            <tr><td>Keeper protection changes</td><td class="na">—</td><td><input type="radio" name="kp"></td><td><input type="radio" name="kp" checked></td><td><input type="radio" name="kp"></td><td class="na">—</td><td><input type="checkbox"></td></tr>
+            <tr><td>Call-ups</td><td class="na">—</td><td><input type="radio" name="cu" checked></td><td><input type="radio" name="cu"></td><td><input type="radio" name="cu"></td><td class="na">—</td><td><input type="checkbox"></td></tr>
+            <tr><td>Send-downs</td><td class="na">—</td><td><input type="radio" name="sd"></td><td><input type="radio" name="sd" checked></td><td><input type="radio" name="sd"></td><td class="na">—</td><td><input type="checkbox"></td></tr>
+            <tr><td>League vote results</td><td><input type="radio" name="vr" checked></td><td class="na">—</td><td class="na">—</td><td><input type="radio" name="vr"></td><td><input type="checkbox" checked></td><td class="na">—</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="settings-section">
+        <h3>Install The League</h3>
+        <div class="sub">Add to your iPhone / iPad home screen for push notifications and a full-app experience.</div>
+        <ol style="padding-left:22px;font-size:13px;color:var(--text)">
+          <li>Tap the Share button in Safari's bottom toolbar.</li>
+          <li>Scroll down and tap <strong>Add to Home Screen</strong>.</li>
+          <li>Tap <strong>Add</strong> in the top right.</li>
+        </ol>
+      </div>
+
+      <div class="settings-section">
+        <h3>Account</h3>
+        <div class="sub">Signed in as <strong>jwarshafsky@gmail.com</strong> · commissioner</div>
+        <button class="btn ghost">Sign out</button>
+      </div>
+    </section>
+
+    <!-- ============================================================
+         VIEW: Commissioner Tools
+         ============================================================ -->
+    <section class="view" data-view="commish">
+      <div class="page-title">
+        <h2>Commissioner Tools</h2>
+        <span class="meta">League admin · Jeff</span>
+      </div>
+
+      <details class="cs" open>
+        <summary>Commissioner Review <span class="badge-count">2</span></summary>
+        <div class="body" style="display:flex;flex-direction:column;gap:10px">
+          <div style="border:1px solid var(--border);border-radius:6px;padding:10px 12px">
+            <strong>Cole Young</strong> · <span style="color:var(--accent)">Jeff</span>
+            <span class="pill-tag final" style="margin-left:6px">2027 Must Call Up</span>
+            <div style="color:var(--text-3);font-size:12px;margin-top:4px">312 career AB — past the §3(f) 300 AB / 75 IP threshold.</div>
+            <div style="margin-top:8px;display:flex;gap:6px"><button class="btn primary small">Call Up</button><button class="btn ghost small">Drop</button></div>
+          </div>
+          <div style="border:1px solid var(--border);border-radius:6px;padding:10px 12px">
+            <strong>Callup price needed</strong> · <span style="color:var(--accent)">Glicksman</span>
+            <div style="color:var(--text-3);font-size:12px;margin-top:4px">Bryce Eldridge was called up but no price has been set. Default would be $3.</div>
+            <div style="margin-top:8px;display:flex;gap:6px;align-items:center"><input class="input-text" style="width:90px" placeholder="$"><button class="btn primary small">Save</button></div>
+          </div>
+        </div>
+      </details>
+
+      <details class="cs">
+        <summary>Key Dates</summary>
+        <div class="body">Edit deadlines for Rule 5, Auction Draft, Minors Draft, Trade Deadline, Keeper Deadline.</div>
+      </details>
+
+      <details class="cs">
+        <summary>League Vote <span style="color:var(--red);font-weight:700;font-size:11px;margin-left:4px">(1)</span></summary>
+        <div class="body">
+          <div style="font-weight:700;margin-bottom:8px">Ended — ready to broadcast (1)</div>
+          <div style="border:1px solid var(--accent);background:var(--accent-tint);border-radius:6px;padding:12px 14px">
+            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;margin-bottom:6px">
+              <strong>Vote Ended: Change keeper count to 9</strong>
+              <span style="color:var(--text-2);font-size:12px">Winner: <strong style="color:var(--text)">No</strong></span>
+            </div>
+            <div style="font-size:12.5px"><strong>Yes</strong> (4): Matt, Sam, Saxton, Larry · <strong>No</strong> (8): Jeff, Dave, Corey, AJ, Josh/Doug, Jesse, Zack, Glicksman</div>
+            <div style="font-size:11px;color:var(--text-3);margin-top:6px">Voters are visible to commissioners only. The league email will show totals only.</div>
+            <button class="btn primary small" style="margin-top:10px">Send result to league</button>
+          </div>
+          <div style="margin-top:14px">
+            <details class="cs" style="border:1px dashed var(--border)">
+              <summary>Vote History (3)</summary>
+              <div class="body">Past broadcasted votes shown here.</div>
+            </details>
+          </div>
+        </div>
+      </details>
+
+      <details class="cs">
+        <summary>Team Managers</summary>
+        <div class="body">Invite, claim, or reassign managers to teams.</div>
+      </details>
+
+      <details class="cs">
+        <summary>Initiate a New Vote</summary>
+        <div class="body">Title, description, options, deadline — push to League Rules banner.</div>
+      </details>
+    </section>
+
+  </main>
+</div>
+
+<button class="theme-toggle" id="theme-toggle">Dark mode</button>
+
+<script>
+  // ============ View switching ============
+  // Hash routing: #eligible, #keepers, etc. Each <section class="view"
+  // data-view="X"> shows when location.hash matches; nav links highlight.
+  function setView(name) {
+    if (!name) name = "eligible";
+    document.querySelectorAll(".view").forEach(el => {
+      el.classList.toggle("active", el.dataset.view === name);
+    });
+    document.querySelectorAll(".nav a").forEach(a => {
+      a.classList.toggle("active", a.dataset.view === name);
+    });
+    window.scrollTo(0, 0);
+  }
+  function viewFromHash() {
+    const h = (window.location.hash || "").replace(/^#/, "");
+    return h || "eligible";
+  }
+  window.addEventListener("hashchange", () => setView(viewFromHash()));
+  setView(viewFromHash());
+
+  // ============ Theme toggle ============
+  const themeBtn = document.getElementById("theme-toggle");
+  // Restore from localStorage (mockup-local key so it doesn't collide with
+  // the real app).
+  try { if (localStorage.getItem("v2-theme") === "dark") document.body.classList.add("dark"); } catch {}
+  themeBtn.textContent = document.body.classList.contains("dark") ? "Light mode" : "Dark mode";
+  themeBtn.addEventListener("click", () => {
+    document.body.classList.toggle("dark");
+    const isDark = document.body.classList.contains("dark");
+    themeBtn.textContent = isDark ? "Light mode" : "Dark mode";
+    try { localStorage.setItem("v2-theme", isDark ? "dark" : "light"); } catch {}
+  });
+</script>
+
+</body>
+</html>

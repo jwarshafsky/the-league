@@ -1,0 +1,928 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The League — ESPN-style facelift mockup</title>
+<style>
+  /* ============================================================
+     Mockup: an ESPN-inspired facelift for The League.
+     One file, no JS, no external deps. Open in any browser.
+     Shows the Eligible Keepers (Select Keepers) view as the
+     canonical example. Light theme is the default; the dark
+     variant is shown side-by-side at the bottom of the page.
+     ============================================================ */
+
+  :root {
+    /* Brand */
+    --brand:        #d50a0a;          /* ESPN red */
+    --brand-dark:   #a40808;
+    --brand-tint:   #fdecec;
+
+    /* Surfaces (light) */
+    --bg:           #f4f5f7;
+    --surface:      #ffffff;
+    --surface-2:    #f9fafb;
+    --row-alt:      #fafbfc;
+
+    /* Text */
+    --text:         #1a202c;
+    --text-2:       #4a5568;
+    --text-3:       #718096;
+    --text-inv:     #ffffff;
+
+    /* Borders + shadows */
+    --border:       #e2e8f0;
+    --border-strong:#cbd5e0;
+    --shadow-sm:    0 1px 2px rgba(15,23,42,0.06);
+    --shadow:       0 1px 3px rgba(15,23,42,0.08), 0 0 0 1px rgba(15,23,42,0.04);
+    --shadow-md:    0 4px 12px rgba(15,23,42,0.08);
+
+    /* Status colors */
+    --green:        #16a34a;
+    --green-tint:   #dcfce7;
+    --yellow:       #d97706;
+    --yellow-tint:  #fef3c7;
+    --orange:       #ea580c;
+    --orange-tint:  #ffedd5;
+    --red:          #dc2626;
+    --red-tint:     #fee2e2;
+    --accent:       #1d4ed8;
+    --accent-tint:  #dbeafe;
+    --purple:       #7c3aed;
+    --purple-tint:  #ede9fe;
+  }
+
+  /* Dark variant — applied to .dark wrapper for the side-by-side comparison */
+  .dark {
+    --bg:           #0f172a;
+    --surface:      #1e293b;
+    --surface-2:    #233248;
+    --row-alt:      #1a2436;
+    --text:         #e2e8f0;
+    --text-2:       #94a3b8;
+    --text-3:       #64748b;
+    --border:       #334155;
+    --border-strong:#475569;
+    --shadow-sm:    0 1px 2px rgba(0,0,0,0.35);
+    --shadow:       0 1px 3px rgba(0,0,0,0.45), 0 0 0 1px rgba(255,255,255,0.04);
+    --shadow-md:    0 4px 12px rgba(0,0,0,0.5);
+    --brand-tint:   #2a0a0a;
+    --green-tint:   #052e16;
+    --yellow-tint:  #422006;
+    --orange-tint:  #431407;
+    --red-tint:     #450a0a;
+    --accent-tint:  #1e3a5f;
+    --purple-tint:  #2e1065;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-size: 14px;
+    line-height: 1.4;
+    color: var(--text);
+    background: var(--bg);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ===== Mockup comparison framing ===== */
+  .mockup-meta {
+    max-width: 1240px;
+    margin: 0 auto;
+    padding: 28px 24px 8px;
+  }
+  .mockup-meta h1 {
+    margin: 0 0 6px;
+    font-size: 20px;
+    color: var(--text);
+    letter-spacing: -0.01em;
+  }
+  .mockup-meta p {
+    margin: 0;
+    color: var(--text-2);
+    font-size: 13px;
+  }
+  .variant-label {
+    max-width: 1240px;
+    margin: 32px auto 12px;
+    padding: 0 24px;
+    color: var(--text-3);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-weight: 700;
+  }
+
+  /* ===== App shell ===== */
+  .app {
+    max-width: 1240px;
+    margin: 0 auto;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: var(--shadow-md);
+  }
+  .topbar {
+    background: linear-gradient(180deg, #1a1d22 0%, #0e1115 100%);
+    color: #fff;
+    padding: 12px 22px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    border-bottom: 4px solid var(--brand);
+  }
+  .topbar .logo {
+    width: 32px; height: 32px;
+    border-radius: 6px;
+    background: var(--brand);
+    color: #fff;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 900;
+    font-style: italic;
+    font-size: 14px;
+    letter-spacing: -0.04em;
+  }
+  .topbar h1 {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 700;
+    flex: 1;
+  }
+  .topbar h1 small {
+    color: rgba(255,255,255,0.6);
+    font-weight: 500;
+    margin-left: 8px;
+    font-size: 12px;
+  }
+  .topbar .user-chip {
+    display: flex; align-items: center; gap: 8px;
+    background: rgba(255,255,255,0.08);
+    padding: 6px 10px 6px 6px;
+    border-radius: 16px;
+    font-size: 12px;
+    font-weight: 600;
+  }
+  .topbar .user-chip .avatar {
+    width: 22px; height: 22px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #f59e0b, #ef4444);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 10px;
+    font-weight: 800;
+    color: #fff;
+  }
+
+  /* ===== Nav tabs (pill style) ===== */
+  .nav {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 0 16px;
+    display: flex;
+    gap: 2px;
+    overflow-x: auto;
+  }
+  .nav button {
+    background: none;
+    border: none;
+    color: var(--text-2);
+    font-size: 13px;
+    font-weight: 600;
+    padding: 14px 14px 12px;
+    cursor: pointer;
+    position: relative;
+    white-space: nowrap;
+    letter-spacing: 0.005em;
+    border-bottom: 3px solid transparent;
+    transition: color 0.12s, border-color 0.12s;
+  }
+  .nav button:hover {
+    color: var(--text);
+    background: var(--surface-2);
+  }
+  .nav button.active {
+    color: var(--brand);
+    border-bottom-color: var(--brand);
+  }
+  .nav button .count {
+    margin-left: 5px;
+    font-size: 10px;
+    background: var(--brand);
+    color: #fff;
+    padding: 1px 6px;
+    border-radius: 8px;
+    font-weight: 700;
+    vertical-align: 1px;
+  }
+
+  /* ===== Page content ===== */
+  .page {
+    padding: 18px 22px 28px;
+    background: var(--bg);
+  }
+  .page-toolbar {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 14px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 16px;
+    box-shadow: var(--shadow-sm);
+    flex-wrap: wrap;
+  }
+  .select {
+    appearance: none;
+    -webkit-appearance: none;
+    background: var(--surface);
+    border: 1px solid var(--border-strong);
+    border-radius: 6px;
+    padding: 8px 32px 8px 12px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text);
+    cursor: pointer;
+    background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="10" height="6" viewBox="0 0 10 6" fill="none"><path d="M1 1l4 4 4-4" stroke="%234a5568" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>');
+    background-repeat: no-repeat;
+    background-position: right 12px center;
+    min-width: 200px;
+  }
+  .btn {
+    background: var(--surface);
+    border: 1px solid var(--border-strong);
+    color: var(--text);
+    font-size: 13px;
+    font-weight: 600;
+    padding: 8px 14px;
+    border-radius: 6px;
+    cursor: pointer;
+  }
+  .btn:hover { background: var(--surface-2); }
+  .btn.primary {
+    background: var(--brand);
+    border-color: var(--brand-dark);
+    color: #fff;
+  }
+  .btn.primary:hover { background: var(--brand-dark); }
+  .btn.ghost {
+    background: transparent;
+    border-color: var(--border);
+  }
+  .toolbar-spacer { flex: 1; }
+
+  /* ===== Summary stat cards ===== */
+  .stat-row {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+    margin-bottom: 18px;
+  }
+  .stat-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px 16px;
+    box-shadow: var(--shadow-sm);
+    position: relative;
+    overflow: hidden;
+  }
+  .stat-card::before {
+    content: "";
+    position: absolute;
+    left: 0; top: 0; bottom: 0;
+    width: 3px;
+    background: var(--accent);
+  }
+  .stat-card.good::before { background: var(--green); }
+  .stat-card.warn::before { background: var(--yellow); }
+  .stat-card.danger::before { background: var(--red); }
+  .stat-card .label {
+    text-transform: uppercase;
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    color: var(--text-3);
+    font-weight: 700;
+    margin-bottom: 6px;
+  }
+  .stat-card .value {
+    font-size: 24px;
+    font-weight: 800;
+    color: var(--text);
+    line-height: 1;
+    letter-spacing: -0.02em;
+  }
+  .stat-card .value .unit {
+    font-size: 14px;
+    color: var(--text-2);
+    font-weight: 500;
+    margin-left: 2px;
+  }
+  .stat-card .sub {
+    font-size: 11px;
+    color: var(--text-3);
+    margin-top: 4px;
+  }
+  .stat-card.good .value { color: var(--green); }
+  .stat-card.danger .value { color: var(--red); }
+  .stat-card.warn .value { color: var(--yellow); }
+
+  /* ===== Section card ===== */
+  .section-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: var(--shadow-sm);
+    margin-bottom: 18px;
+  }
+  .section-head {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface-2);
+  }
+  .section-head h2 {
+    margin: 0;
+    font-size: 13px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-2);
+  }
+  .section-head .pill {
+    background: var(--brand-tint);
+    color: var(--brand);
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: 700;
+  }
+  .section-head .actions { margin-left: auto; display: flex; gap: 8px; }
+  .section-head input[type="search"] {
+    background: var(--surface);
+    border: 1px solid var(--border-strong);
+    border-radius: 6px;
+    padding: 6px 10px;
+    font-size: 12px;
+    width: 200px;
+    color: var(--text);
+  }
+
+  /* ===== Player table ===== */
+  table.players {
+    width: 100%;
+    border-collapse: collapse;
+  }
+  table.players th, table.players td {
+    padding: 0;
+    vertical-align: middle;
+  }
+  table.players thead th {
+    background: var(--surface);
+    text-align: left;
+    text-transform: uppercase;
+    font-size: 10px;
+    letter-spacing: 0.06em;
+    color: var(--text-3);
+    font-weight: 700;
+    padding: 9px 14px;
+    border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+  }
+  table.players thead th.num { text-align: right; }
+  table.players thead th.center { text-align: center; }
+  table.players tbody td {
+    padding: 11px 14px;
+    border-bottom: 1px solid var(--border);
+    color: var(--text);
+  }
+  table.players tbody tr:nth-child(even) td { background: var(--row-alt); }
+  table.players tbody tr:hover td { background: var(--brand-tint); }
+  table.players tbody tr:last-child td { border-bottom: none; }
+  table.players td.num {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+  }
+  table.players td.center { text-align: center; }
+
+  /* Player cell — avatar + name + meta */
+  .player-cell {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .player-avatar {
+    width: 32px; height: 32px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #94a3b8, #475569);
+    flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    color: #fff;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+  }
+  .player-info {
+    min-width: 0;
+  }
+  .player-name {
+    font-weight: 700;
+    font-size: 13.5px;
+    color: var(--text);
+    line-height: 1.2;
+  }
+  .player-meta {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 2px;
+    color: var(--text-3);
+    font-size: 11px;
+    font-weight: 500;
+  }
+  .pos-badge {
+    background: var(--accent-tint);
+    color: var(--accent);
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.02em;
+  }
+  .pos-badge.p { background: var(--purple-tint); color: var(--purple); }
+  .team-chip {
+    font-weight: 700;
+    color: var(--text-2);
+  }
+  .player-meta .dot {
+    width: 3px; height: 3px;
+    border-radius: 50%;
+    background: var(--border-strong);
+  }
+
+  /* Status / contract pills */
+  .pill-tag {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .pill-tag.keep { background: var(--green-tint); color: var(--green); }
+  .pill-tag.expiring { background: var(--yellow-tint); color: var(--yellow); }
+  .pill-tag.final { background: var(--red-tint); color: var(--red); }
+  .pill-tag.new { background: var(--accent-tint); color: var(--accent); }
+
+  /* Checkbox cells */
+  .check-cell {
+    display: flex; justify-content: center; align-items: center;
+  }
+  .check-cell input { width: 16px; height: 16px; accent-color: var(--brand); cursor: pointer; }
+
+  /* Source badge */
+  .source-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 10px;
+    font-weight: 700;
+    color: var(--text-2);
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+  }
+  .source-badge.fa { color: var(--accent); background: var(--accent-tint); border-color: transparent; }
+  .source-badge.callup { color: var(--purple); background: var(--purple-tint); border-color: transparent; }
+  .source-badge.trade { color: var(--orange); background: var(--orange-tint); border-color: transparent; }
+
+  /* Key dates rail */
+  .layout {
+    display: grid;
+    grid-template-columns: 1fr 280px;
+    gap: 18px;
+  }
+  .key-dates {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px 16px;
+    box-shadow: var(--shadow-sm);
+    align-self: flex-start;
+    height: fit-content;
+  }
+  .key-dates h3 {
+    margin: 0 0 8px;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-3);
+    font-weight: 700;
+  }
+  .key-date-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 8px 0;
+    border-bottom: 1px dashed var(--border);
+    font-size: 12.5px;
+  }
+  .key-date-row:last-child { border-bottom: none; }
+  .key-date-row .lbl { color: var(--text-2); }
+  .key-date-row .val { color: var(--text); font-weight: 600; }
+
+  /* Toolbar dark-mode toggle (mockup helper) */
+  .dm-toggle {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    background: var(--surface);
+    border: 1px solid var(--border-strong);
+    color: var(--text);
+    border-radius: 24px;
+    padding: 10px 16px;
+    font-size: 12px;
+    font-weight: 600;
+    box-shadow: var(--shadow-md);
+    cursor: pointer;
+    z-index: 100;
+  }
+
+  @media (max-width: 900px) {
+    .stat-row { grid-template-columns: repeat(2, 1fr); }
+    .layout { grid-template-columns: 1fr; }
+    .key-dates { order: -1; }
+  }
+</style>
+</head>
+<body>
+
+<div class="mockup-meta">
+  <h1>The League — ESPN-style facelift mockup</h1>
+  <p>Scope: Select Keepers view, light theme. The dark variant of the same view appears below for comparison.</p>
+</div>
+
+<!-- ============ LIGHT VARIANT ============ -->
+<div class="variant-label">Light theme (proposed default)</div>
+<div class="app">
+
+  <!-- Topbar -->
+  <header class="topbar">
+    <div class="logo">TL</div>
+    <h1>The League <small>2026 — Auction Keeper · 12 Teams</small></h1>
+    <div class="user-chip">
+      <div class="avatar">J</div>
+      <span>Jeff</span>
+    </div>
+  </header>
+
+  <!-- Nav -->
+  <nav class="nav">
+    <button class="active">Select Keepers</button>
+    <button>2026 Keepers</button>
+    <button>Rule 5 Draft</button>
+    <button>Minors Draft</button>
+    <button>Minors Rosters</button>
+    <button>Trades<span class="count">3</span></button>
+    <button>Financials</button>
+    <button>Activity</button>
+    <button>League History</button>
+    <button>League Rules</button>
+    <button>Settings</button>
+  </nav>
+
+  <!-- Page content -->
+  <main class="page">
+
+    <!-- Toolbar -->
+    <div class="page-toolbar">
+      <select class="select">
+        <option>Jeff's Team</option>
+        <option>All Teams Summary</option>
+        <option>Matt</option>
+        <option>Dave</option>
+      </select>
+      <button class="btn ghost">Edit overrides</button>
+      <div class="toolbar-spacer"></div>
+      <button class="btn">Export CSV</button>
+      <button class="btn primary">Save Selections</button>
+    </div>
+
+    <div class="layout">
+      <div>
+        <!-- Stat row -->
+        <div class="stat-row">
+          <div class="stat-card good">
+            <div class="label">ML Keepers</div>
+            <div class="value">8<span class="unit">/8</span></div>
+            <div class="sub">Cap reached</div>
+          </div>
+          <div class="stat-card warn">
+            <div class="label">MiL Keepers</div>
+            <div class="value">7<span class="unit">/10</span></div>
+            <div class="sub">3 slots open</div>
+          </div>
+          <div class="stat-card">
+            <div class="label">Rule 5 Protected</div>
+            <div class="value">12<span class="unit">/25</span></div>
+            <div class="sub">13 exposed</div>
+          </div>
+          <div class="stat-card">
+            <div class="label">Draft Dollars</div>
+            <div class="value">$172</div>
+            <div class="sub">$260 budget − $88 keepers</div>
+          </div>
+        </div>
+
+        <!-- Player table -->
+        <section class="section-card">
+          <div class="section-head">
+            <h2>Eligible Players</h2>
+            <span class="pill">37</span>
+            <div class="actions">
+              <input type="search" placeholder="Search players…">
+              <button class="btn ghost">Filter</button>
+            </div>
+          </div>
+          <table class="players">
+            <thead>
+              <tr>
+                <th style="width:36%">Player</th>
+                <th>Source</th>
+                <th class="num">2026 $</th>
+                <th class="num">2027 $</th>
+                <th>Expiry</th>
+                <th class="center">Rule 5</th>
+                <th class="center">Keep</th>
+                <th class="center">Block</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>
+                  <div class="player-cell">
+                    <div class="player-avatar" style="background:linear-gradient(135deg,#fde047,#f59e0b)">AJ</div>
+                    <div class="player-info">
+                      <div class="player-name">Aaron Judge</div>
+                      <div class="player-meta"><span class="pos-badge">OF</span><span class="team-chip">NYY</span><span class="dot"></span><span>33y</span></div>
+                    </div>
+                  </div>
+                </td>
+                <td><span class="source-badge">Auction 2025</span></td>
+                <td class="num">$48</td>
+                <td class="num">$50</td>
+                <td><span class="pill-tag expiring">2027</span></td>
+                <td class="center"><div class="check-cell"><input type="checkbox"></div></td>
+                <td class="center"><div class="check-cell"><input type="checkbox" checked></div></td>
+                <td class="center"><div class="check-cell"><input type="checkbox"></div></td>
+              </tr>
+              <tr>
+                <td>
+                  <div class="player-cell">
+                    <div class="player-avatar" style="background:linear-gradient(135deg,#60a5fa,#1d4ed8)">BW</div>
+                    <div class="player-info">
+                      <div class="player-name">Bobby Witt Jr.</div>
+                      <div class="player-meta"><span class="pos-badge">SS</span><span class="team-chip">KCR</span><span class="dot"></span><span>25y</span></div>
+                    </div>
+                  </div>
+                </td>
+                <td><span class="source-badge callup">Call-up 2024</span></td>
+                <td class="num">$12</td>
+                <td class="num">$14</td>
+                <td><span class="pill-tag keep">2028</span></td>
+                <td class="center"><div class="check-cell"><input type="checkbox"></div></td>
+                <td class="center"><div class="check-cell"><input type="checkbox" checked></div></td>
+                <td class="center"><div class="check-cell"><input type="checkbox"></div></td>
+              </tr>
+              <tr>
+                <td>
+                  <div class="player-cell">
+                    <div class="player-avatar" style="background:linear-gradient(135deg,#34d399,#059669)">PS</div>
+                    <div class="player-info">
+                      <div class="player-name">Paul Skenes</div>
+                      <div class="player-meta"><span class="pos-badge p">SP</span><span class="team-chip">PIT</span><span class="dot"></span><span>24y</span></div>
+                    </div>
+                  </div>
+                </td>
+                <td><span class="source-badge fa">FA 2026</span></td>
+                <td class="num">—</td>
+                <td class="num">$8</td>
+                <td><span class="pill-tag new">3-yr contract</span></td>
+                <td class="center"><div class="check-cell"><input type="checkbox" checked></div></td>
+                <td class="center"><div class="check-cell"><input type="checkbox"></div></td>
+                <td class="center"><div class="check-cell"><input type="checkbox"></div></td>
+              </tr>
+              <tr>
+                <td>
+                  <div class="player-cell">
+                    <div class="player-avatar" style="background:linear-gradient(135deg,#fb923c,#c2410c)">CY</div>
+                    <div class="player-info">
+                      <div class="player-name">Cole Young</div>
+                      <div class="player-meta"><span class="pos-badge">SS</span><span class="team-chip">SEA</span><span class="dot"></span><span>22y · AAA</span></div>
+                    </div>
+                  </div>
+                </td>
+                <td><span class="source-badge">MiL Pick 2024</span></td>
+                <td class="num">—</td>
+                <td class="num">$5</td>
+                <td><span class="pill-tag final">2027 Must Call Up</span></td>
+                <td class="center"><div class="check-cell"><input type="checkbox" disabled></div></td>
+                <td class="center"><div class="check-cell"><input type="checkbox"></div></td>
+                <td class="center"><div class="check-cell"><input type="checkbox"></div></td>
+              </tr>
+              <tr>
+                <td>
+                  <div class="player-cell">
+                    <div class="player-avatar" style="background:linear-gradient(135deg,#a78bfa,#7c3aed)">RA</div>
+                    <div class="player-info">
+                      <div class="player-name">Ronald Acuña Jr.</div>
+                      <div class="player-meta"><span class="pos-badge">OF</span><span class="team-chip">ATL</span><span class="dot"></span><span>28y</span></div>
+                    </div>
+                  </div>
+                </td>
+                <td><span class="source-badge trade">Trade 2025</span></td>
+                <td class="num">$32</td>
+                <td class="num">$34</td>
+                <td><span class="pill-tag keep">2028</span></td>
+                <td class="center"><div class="check-cell"><input type="checkbox"></div></td>
+                <td class="center"><div class="check-cell"><input type="checkbox" checked></div></td>
+                <td class="center"><div class="check-cell"><input type="checkbox"></div></td>
+              </tr>
+              <tr>
+                <td>
+                  <div class="player-cell">
+                    <div class="player-avatar" style="background:linear-gradient(135deg,#94a3b8,#475569)">DR</div>
+                    <div class="player-info">
+                      <div class="player-name">Dalton Rushing</div>
+                      <div class="player-meta"><span class="pos-badge">C</span><span class="team-chip">LAD</span><span class="dot"></span><span>24y · AAA</span></div>
+                    </div>
+                  </div>
+                </td>
+                <td><span class="source-badge">MiL Pick 2023</span></td>
+                <td class="num">—</td>
+                <td class="num">$3</td>
+                <td><span class="pill-tag expiring">2026</span></td>
+                <td class="center"><div class="check-cell"><input type="checkbox"></div></td>
+                <td class="center"><div class="check-cell"><input type="checkbox"></div></td>
+                <td class="center"><div class="check-cell"><input type="checkbox" checked></div></td>
+              </tr>
+              <tr>
+                <td>
+                  <div class="player-cell">
+                    <div class="player-avatar" style="background:linear-gradient(135deg,#f87171,#dc2626)">JS</div>
+                    <div class="player-info">
+                      <div class="player-name">Juan Soto</div>
+                      <div class="player-meta"><span class="pos-badge">OF</span><span class="team-chip">NYM</span><span class="dot"></span><span>27y</span></div>
+                    </div>
+                  </div>
+                </td>
+                <td><span class="source-badge">Auction 2025</span></td>
+                <td class="num">$45</td>
+                <td class="num">$47</td>
+                <td><span class="pill-tag keep">2029</span></td>
+                <td class="center"><div class="check-cell"><input type="checkbox"></div></td>
+                <td class="center"><div class="check-cell"><input type="checkbox" checked></div></td>
+                <td class="center"><div class="check-cell"><input type="checkbox"></div></td>
+              </tr>
+            </tbody>
+          </table>
+        </section>
+      </div>
+
+      <!-- Key Dates rail -->
+      <aside class="key-dates">
+        <h3>Key Dates · ET</h3>
+        <div class="key-date-row"><span class="lbl">Rule 5 Deadline</span><span class="val">Sep 15</span></div>
+        <div class="key-date-row"><span class="lbl">Rule 5 Draft</span><span class="val">Sep 30 · 8:00 PM</span></div>
+        <div class="key-date-row"><span class="lbl">Keeper Deadline</span><span class="val">Dec 15</span></div>
+        <div class="key-date-row"><span class="lbl">Auction Draft</span><span class="val">Mar 22 · 6:00 PM</span></div>
+        <div class="key-date-row"><span class="lbl">Minors Draft</span><span class="val">Apr 21 · 6:00 PM</span></div>
+        <div class="key-date-row"><span class="lbl">Trade Deadline</span><span class="val">Sep 1 · 4:00 PM</span></div>
+      </aside>
+    </div>
+  </main>
+</div>
+
+<!-- ============ DARK VARIANT ============ -->
+<div class="variant-label">Dark theme (opt-in)</div>
+<div class="dark">
+  <div class="app">
+    <header class="topbar">
+      <div class="logo">TL</div>
+      <h1>The League <small>2026 — Auction Keeper · 12 Teams</small></h1>
+      <div class="user-chip">
+        <div class="avatar">J</div>
+        <span>Jeff</span>
+      </div>
+    </header>
+    <nav class="nav">
+      <button class="active">Select Keepers</button>
+      <button>2026 Keepers</button>
+      <button>Rule 5 Draft</button>
+      <button>Minors Draft</button>
+      <button>Minors Rosters</button>
+      <button>Trades<span class="count">3</span></button>
+      <button>Financials</button>
+      <button>Activity</button>
+    </nav>
+    <main class="page">
+      <div class="page-toolbar">
+        <select class="select"><option>Jeff's Team</option></select>
+        <button class="btn ghost">Edit overrides</button>
+        <div class="toolbar-spacer"></div>
+        <button class="btn">Export CSV</button>
+        <button class="btn primary">Save Selections</button>
+      </div>
+      <div class="layout">
+        <div>
+          <div class="stat-row">
+            <div class="stat-card good"><div class="label">ML Keepers</div><div class="value">8<span class="unit">/8</span></div><div class="sub">Cap reached</div></div>
+            <div class="stat-card warn"><div class="label">MiL Keepers</div><div class="value">7<span class="unit">/10</span></div><div class="sub">3 slots open</div></div>
+            <div class="stat-card"><div class="label">Rule 5 Protected</div><div class="value">12<span class="unit">/25</span></div><div class="sub">13 exposed</div></div>
+            <div class="stat-card"><div class="label">Draft Dollars</div><div class="value">$172</div><div class="sub">$260 − $88 keepers</div></div>
+          </div>
+          <section class="section-card">
+            <div class="section-head">
+              <h2>Eligible Players</h2>
+              <span class="pill">37</span>
+              <div class="actions"><input type="search" placeholder="Search players…"><button class="btn ghost">Filter</button></div>
+            </div>
+            <table class="players">
+              <thead>
+                <tr>
+                  <th style="width:36%">Player</th>
+                  <th>Source</th>
+                  <th class="num">2026 $</th>
+                  <th class="num">2027 $</th>
+                  <th>Expiry</th>
+                  <th class="center">Rule 5</th>
+                  <th class="center">Keep</th>
+                  <th class="center">Block</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><div class="player-cell"><div class="player-avatar" style="background:linear-gradient(135deg,#fde047,#f59e0b)">AJ</div><div class="player-info"><div class="player-name">Aaron Judge</div><div class="player-meta"><span class="pos-badge">OF</span><span class="team-chip">NYY</span><span class="dot"></span><span>33y</span></div></div></div></td>
+                  <td><span class="source-badge">Auction 2025</span></td>
+                  <td class="num">$48</td><td class="num">$50</td>
+                  <td><span class="pill-tag expiring">2027</span></td>
+                  <td class="center"><div class="check-cell"><input type="checkbox"></div></td>
+                  <td class="center"><div class="check-cell"><input type="checkbox" checked></div></td>
+                  <td class="center"><div class="check-cell"><input type="checkbox"></div></td>
+                </tr>
+                <tr>
+                  <td><div class="player-cell"><div class="player-avatar" style="background:linear-gradient(135deg,#60a5fa,#1d4ed8)">BW</div><div class="player-info"><div class="player-name">Bobby Witt Jr.</div><div class="player-meta"><span class="pos-badge">SS</span><span class="team-chip">KCR</span><span class="dot"></span><span>25y</span></div></div></div></td>
+                  <td><span class="source-badge callup">Call-up 2024</span></td>
+                  <td class="num">$12</td><td class="num">$14</td>
+                  <td><span class="pill-tag keep">2028</span></td>
+                  <td class="center"><div class="check-cell"><input type="checkbox"></div></td>
+                  <td class="center"><div class="check-cell"><input type="checkbox" checked></div></td>
+                  <td class="center"><div class="check-cell"><input type="checkbox"></div></td>
+                </tr>
+                <tr>
+                  <td><div class="player-cell"><div class="player-avatar" style="background:linear-gradient(135deg,#34d399,#059669)">PS</div><div class="player-info"><div class="player-name">Paul Skenes</div><div class="player-meta"><span class="pos-badge p">SP</span><span class="team-chip">PIT</span><span class="dot"></span><span>24y</span></div></div></div></td>
+                  <td><span class="source-badge fa">FA 2026</span></td>
+                  <td class="num">—</td><td class="num">$8</td>
+                  <td><span class="pill-tag new">3-yr contract</span></td>
+                  <td class="center"><div class="check-cell"><input type="checkbox" checked></div></td>
+                  <td class="center"><div class="check-cell"><input type="checkbox"></div></td>
+                  <td class="center"><div class="check-cell"><input type="checkbox"></div></td>
+                </tr>
+                <tr>
+                  <td><div class="player-cell"><div class="player-avatar" style="background:linear-gradient(135deg,#fb923c,#c2410c)">CY</div><div class="player-info"><div class="player-name">Cole Young</div><div class="player-meta"><span class="pos-badge">SS</span><span class="team-chip">SEA</span><span class="dot"></span><span>22y · AAA</span></div></div></div></td>
+                  <td><span class="source-badge">MiL Pick 2024</span></td>
+                  <td class="num">—</td><td class="num">$5</td>
+                  <td><span class="pill-tag final">2027 Must Call Up</span></td>
+                  <td class="center"><div class="check-cell"><input type="checkbox" disabled></div></td>
+                  <td class="center"><div class="check-cell"><input type="checkbox"></div></td>
+                  <td class="center"><div class="check-cell"><input type="checkbox"></div></td>
+                </tr>
+              </tbody>
+            </table>
+          </section>
+        </div>
+        <aside class="key-dates">
+          <h3>Key Dates · ET</h3>
+          <div class="key-date-row"><span class="lbl">Rule 5 Deadline</span><span class="val">Sep 15</span></div>
+          <div class="key-date-row"><span class="lbl">Rule 5 Draft</span><span class="val">Sep 30 · 8:00 PM</span></div>
+          <div class="key-date-row"><span class="lbl">Keeper Deadline</span><span class="val">Dec 15</span></div>
+          <div class="key-date-row"><span class="lbl">Auction Draft</span><span class="val">Mar 22 · 6:00 PM</span></div>
+          <div class="key-date-row"><span class="lbl">Minors Draft</span><span class="val">Apr 21 · 6:00 PM</span></div>
+          <div class="key-date-row"><span class="lbl">Trade Deadline</span><span class="val">Sep 1 · 4:00 PM</span></div>
+        </aside>
+      </div>
+    </main>
+  </div>
+</div>
+
+<div style="height:60px"></div>
+
+</body>
+</html>
