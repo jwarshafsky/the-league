@@ -4256,19 +4256,22 @@ function renderDraftView() {
     ? `<button class="trade-btn trade-btn-cancel" id="dv-btn-setup" onclick="showDraftOrderSetup()">Order / Traded Picks</button>`
     : "";
   // End Draft is red to signal finality; preserves the pick history but
-  // closes off further picks/passes/undos. Only commish sees it, and only
-  // while the draft is still active.
-  const endBtn = (commish && !draftEnded)
-    ? `<button class="trade-btn" onclick="endMinorsDraftConfirm()" style="background:var(--red);color:#fff;margin-left:auto">End Draft</button>`
-    : "";
+  // closes off further picks/passes/undos. Reopen swaps in once ended so
+  // the commish can resume without losing the existing picks. Only commish
+  // sees either one.
+  const endOrReopenBtn = !commish
+    ? ""
+    : draftEnded
+      ? `<button class="trade-btn trade-btn-submit" onclick="reopenMinorsDraft()" style="margin-left:auto">Reopen Draft</button>`
+      : `<button class="trade-btn" onclick="endMinorsDraftConfirm()" style="background:var(--red);color:#fff;margin-left:auto">End Draft</button>`;
   const resetBtn = commish
-    ? `<button class="trade-btn trade-btn-cancel" onclick="resetDraftConfirm()"${endBtn ? "" : ' style="margin-left:auto"'}>Reset</button>`
+    ? `<button class="trade-btn trade-btn-cancel" onclick="resetDraftConfirm()"${endOrReopenBtn ? "" : ' style="margin-left:auto"'}>Reset</button>`
     : "";
   return `
     <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap">
       <button class="trade-btn" id="dv-btn-board" onclick="showDraftBoard()">Draft Board</button>
       ${setupBtn}
-      ${endBtn}
+      ${endOrReopenBtn}
       ${resetBtn}
     </div>
     <div id="prospect-status" style="font-size:0.75rem;color:var(--text-dim);margin-bottom:14px"></div>
@@ -4290,6 +4293,24 @@ async function endMinorsDraftConfirm() {
     switchTab("draft");
   } catch (e) {
     alert("Couldn't end draft: " + (e.message || e));
+  }
+}
+
+async function reopenMinorsDraft() {
+  if (!isCommissioner()) return;
+  const draft = getDraft();
+  if (!draft.endedAt) { alert("Draft isn't ended."); return; }
+  if (!confirm("Reopen the Minors Draft? Picks resume from where they left off and the on-the-clock card reappears.")) return;
+  const wasEndedAt = draft.endedAt;
+  delete draft.endedAt;
+  try {
+    if (typeof saveDraftAsync === "function") await saveDraftAsync(draft);
+    else saveDraft(draft);
+    if (typeof logActivityAsync === "function") await logActivityAsync("minors_draft_reopened", { wasEndedAt });
+    if (typeof showToast === "function") showToast("Draft reopened");
+    switchTab("draft");
+  } catch (e) {
+    alert("Couldn't reopen draft: " + (e.message || e));
   }
 }
 
@@ -9700,6 +9721,25 @@ async function endRule5DraftConfirm() {
   }
 }
 
+async function reopenRule5Draft() {
+  if (!isCommissioner()) return;
+  const state = getRule5State();
+  if (!state) { alert("No Rule 5 draft to reopen."); return; }
+  if (!state.endedAt) { alert("Draft isn't ended."); return; }
+  if (!confirm("Reopen the Rule 5 Draft? Picks resume from where they left off and the on-the-clock card reappears.")) return;
+  const wasEndedAt = state.endedAt;
+  delete state.endedAt;
+  try {
+    if (typeof saveRule5Async === "function") await saveRule5Async(state);
+    else localStorage.setItem("flm_rule5", JSON.stringify(state));
+    if (typeof logActivityAsync === "function") await logActivityAsync("rule5_draft_reopened", { wasEndedAt });
+    if (typeof showToast === "function") showToast("Draft reopened");
+    switchTab("rule5");
+  } catch (e) {
+    alert("Couldn't reopen draft: " + (e.message || e));
+  }
+}
+
 async function resetRule5Draft() {
   if (!confirm("Reset entire Rule 5 draft?")) return;
   // Sweep the auto-recorded $1 Rule 5 trades alongside the state. Match by
@@ -9935,16 +9975,18 @@ function renderRule5View() {
     `;
   }
 
-  const r5EndBtn = (commish && !state.endedAt)
-    ? `<button class="trade-btn" onclick="endRule5DraftConfirm()" style="background:var(--red);color:#fff;margin-left:auto">End Draft</button>`
-    : "";
+  const r5EndOrReopenBtn = !commish
+    ? ""
+    : state.endedAt
+      ? `<button class="trade-btn trade-btn-submit" style="margin-left:auto" onclick="reopenRule5Draft()">Reopen Draft</button>`
+      : `<button class="trade-btn" onclick="endRule5DraftConfirm()" style="background:var(--red);color:#fff;margin-left:auto">End Draft</button>`;
   const r5ResetBtn = commish
-    ? `<button class="trade-btn trade-btn-cancel"${r5EndBtn ? "" : ' style="margin-left:auto"'} onclick="resetRule5Draft()">Reset</button>`
+    ? `<button class="trade-btn trade-btn-cancel"${r5EndOrReopenBtn ? "" : ' style="margin-left:auto"'} onclick="resetRule5Draft()">Reset</button>`
     : "";
   return `
     <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap">
       <span style="color:var(--text-dim);font-size:0.8rem;align-self:center">Pool loaded ${new Date(state.loadedAt).toLocaleString()}</span>
-      ${r5EndBtn}
+      ${r5EndOrReopenBtn}
       ${r5ResetBtn}
     </div>
     <div class="summary-bar">
