@@ -5742,10 +5742,10 @@ function renderUserSettingsView() {
       <div class="keeper-projection" style="margin-bottom:14px">
         <h3 style="margin-top:0">Appearance</h3>
         <div style="color:var(--text-dim);font-size:0.82rem;margin-bottom:10px">
-          Phase 1 facelift: an ESPN-style light theme with a red accent. Saved per device. Pick whichever you prefer.
+          ESPN-style refresh of The League. Saved per device. Pick whichever you prefer.
         </div>
         <div style="display:flex;flex-direction:column;gap:8px">
-          ${APP_THEMES.map(t => {
+          ${getAppThemes().map(t => {
             const cur = getAppTheme();
             const id = `theme-opt-${t.key}`;
             return `<label for="${id}" style="display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid var(--border);border-radius:6px;cursor:pointer;${cur === t.key ? 'background:rgba(59,130,246,0.08);border-color:var(--accent)' : ''}">
@@ -10938,6 +10938,9 @@ let _pendingDeepLink = (() => {
 
 function showAppForAuthedUser() {
   document.querySelector(".nav-tabs").style.display = "";
+  // Now that currentOwner is known, migrate any legacy "classic" theme stored
+  // by a non-Jeff user over to the new shared default before first render.
+  if (typeof _reconcileThemeAfterAuth === "function") _reconcileThemeAfterAuth();
   renderHeaderUser();
   // Tab to load: explicit ?tab= deep link (from an email CTA, etc.) wins.
   // Otherwise: in-memory currentView > sessionStorage (so refresh keeps the
@@ -11005,14 +11008,27 @@ function authGate(user, owner) {
 // gets a surprise visual change on next reload.
 // ---------------------------------------------------------------------------
 const APP_THEMES = [
-  { key: "classic", label: "Classic (current dark blue)" },
-  { key: "v2",      label: "ESPN style — light (red accent on white)" },
+  { key: "classic", label: "Classic (legacy dark blue)" },
   { key: "v2-dark", label: "ESPN style — dark (red accent on charcoal)" },
+  { key: "v2",      label: "ESPN style — light (red accent on white)" },
 ];
 const APP_THEME_KEY = "flm_theme";
+const APP_DEFAULT_THEME = "v2-dark";
+// "Classic" is a Jeff-only opt-out — everyone else only sees ESPN dark/light.
+function _isClassicAllowed() {
+  return typeof currentOwner !== "undefined" && currentOwner && currentOwner.team_id === "jeff";
+}
+function getAppThemes() {
+  return _isClassicAllowed() ? APP_THEMES : APP_THEMES.filter(t => t.key !== "classic");
+}
 function getAppTheme() {
-  try { return localStorage.getItem(APP_THEME_KEY) || "classic"; }
-  catch { return "classic"; }
+  let stored = null;
+  try { stored = localStorage.getItem(APP_THEME_KEY); } catch {}
+  // If a non-Jeff user has "classic" stored (carry-over from when it was the
+  // default), promote them to the new default. The reconcile pass after auth
+  // also clears the stale value, but this guard handles same-tick reads.
+  if (stored === "classic" && !_isClassicAllowed()) return APP_DEFAULT_THEME;
+  return stored || APP_DEFAULT_THEME;
 }
 function applyAppTheme(name) {
   // Mutually exclusive — clear any prior theme class before applying the new
@@ -11022,12 +11038,26 @@ function applyAppTheme(name) {
   if (name === "v2-dark") document.body.classList.add("theme-v2-dark");
 }
 function setAppTheme(name) {
+  // Defensive: only Jeff can pick classic. Non-Jeff requests coerce to the
+  // shared default.
+  if (name === "classic" && !_isClassicAllowed()) name = APP_DEFAULT_THEME;
   try { localStorage.setItem(APP_THEME_KEY, name); } catch {}
   applyAppTheme(name);
   if (typeof showToast === "function") showToast("Appearance updated");
   // Re-render the current view so any cached HTML with old colors refreshes.
   if (typeof switchTab === "function" && typeof currentView !== "undefined" && currentView) {
     switchTab(currentView);
+  }
+}
+// Run after auth resolves: if the user is non-Jeff and still has "classic"
+// persisted (left over from when it was the default), migrate them to the
+// new default and re-render so the UI flips immediately.
+function _reconcileThemeAfterAuth() {
+  let stored = null;
+  try { stored = localStorage.getItem(APP_THEME_KEY); } catch {}
+  if (stored === "classic" && !_isClassicAllowed()) {
+    try { localStorage.setItem(APP_THEME_KEY, APP_DEFAULT_THEME); } catch {}
+    applyAppTheme(APP_DEFAULT_THEME);
   }
 }
 
