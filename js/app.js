@@ -5737,6 +5737,25 @@ function renderUserSettingsView() {
       `}
 
       ${isEditingOther ? "" : renderInstallSection()}
+
+      ${isEditingOther ? "" : `
+      <div class="keeper-projection" style="margin-bottom:14px">
+        <h3 style="margin-top:0">Appearance</h3>
+        <div style="color:var(--text-dim);font-size:0.82rem;margin-bottom:10px">
+          Phase 1 facelift: an ESPN-style light theme with a red accent. Saved per device. Pick whichever you prefer.
+        </div>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          ${APP_THEMES.map(t => {
+            const cur = getAppTheme();
+            const id = `theme-opt-${t.key}`;
+            return `<label for="${id}" style="display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid var(--border);border-radius:6px;cursor:pointer;${cur === t.key ? 'background:rgba(59,130,246,0.08);border-color:var(--accent)' : ''}">
+              <input type="radio" id="${id}" name="app-theme" value="${t.key}" ${cur === t.key ? 'checked' : ''} onchange="setAppTheme('${t.key}')" style="accent-color:var(--accent);cursor:pointer">
+              <span style="font-size:0.92rem;color:var(--text)">${escapeHtml(t.label)}</span>
+            </label>`;
+          }).join("")}
+        </div>
+      </div>
+      `}
     </div>
   `;
 }
@@ -10979,8 +10998,40 @@ function authGate(user, owner) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Appearance theme — Phase 1 of the ESPN-style facelift. A single CSS-variable
+// swap (see body.theme-v2 block in css/styles.css) re-skins the whole app on
+// toggle. Per-device pref via localStorage; default is "classic" so nobody
+// gets a surprise visual change on next reload.
+// ---------------------------------------------------------------------------
+const APP_THEMES = [
+  { key: "classic", label: "Classic (current dark blue)" },
+  { key: "v2",      label: "ESPN style (light, red accent)" },
+];
+const APP_THEME_KEY = "flm_theme";
+function getAppTheme() {
+  try { return localStorage.getItem(APP_THEME_KEY) || "classic"; }
+  catch { return "classic"; }
+}
+function applyAppTheme(name) {
+  const isV2 = name === "v2";
+  document.body.classList.toggle("theme-v2", isV2);
+}
+function setAppTheme(name) {
+  try { localStorage.setItem(APP_THEME_KEY, name); } catch {}
+  applyAppTheme(name);
+  if (typeof showToast === "function") showToast("Appearance updated");
+  // Re-render the current view so any cached HTML with old colors refreshes.
+  if (typeof switchTab === "function" && typeof currentView !== "undefined" && currentView) {
+    switchTab(currentView);
+  }
+}
+
 // --- Init ---
 document.addEventListener("DOMContentLoaded", () => {
+  // Apply the user's saved theme before any UI renders to avoid a flash of
+  // the wrong palette.
+  try { applyAppTheme(getAppTheme()); } catch {}
   applyLivePlayerStats();
   if (typeof onAuthChange === "function") {
     onAuthChange(authGate);

@@ -779,3 +779,134 @@ body {
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: var(--bg); }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+/* ============================================================
+   THEME: ESPN-style (v2) — opt-in via Settings → Appearance.
+   Toggling <body class="theme-v2"> redefines the CSS variables
+   below so every existing `color:var(--accent)` / `background:
+   var(--bg)` etc. picks up the new palette automatically. A few
+   header / nav / button rules need explicit overrides because
+   they use hardcoded gradients or rely on layout that doesn't
+   translate.
+   ============================================================ */
+body.theme-v2 {
+  /* Surfaces (light) */
+  --bg:             #f4f5f7;
+  --bg-card:        #ffffff;
+  --bg-card-hover:  #f9fafb;
+  --bg-row:         #ffffff;
+  --bg-row-alt:     #fafbfc;
+  /* Borders + text */
+  --border:         #e2e8f0;
+  --text:           #1a202c;
+  --text-dim:       #718096;
+  --text-bright:    #0f172a;
+  /* Brand (ESPN red) replaces the legacy blue accent everywhere */
+  --accent:         #d50a0a;
+  --accent-dim:     #a40808;
+  /* Status colors — slightly muted so they read against white */
+  --green:          #16a34a;
+  --yellow:         #d97706;
+  --red:            #dc2626;
+  --orange:         #ea580c;
+  --purple:         #7c3aed;
+  --shadow:         0 1px 3px rgba(15,23,42,0.08), 0 0 0 1px rgba(15,23,42,0.04);
+}
+
+/* Header: replace the blue gradient with the v2 black bar + red underline. */
+body.theme-v2 .app-header {
+  background: linear-gradient(180deg, #1a1d22 0%, #0e1115 100%);
+  border-bottom: 4px solid var(--accent);
+  box-shadow: none;
+}
+body.theme-v2 .app-header h1,
+body.theme-v2 .app-header h1 a { color: #ffffff; }
+body.theme-v2 .menu-btn {
+  background: rgba(255,255,255,0.10);
+  color: #ffffff;
+}
+body.theme-v2 .menu-btn:hover { background: rgba(255,255,255,0.18); }
+
+/* Nav tabs: white background, red active underline matches the mockup. */
+body.theme-v2 .nav-tabs {
+  background: var(--bg-card);
+  border-bottom: 1px solid var(--border);
+}
+body.theme-v2 .nav-tab {
+  background: transparent;
+  color: var(--text-dim);
+  border-right: none;
+  border-bottom: 3px solid transparent;
+  font-weight: 600;
+}
+body.theme-v2 .nav-tab:hover {
+  color: var(--text);
+  background: var(--bg-card-hover);
+}
+body.theme-v2 .nav-tab.active {
+  color: var(--accent);
+  background: transparent;
+  border-bottom-color: var(--accent);
+}
+
+/* Buttons: keep submit-green / cancel-gray semantics, the default
+   .trade-btn picks up the new red accent automatically. */
+body.theme-v2 .trade-btn-cancel {
+  background: var(--bg-card);
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+body.theme-v2 .trade-btn-cancel:hover { background: var(--bg-card-hover); }
+
+/* Cards / section headers — softer borders, white surfaces */
+body.theme-v2 .keeper-projection,
+body.theme-v2 .summary-bar {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow);
+}
+body.theme-v2 .section-header {
+  background: #f9fafb;
+  border-left: 3px solid var(--accent);
+  color: var(--text);
+  padding: 8px 12px;
+  border-radius: 6px;
+  margin-top: 16px;
+}
+
+/* Tables — alternating rows + red-tinted hover (ESPN feel) */
+body.theme-v2 .player-table {
+  background: var(--bg-card);
+  border-radius: 6px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
+body.theme-v2 .player-table th {
+  background: var(--bg-card);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 0.7rem;
+  color: var(--text-dim);
+}
+body.theme-v2 .player-table tr:hover td {
+  background: #fdecec;  /* brand-tint (ESPN red 10%) */
+}
+
+/* Mobile nav drawer (opens via ☰): same palette swap applies through
+   vars, but the drawer header gradient needs an explicit override. */
+body.theme-v2 .nav-drawer-header {
+  background: linear-gradient(180deg, #1a1d22 0%, #0e1115 100%);
+}
+body.theme-v2 .nav-drawer-item.active {
+  color: var(--accent);
+  background: rgba(213,10,10,0.08);
+}
+body.theme-v2 .nav-drawer-item.active::after { background: var(--accent); }
+
+/* Inputs / selects pick up the lighter surface so they don't look
+   like a dark island on a white background. */
+body.theme-v2 input, body.theme-v2 select, body.theme-v2 textarea {
+  background: var(--bg-card);
+  color: var(--text);
+  border-color: var(--border);
+}
