@@ -11006,7 +11006,8 @@ function authGate(user, owner) {
 // ---------------------------------------------------------------------------
 const APP_THEMES = [
   { key: "classic", label: "Classic (current dark blue)" },
-  { key: "v2",      label: "ESPN style (light, red accent)" },
+  { key: "v2",      label: "ESPN style — light (red accent on white)" },
+  { key: "v2-dark", label: "ESPN style — dark (red accent on charcoal)" },
 ];
 const APP_THEME_KEY = "flm_theme";
 function getAppTheme() {
@@ -11014,8 +11015,11 @@ function getAppTheme() {
   catch { return "classic"; }
 }
 function applyAppTheme(name) {
-  const isV2 = name === "v2";
-  document.body.classList.toggle("theme-v2", isV2);
+  // Mutually exclusive — clear any prior theme class before applying the new
+  // one so switching v2 ⇆ v2-dark doesn't end up with both classes set.
+  document.body.classList.remove("theme-v2", "theme-v2-dark");
+  if (name === "v2")      document.body.classList.add("theme-v2");
+  if (name === "v2-dark") document.body.classList.add("theme-v2-dark");
 }
 function setAppTheme(name) {
   try { localStorage.setItem(APP_THEME_KEY, name); } catch {}

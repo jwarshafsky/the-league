@@ -782,12 +782,11 @@ body {
 
 /* ============================================================
    THEME: ESPN-style (v2) — opt-in via Settings → Appearance.
-   Toggling <body class="theme-v2"> redefines the CSS variables
-   below so every existing `color:var(--accent)` / `background:
-   var(--bg)` etc. picks up the new palette automatically. A few
-   header / nav / button rules need explicit overrides because
-   they use hardcoded gradients or rely on layout that doesn't
-   translate.
+   Two variants share the same ESPN-red accent + black header but
+   swap surface colors. <body class="theme-v2"> = light;
+   <body class="theme-v2-dark"> = dark. The structural rules
+   below target both via grouped selectors; only the variable
+   blocks differ.
    ============================================================ */
 body.theme-v2 {
   /* Surfaces (light) */
@@ -812,38 +811,68 @@ body.theme-v2 {
   --purple:         #7c3aed;
   --shadow:         0 1px 3px rgba(15,23,42,0.08), 0 0 0 1px rgba(15,23,42,0.04);
 }
+body.theme-v2-dark {
+  /* Surfaces (dark) — slightly cooler than legacy navy */
+  --bg:             #0f172a;
+  --bg-card:        #1e293b;
+  --bg-card-hover:  #2a3a52;
+  --bg-row:         #1e293b;
+  --bg-row-alt:     #1a2436;
+  /* Borders + text */
+  --border:         #334155;
+  --text:           #e2e8f0;
+  --text-dim:       #94a3b8;
+  --text-bright:    #f8fafc;
+  /* Same ESPN red as the light variant */
+  --accent:         #d50a0a;
+  --accent-dim:     #a40808;
+  /* Status colors — keep punchy on dark */
+  --green:          #22c55e;
+  --yellow:         #eab308;
+  --red:            #ef4444;
+  --orange:         #f97316;
+  --purple:         #a855f7;
+  --shadow:         0 4px 12px rgba(0,0,0,0.45);
+}
 
 /* Header: replace the blue gradient with the v2 black bar + red underline. */
-body.theme-v2 .app-header {
+body.theme-v2 .app-header,
+body.theme-v2-dark .app-header {
   background: linear-gradient(180deg, #1a1d22 0%, #0e1115 100%);
   border-bottom: 4px solid var(--accent);
   box-shadow: none;
 }
-body.theme-v2 .app-header h1,
-body.theme-v2 .app-header h1 a { color: #ffffff; }
-body.theme-v2 .menu-btn {
+body.theme-v2 .app-header h1, body.theme-v2 .app-header h1 a,
+body.theme-v2-dark .app-header h1, body.theme-v2-dark .app-header h1 a { color: #ffffff; }
+body.theme-v2 .menu-btn,
+body.theme-v2-dark .menu-btn {
   background: rgba(255,255,255,0.10);
   color: #ffffff;
 }
-body.theme-v2 .menu-btn:hover { background: rgba(255,255,255,0.18); }
+body.theme-v2 .menu-btn:hover,
+body.theme-v2-dark .menu-btn:hover { background: rgba(255,255,255,0.18); }
 
-/* Nav tabs: white background, red active underline matches the mockup. */
-body.theme-v2 .nav-tabs {
+/* Nav tabs */
+body.theme-v2 .nav-tabs,
+body.theme-v2-dark .nav-tabs {
   background: var(--bg-card);
   border-bottom: 1px solid var(--border);
 }
-body.theme-v2 .nav-tab {
+body.theme-v2 .nav-tab,
+body.theme-v2-dark .nav-tab {
   background: transparent;
   color: var(--text-dim);
   border-right: none;
   border-bottom: 3px solid transparent;
   font-weight: 600;
 }
-body.theme-v2 .nav-tab:hover {
+body.theme-v2 .nav-tab:hover,
+body.theme-v2-dark .nav-tab:hover {
   color: var(--text);
   background: var(--bg-card-hover);
 }
-body.theme-v2 .nav-tab.active {
+body.theme-v2 .nav-tab.active,
+body.theme-v2-dark .nav-tab.active {
   color: var(--accent);
   background: transparent;
   border-bottom-color: var(--accent);
@@ -851,22 +880,25 @@ body.theme-v2 .nav-tab.active {
 
 /* Buttons: keep submit-green / cancel-gray semantics, the default
    .trade-btn picks up the new red accent automatically. */
-body.theme-v2 .trade-btn-cancel {
+body.theme-v2 .trade-btn-cancel,
+body.theme-v2-dark .trade-btn-cancel {
   background: var(--bg-card);
   color: var(--text);
   border: 1px solid var(--border);
 }
-body.theme-v2 .trade-btn-cancel:hover { background: var(--bg-card-hover); }
+body.theme-v2 .trade-btn-cancel:hover,
+body.theme-v2-dark .trade-btn-cancel:hover { background: var(--bg-card-hover); }
 
-/* Cards / section headers — softer borders, white surfaces */
-body.theme-v2 .keeper-projection,
-body.theme-v2 .summary-bar {
+/* Cards / section headers */
+body.theme-v2 .keeper-projection, body.theme-v2 .summary-bar,
+body.theme-v2-dark .keeper-projection, body.theme-v2-dark .summary-bar {
   background: var(--bg-card);
   border: 1px solid var(--border);
   box-shadow: var(--shadow);
 }
-body.theme-v2 .section-header {
-  background: #f9fafb;
+body.theme-v2 .section-header,
+body.theme-v2-dark .section-header {
+  background: var(--bg-row-alt);
   border-left: 3px solid var(--accent);
   color: var(--text);
   padding: 8px 12px;
@@ -874,38 +906,43 @@ body.theme-v2 .section-header {
   margin-top: 16px;
 }
 
-/* Tables — alternating rows + red-tinted hover (ESPN feel) */
-body.theme-v2 .player-table {
+/* Tables */
+body.theme-v2 .player-table,
+body.theme-v2-dark .player-table {
   background: var(--bg-card);
   border-radius: 6px;
   overflow: hidden;
   border: 1px solid var(--border);
 }
-body.theme-v2 .player-table th {
+body.theme-v2 .player-table th,
+body.theme-v2-dark .player-table th {
   background: var(--bg-card);
   text-transform: uppercase;
   letter-spacing: 0.06em;
   font-size: 0.7rem;
   color: var(--text-dim);
 }
-body.theme-v2 .player-table tr:hover td {
-  background: #fdecec;  /* brand-tint (ESPN red 10%) */
-}
+/* Red-tinted row hover — different opacity per variant so the red is
+   subtle on white but readable on dark surface. */
+body.theme-v2 .player-table tr:hover td { background: rgba(213,10,10,0.08); }
+body.theme-v2-dark .player-table tr:hover td { background: rgba(213,10,10,0.18); }
 
-/* Mobile nav drawer (opens via ☰): same palette swap applies through
-   vars, but the drawer header gradient needs an explicit override. */
-body.theme-v2 .nav-drawer-header {
+/* Mobile nav drawer (opens via ☰) */
+body.theme-v2 .nav-drawer-header,
+body.theme-v2-dark .nav-drawer-header {
   background: linear-gradient(180deg, #1a1d22 0%, #0e1115 100%);
 }
-body.theme-v2 .nav-drawer-item.active {
+body.theme-v2 .nav-drawer-item.active,
+body.theme-v2-dark .nav-drawer-item.active {
   color: var(--accent);
-  background: rgba(213,10,10,0.08);
+  background: rgba(213,10,10,0.10);
 }
-body.theme-v2 .nav-drawer-item.active::after { background: var(--accent); }
+body.theme-v2 .nav-drawer-item.active::after,
+body.theme-v2-dark .nav-drawer-item.active::after { background: var(--accent); }
 
-/* Inputs / selects pick up the lighter surface so they don't look
-   like a dark island on a white background. */
-body.theme-v2 input, body.theme-v2 select, body.theme-v2 textarea {
+/* Inputs / selects */
+body.theme-v2 input, body.theme-v2 select, body.theme-v2 textarea,
+body.theme-v2-dark input, body.theme-v2-dark select, body.theme-v2-dark textarea {
   background: var(--bg-card);
   color: var(--text);
   border-color: var(--border);
