@@ -44,4 +44,8 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add js/espn-snapshot.js js/player-stats-snapshot.js scripts/mlb_ids.json
           git commit -m "Nightly snapshot sync"
-          git push || (git pull --rebase && git push)
+          # If push fails because remote moved between checkout and push,
+          # rebase preferring OUR freshly-generated snapshot files. They're
+          # regenerated from scratch each run so they're always the
+          # authoritative latest — no need to merge in any older state.
+          git push || (git pull --rebase -X theirs && git push)
