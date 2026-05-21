@@ -3180,12 +3180,31 @@ function resolveCostBasis(playerName, currentTeamLocalId) {
     // decision === "fa" → fall through to FA logic below
   }
 
-  // Final-year-keeper exception: a player in their final original keeper year stays un-keepable
-  // even if dropped + re-added.
+  // Final-year-keeper exception: a player in their final original keeper year
+  // stays un-keepable even if dropped + re-added. Applies to BOTH auction
+  // contracts AND MiLB callups — for callups, the original draft year (when
+  // they were first MiLB-drafted) anchors the keeper window, so a callup whose
+  // MiLB clock has run out can't extend it by dropping + re-adding.
   if (original && original.contractType === "auction") {
     const fake = { name: playerName, price: original.price, yearAcquired: original.yearAcquired, fromMinors: original.fromMinors };
     const cs = getContractStatus(fake, CURRENT_SEASON);
     if (!cs.canKeepNextYear) {
+      return {
+        ...original,
+        droppedDuringSeason: true,
+        droppedAndPostDeadline: deadline && lastAdd.date > deadline,
+        workaround,
+      };
+    }
+  }
+  if (original && original.contractType === "callup") {
+    // For callups, the MiLB clock runs from `originalDraftYear` (when they were
+    // first added to the league's minors). Max 3 keeper years from that point
+    // — even FA re-add can't reset it. (MiLB rules: drafted <2027 = 4 years
+    // total in MiLB before mandatory promotion, but on majors the standard
+    // 3-yr cap applies; once a callup, the clock is from original draft.)
+    const draftYear = original.originalDraftYear ?? original.yearAcquired;
+    if (draftYear && CURRENT_SEASON >= draftYear + 3) {
       return {
         ...original,
         droppedDuringSeason: true,
