@@ -88,12 +88,22 @@ select cron.unschedule('league-notify-instant') where exists (select 1 from cron
 select cron.unschedule('league-weekly-report') where exists (select 1 from cron.job where jobname='league-weekly-report');
 select cron.unschedule('league-key-date-reminders') where exists (select 1 from cron.job where jobname='league-key-date-reminders');
 
-select cron.schedule('league-espn-sync',     '*/15 * * * *', $$select public.dispatch_github_workflow('espn-sync.yml');$$);
-select cron.schedule('league-draft-clock',   '*/5 * * * *',  $$select public.dispatch_github_workflow('draft-clock.yml');$$);
-select cron.schedule('league-sheets-sync',   '*/5 * * * *',  $$select public.dispatch_github_workflow('sheets-sync.yml');$$);
--- notify-instant uses 1-min cadence in pg_cron (GH Actions schedule minimum
--- is 5 min, so the workflow's own schedule is a coarser fallback).
-select cron.schedule('league-notify-instant','* * * * *',    $$select public.dispatch_github_workflow('notify-instant.yml');$$);
+-- High-frequency workflows are dispatched by GitHub's own scheduler only.
+-- The pg_cron path here was useful when GH's scheduler had multi-hour
+-- outages, but the workflow_dispatch token sporadically fails the
+-- actions/checkout auth step (transient GH infra issue), which produced
+-- ~5% failure emails. Since the GH schedule fires the same work every
+-- 5 / 15 min, dropping the pg_cron dispatch eliminates the email noise
+-- without changing what actually runs. The .github/workflows/*.yml
+-- schedule lines are the source of truth:
+--   espn-sync.yml      → */15
+--   draft-clock.yml    → */5
+--   sheets-sync.yml    → */5
+--   notify-instant.yml → */5  (was */1 via pg_cron; acceptable trade)
+--
+-- Daily / weekly / reminder jobs stay on the pg_cron path because they
+-- fire at most ~50 times/day, so the occasional dispatch flake matters
+-- less and the GH-schedule fallback is a sturdier safety net for them.
 select cron.schedule('league-nightly-sync',  '7 8 * * *',    $$select public.dispatch_github_workflow('nightly-sync.yml');$$);
 select cron.schedule('league-daily-report',  '7 1 * * *',    $$select public.dispatch_github_workflow('daily-report.yml');$$);
 select cron.schedule('league-weekly-report', '7 1 * * 1',    $$select public.dispatch_github_workflow('weekly-report.yml');$$);
