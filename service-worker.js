@@ -11,14 +11,17 @@
 // Bump CACHE_VERSION when changing the SW logic itself (not for app code —
 // that's handled by ?v=N at the script tags).
 
-const CACHE_VERSION = "the-league-v7";
+const CACHE_VERSION = "the-league-v8";
 
 // Data snapshots (ESPN rosters, player stats) are regenerated out-of-band by
 // the sync cron every ~15 min but keep a STATIC ?v=N in index.html, so the
 // browser HTTP cache would otherwise serve a stale copy for up to its max-age.
 // Force these to revalidate on every fetch so roster/luxury-tax numbers always
 // reflect the latest sync. Everything else still rides the ?v=N buster.
-const ALWAYS_REVALIDATE = /\/js\/(espn-snapshot|player-stats-snapshot)\.js(\?|$)/;
+// data.js (minors rosters → luxury tax) and history-snapshot.js (Trophy Room)
+// are also data files; included defensively so they can't go stale if either
+// is ever refreshed without a manual ?v=N bump (e.g. put on a cron).
+const ALWAYS_REVALIDATE = /\/js\/(espn-snapshot|player-stats-snapshot|history-snapshot|data)\.js(\?|$)/;
 const STATIC_ASSETS = [
   "./",
   "./index.html",
