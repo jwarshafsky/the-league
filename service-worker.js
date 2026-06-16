@@ -11,7 +11,14 @@
 // Bump CACHE_VERSION when changing the SW logic itself (not for app code —
 // that's handled by ?v=N at the script tags).
 
-const CACHE_VERSION = "the-league-v6";
+const CACHE_VERSION = "the-league-v7";
+
+// Data snapshots (ESPN rosters, player stats) are regenerated out-of-band by
+// the sync cron every ~15 min but keep a STATIC ?v=N in index.html, so the
+// browser HTTP cache would otherwise serve a stale copy for up to its max-age.
+// Force these to revalidate on every fetch so roster/luxury-tax numbers always
+// reflect the latest sync. Everything else still rides the ?v=N buster.
+const ALWAYS_REVALIDATE = /\/js\/(espn-snapshot|player-stats-snapshot)\.js(\?|$)/;
 const STATIC_ASSETS = [
   "./",
   "./index.html",
@@ -148,7 +155,12 @@ self.addEventListener("fetch", (event) => {
   event.respondWith(
     (async () => {
       try {
-        const fresh = await fetch(req);
+        // Snapshot data files must never be served from the HTTP cache, or the
+        // luxury-tax / roster numbers lag behind the latest sync. Revalidate.
+        const fetchOpts = ALWAYS_REVALIDATE.test(url.pathname + url.search)
+          ? { cache: "no-cache" }
+          : undefined;
+        const fresh = await fetch(req, fetchOpts);
         // Cache successful same-origin responses for offline fallback.
         if (fresh && fresh.ok) {
           const cache = await caches.open(CACHE_VERSION);
