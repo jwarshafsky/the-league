@@ -3212,6 +3212,13 @@ function resolveCostBasis(playerName, currentTeamLocalId) {
         workaround,
       };
     }
+    // MiLB clock still valid: the post-draft ESPN add IS the call-up itself —
+    // a prospect joins the active roster via a waiver/FA add (ESPN has no
+    // "call-up" transaction type). Per the rule above, an FA re-add can't reset
+    // a call-up's MiLB contract, so keep the call-up basis instead of falling
+    // through to FA $6. Without this, every called-up minor leaguer (who by
+    // definition has a post-draft add) gets mislabeled "FA".
+    return { ...original, workaround };
   }
 
   // FA add (drop+re-add or fresh pickup)
