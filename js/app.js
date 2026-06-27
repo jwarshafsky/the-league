@@ -3130,6 +3130,46 @@ function getOriginalCostBasis(playerName, currentTeamLocalId) {
   return null;
 }
 
+// Build a cost basis for a commish-chosen status category (Player Status
+// Override). "Category only": price/year are pulled from the best available
+// source so the engine recomputes contract length + keeper years. Returns null
+// if the category can't be built (caller then falls back to normal inference).
+function _basisFromCategory(category, playerName, teamId, original) {
+  switch (category) {
+    case "fa":
+      return { price: 6, yearAcquired: CURRENT_SEASON + 1, fromMinors: false,
+        source: "fa", contractType: "fa", manualCategory: true };
+    case "callup": {
+      const rec = findCallupRecord(playerName, teamId) || findInMinors(playerName, teamId);
+      const o = (typeof getCallupPriceOverrides === "function") ? getCallupPriceOverrides()[playerName] : null;
+      return { price: o?.price ?? null, yearAcquired: o?.year ?? CURRENT_SEASON,
+        originalDraftYear: rec?.yearAcquired ?? CURRENT_SEASON, fromMinors: true,
+        source: "callup", contractType: "callup", manualCategory: true };
+    }
+    case "auction": {
+      const pick = (typeof findDraftPick === "function") ? findDraftPick(playerName) : null;
+      return { price: pick?.bidAmount ?? original?.price ?? null, yearAcquired: CURRENT_SEASON,
+        fromMinors: false, source: "auction", contractType: "auction", manualCategory: true };
+    }
+    case "keeper": {
+      const k = findKeeperCostBasis(playerName, teamId);
+      if (k) return { price: k.price, yearAcquired: k.yearAcquired, fromMinors: k.fromMinors,
+        source: "keeper", contractType: "auction", manualCategory: true };
+      if (original) return { ...original, source: "keeper", contractType: "auction", manualCategory: true };
+      return null;
+    }
+    case "trade":
+      // Preserve the player's prior contract (as a trade does), retagged so the
+      // badge reads "(trade)". Needs an existing contract to preserve.
+      if (original) return { ...original,
+        source: (original.contractType === "callup") ? "callup-via-trade" : "keeper-via-trade",
+        manualCategory: true };
+      return null;
+    default:
+      return null;
+  }
+}
+
 // Full cost-basis resolution applying:
 //   - Trade preserves contract (handled by name-lookup across all teams)
 //   - Drop + re-add resets to FA $6 (unless already in final keeper year — final year is final year)
@@ -3139,6 +3179,15 @@ function resolveCostBasis(playerName, currentTeamLocalId) {
   const playerId = getPlayerIdByName(playerName, currentTeamLocalId);
   const lastAdd = getMostRecentAddEvent(playerId);
   const deadline = getTradeDeadline();
+
+  // Commish manual status-category override wins over inference. Lets the
+  // commish correct a misclassification (e.g. a waiver-add call-up the engine
+  // read as FA) from the Player Status Override control.
+  const _co = (typeof getCommishOverrides === "function") ? getCommishOverrides()[playerName] : null;
+  if (_co && _co.statusCategory && _co.statusCategory !== "auto") {
+    const forced = _basisFromCategory(_co.statusCategory, playerName, currentTeamLocalId, original);
+    if (forced) return forced;
+  }
 
   // If no ADD event in season, player has been on a roster since season start.
   if (!lastAdd) {
@@ -3524,15 +3573,31 @@ function openCommishEditor(playerName) {
   modal.innerHTML = `
     <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:18px;max-width:440px;width:100%;box-shadow:var(--shadow)">
       <h3 style="margin:0 0 12px;color:var(--text-bright)">Edit ${escapeHtml(playerName)}</h3>
-      <p style="color:var(--text-dim);font-size:0.78rem;margin:0 0 14px">Override any field below. Leave blank to keep the default.</p>
+      <p style="color:var(--text-dim);font-size:0.78rem;margin:0 0 14px">Override any field below. Leave on Auto / blank to keep the default.</p>
+      <label style="display:block;margin-bottom:10px">
+        <div style="color:var(--text-dim);font-size:0.8rem">Status / acquisition type</div>
+        <select id="ce-category" style="width:100%;background:var(--bg);color:var(--text);border:1px solid var(--border);padding:8px;border-radius:6px">
+          <option value="auto"${!o.statusCategory || o.statusCategory === "auto" ? " selected" : ""}>Auto — detected: ${escapeHtml(baseline ? _sourceLabel(baseline.source) : "—")}</option>
+          <option value="keeper"${o.statusCategory === "keeper" ? " selected" : ""}>Keeper</option>
+          <option value="auction"${o.statusCategory === "auction" ? " selected" : ""}>Auction</option>
+          <option value="callup"${o.statusCategory === "callup" ? " selected" : ""}>Call-up</option>
+          <option value="fa"${o.statusCategory === "fa" ? " selected" : ""}>Free Agent (FA)</option>
+          <option value="trade"${o.statusCategory === "trade" ? " selected" : ""}>Trade (keep prior contract)</option>
+        </select>
+        <div style="color:var(--text-dim);font-size:0.7rem;margin-top:2px">Forces how the app classifies this player. Price, contract length, and keeper years recalculate from the choice.</div>
+      </label>
       <label style="display:block;margin-bottom:10px">
         <div style="color:var(--text-dim);font-size:0.8rem">${CURRENT_SEASON + 1} price ($)</div>
         <input type="number" id="ce-nextprice" value="${escapeHtml(o.nextYearPrice ?? "")}" placeholder="${escapeHtml(baseline?.nextYearPrice ?? "")}" style="width:100%;background:var(--bg);color:var(--text);border:1px solid var(--border);padding:8px;border-radius:6px">
         ${baseline ? baseLine(`${CURRENT_SEASON + 1} price`, baseline.nextYearPrice) : ""}
       </label>
-      <label style="display:flex;align-items:center;gap:8px;margin-bottom:10px;color:var(--text)">
-        <input type="checkbox" id="ce-cankeep" ${(o.canKeepNextYear ?? baseline?.canKeepNextYear) ? "checked" : ""} style="width:16px;height:16px">
-        Can be kept next year
+      <label style="display:block;margin-bottom:10px">
+        <div style="color:var(--text-dim);font-size:0.8rem">Can be kept next year</div>
+        <select id="ce-cankeep" style="width:100%;background:var(--bg);color:var(--text);border:1px solid var(--border);padding:8px;border-radius:6px">
+          <option value="auto"${o.canKeepNextYear === undefined ? " selected" : ""}>Auto${baseline ? ` (${baseline.canKeepNextYear ? "Yes" : "No"})` : ""}</option>
+          <option value="yes"${o.canKeepNextYear === true ? " selected" : ""}>Yes</option>
+          <option value="no"${o.canKeepNextYear === false ? " selected" : ""}>No</option>
+        </select>
       </label>
       <label style="display:block;margin-bottom:10px">
         <div style="color:var(--text-dim);font-size:0.8rem">Contract label</div>
@@ -3551,20 +3616,26 @@ function openCommishEditor(playerName) {
 
 function saveCommishEditor(playerName) {
   const overrides = getCommishOverrides();
-  const np = document.getElementById("ce-nextprice").value;
-  const ck = document.getElementById("ce-cankeep").checked;
-  const lbl = document.getElementById("ce-label").value.trim();
+  const val = id => { const el = document.getElementById(id); return el ? el.value : ""; };
+  const cat = val("ce-category");
+  const np = val("ce-nextprice");
+  const ck = val("ce-cankeep");
+  const lbl = val("ce-label").trim();
   const o = {};
+  if (cat && cat !== "auto") o.statusCategory = cat;
   if (np !== "") o.nextYearPrice = parseInt(np, 10);
-  o.canKeepNextYear = ck;
+  if (ck === "yes") o.canKeepNextYear = true;
+  else if (ck === "no") o.canKeepNextYear = false;
   if (lbl) o.contractLabel = lbl;
-  overrides[playerName] = o;
+  // Empty override = nothing to store; treat as a clear so no stale "edited" tag.
+  if (Object.keys(o).length === 0) delete overrides[playerName];
+  else overrides[playerName] = o;
   saveCommishOverrides(overrides);
   if (typeof logActivityAsync === "function") {
     logActivityAsync("commish_override", { player_name: playerName, fields: Object.keys(o) });
   }
-  document.getElementById("commish-editor-modal").remove();
-  updateEligibleKeepersView();
+  document.getElementById("commish-editor-modal")?.remove();
+  _refreshAfterCommishOverride();
 }
 
 function clearCommishOverride(playerName) {
@@ -3574,8 +3645,73 @@ function clearCommishOverride(playerName) {
   if (typeof logActivityAsync === "function") {
     logActivityAsync("commish_override", { player_name: playerName, cleared: true });
   }
-  document.getElementById("commish-editor-modal").remove();
-  updateEligibleKeepersView();
+  document.getElementById("commish-editor-modal")?.remove();
+  _refreshAfterCommishOverride();
+}
+
+// The editor can be opened from the Select Keepers (Eligible) tab OR the
+// central panel in Commissioner Tools — refresh whichever is showing.
+function _refreshAfterCommishOverride() {
+  if (typeof currentView !== "undefined" && currentView === "settings") {
+    if (typeof switchTab === "function") switchTab("settings");
+  } else if (typeof updateEligibleKeepersView === "function"
+             && document.getElementById("eligible-team-select")) {
+    updateEligibleKeepersView();
+  }
+}
+
+// Every known player name (rosters + ESPN snapshot) for the override picker.
+function _allPlayerNames() {
+  const set = new Set();
+  for (const t of (LEAGUE_DATA.teams || [])) {
+    (t.majors || []).forEach(p => set.add(p.name));
+    (t.callups || []).forEach(p => set.add(p.name));
+    (t.minors || []).forEach(p => set.add(p.name));
+  }
+  const snap = (typeof getEspnSnapshot === "function") ? getEspnSnapshot() : null;
+  if (snap) for (const t of (snap.teams || [])) for (const r of (t.roster || [])) set.add(r.name);
+  return [...set].sort((a, b) => a.localeCompare(b));
+}
+
+function commishEditByName() {
+  const el = document.getElementById("status-override-name");
+  const name = el && el.value.trim();
+  if (!name) { alert("Enter a player name."); return; }
+  openCommishEditor(name);
+}
+
+// Central "Player Status Overrides" panel for Commissioner Tools: a picker that
+// opens the same editor modal, plus a list of every active manual override.
+function renderStatusOverridesPanel() {
+  const all = getCommishOverrides();
+  const catLabel = { keeper: "Keeper", auction: "Auction", callup: "Call-up", fa: "FA", trade: "Trade" };
+  const entries = Object.entries(all).filter(([, o]) =>
+    o && (o.statusCategory || o.nextYearPrice != null || o.canKeepNextYear !== undefined || o.contractLabel));
+  const list = entries.length
+    ? entries.sort((a, b) => a[0].localeCompare(b[0])).map(([n, o]) => {
+        const bits = [];
+        if (o.statusCategory) bits.push(`<span style="color:var(--yellow)">${escapeHtml(catLabel[o.statusCategory] || o.statusCategory)}</span>`);
+        if (o.nextYearPrice != null) bits.push(`$${o.nextYearPrice} next`);
+        if (o.canKeepNextYear !== undefined) bits.push(o.canKeepNextYear ? "keepable" : "not keepable");
+        if (o.contractLabel) bits.push(escapeHtml(o.contractLabel));
+        return `
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:8px 10px;margin-bottom:6px">
+            <span style="font-size:0.85rem"><strong>${escapeHtml(n)}</strong>${bits.length ? ` &middot; ${bits.join(" &middot; ")}` : ""}</span>
+            <span style="display:flex;gap:6px;flex-shrink:0">
+              <button class="trade-btn" style="font-size:0.72rem;padding:3px 8px" onclick="openCommishEditor('${escapeJsString(n)}')">Edit</button>
+              <button class="trade-btn trade-btn-cancel" style="font-size:0.72rem;padding:3px 8px" onclick="clearCommishOverride('${escapeJsString(n)}')">Clear</button>
+            </span>
+          </div>`;
+      }).join("")
+    : `<div style="color:var(--text-dim);font-size:0.84rem;font-style:italic">No manual overrides. ✓</div>`;
+  return `
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+      <input id="status-override-name" list="status-override-names" placeholder="Player name…"
+        style="flex:1;min-width:180px;background:var(--bg);color:var(--text);border:1px solid var(--border);padding:8px;border-radius:6px">
+      <datalist id="status-override-names">${_allPlayerNames().map(n => `<option value="${escapeHtml(n)}"></option>`).join("")}</datalist>
+      <button class="trade-btn trade-btn-submit" onclick="commishEditByName()">Edit…</button>
+    </div>
+    ${list}`;
 }
 
 function updateEligibleKeepersView() {
@@ -3670,6 +3806,14 @@ function sortPlayersByCategory(players) {
     if (oa !== ob) return oa - ob;
     return lastName(a.name).localeCompare(lastName(b.name));
   });
+}
+
+function _sourceLabel(source) {
+  return ({
+    "keeper": "Keeper", "keeper-via-trade": "Keeper (trade)",
+    "callup": "Call-up", "callup-via-trade": "Call-up (trade)",
+    "auction": "Auction", "fa": "FA", "fa-after-drop": "FA",
+  })[source] || "—";
 }
 
 function sourceBadge(player) {
@@ -6674,6 +6818,14 @@ function renderSettingsView() {
           Items the app surfaced that need a human decision. Each one links to the place where you can resolve it.
         </div>
         ${renderCommissionerReviewSections()}
+      </details>
+
+      <details id="cs-status-overrides" class="keeper-projection" style="margin-bottom:14px"${_detailsOpenAttr("cs-status-overrides", false)}>
+        <summary style="cursor:pointer;font-weight:700;color:var(--text-bright);font-size:0.92rem">Player Status Overrides</summary>
+        <div style="color:var(--text-dim);font-size:0.84rem;margin:8px 0 12px">
+          Manually correct how a player is classified (Keeper / Auction / Call-up / FA / Trade) when the app infers it wrong — e.g. a call-up ESPN logged as a waiver pickup. Price, contract, and keeper years recompute from your choice. You can also do this inline: on Select Keepers, turn on <strong>Commissioner Edit</strong> and click ✏︎ on a row.
+        </div>
+        ${renderStatusOverridesPanel()}
       </details>
 
       <details id="cs-season" class="keeper-projection" style="margin-bottom:14px"${_detailsOpenAttr("cs-season", false)}>
