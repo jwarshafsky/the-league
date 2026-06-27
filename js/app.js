@@ -6409,6 +6409,12 @@ function _findCallupsWithoutPrice() {
     for (const p of (team.callups || [])) {
       if (p.price != null) continue;
       if (typeof isPlayerDroppedFromEspn === "function" && isPlayerDroppedFromEspn(p.name)) continue;
+      // Skip call-ups who can't be kept next year — their MiLB contract is in
+      // its final season, so no §2(e) price is needed. Only keepable, unpriced
+      // call-ups (e.g. someone promoted this season) actually need one set.
+      const ms = (typeof getMinorLeagueContractStatus === "function")
+        ? getMinorLeagueContractStatus(p, CURRENT_SEASON) : null;
+      if (ms && !(ms.yearsRemaining === null || ms.yearsRemaining > 0)) continue;
       out.push({
         name: p.name,
         teamId: team.id,
