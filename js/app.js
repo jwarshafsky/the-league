@@ -3080,6 +3080,18 @@ function getMostRecentAddEvent(playerId) {
   return adds.reduce((latest, ev) => ev.date > latest.date ? ev : latest, adds[0]);
 }
 
+// ESPN's roster acquisitionType (DRAFT / ADD / TRADE) for the player's current
+// stint. Unlike the windowed activity-events log, this never ages out, so it's
+// the authoritative fallback for detecting a FA pickup whose add transaction
+// has scrolled off the recent-activity feed.
+function getRosterAcquisition(playerName, teamLocalId) {
+  const snap = getEspnSnapshot();
+  if (!snap) return null;
+  const team = snap.teams.find(t => ESPN_ABBREV_TO_LOCAL[t.abbrev] === teamLocalId);
+  const entry = team && team.roster.find(r => r.name === playerName);
+  return entry ? { type: entry.acquisitionType, date: entry.acquisitionDate } : null;
+}
+
 function getTradeDeadline() {
   const snap = getEspnSnapshot();
   return snap?.tradeDeadline || null;
@@ -3177,8 +3189,24 @@ function _basisFromCategory(category, playerName, teamId, original) {
 function resolveCostBasis(playerName, currentTeamLocalId) {
   const original = getOriginalCostBasis(playerName, currentTeamLocalId);
   const playerId = getPlayerIdByName(playerName, currentTeamLocalId);
-  const lastAdd = getMostRecentAddEvent(playerId);
+  let lastAdd = getMostRecentAddEvent(playerId);
   const deadline = getTradeDeadline();
+
+  // The activity-events log only spans ESPN's ~2000 most-recent messages, so a
+  // FA pickup whose add happened earlier in the season has no event here and
+  // would fall through to the player's stale draft price (mislabeled "auction").
+  // ESPN's per-player roster acquisitionType doesn't age out — if it says ADD
+  // but no add event survived in the window, synthesize one from it so the FA
+  // logic below runs. (acquisitionType is DRAFT / ADD / TRADE; only ADD = a
+  // free-agent/waiver pickup. Callups also show ADD but are caught earlier by
+  // their callup cost basis, so they're unaffected.)
+  if (!lastAdd) {
+    const acq = getRosterAcquisition(playerName, currentTeamLocalId);
+    if (acq && acq.type === "ADD") {
+      lastAdd = { date: acq.date, msgType: 178, playerId,
+        isCommishWorkaround: false, recentDropWithin24h: false, synthetic: true };
+    }
+  }
 
   // Commish manual status-category override wins over inference. Lets the
   // commish correct a misclassification (e.g. a waiver-add call-up the engine
