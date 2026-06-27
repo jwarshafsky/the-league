@@ -3883,6 +3883,12 @@ function renderMinorsEligibleTable(minors, teamId, teamSelections) {
                   <span class="${statClass}">${p.careerStat} ${p.statType}</span>
                   ${ms.eligibilityWarning ? ` <span class="hide-on-mobile" style="color:var(--red);font-weight:700;margin-left:4px">${escapeHtml(ms.eligibilityWarning)}</span>` : ''}
                 </div>
+                ${isCommissioner() && isMinorOnOwnEspnRoster(p.name, teamId) ? `
+                <div style="margin-top:4px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+                  <span style="color:var(--purple);font-weight:700;font-size:0.66rem">📈 On ESPN roster</span>
+                  <button class="trade-btn" style="font-size:0.66rem;padding:2px 7px;background:var(--purple);color:#fff"
+                    onclick="reviewCallUp('${nameEsc}','${escapeJsString(teamId)}')">Call Up</button>
+                </div>` : ''}
               </td>
               <td>${sourceTag}</td>
               <td><span style="color:var(--text-dim)">—</span></td>
@@ -6263,12 +6269,65 @@ function _findCallupsWithoutPrice() {
   return out;
 }
 
+// Per-owner ESPN active-roster name sets, keyed by LOCAL team id. The league
+// tracks minors SEPARATELY from ESPN (ESPN only holds the active roster), so a
+// player sitting in a team's `minors` bucket who now appears on that SAME
+// owner's ESPN roster has been called up in real life — the app's minors data
+// is just stale. Built once; the baked-in snapshot is static per page load.
+let _espnOwnRosterCache = null;
+function _getEspnOwnRosterMap() {
+  if (_espnOwnRosterCache !== null) return _espnOwnRosterCache;
+  const snap = getEspnSnapshot();
+  const map = new Map();
+  if (snap) {
+    for (const t of (snap.teams || [])) {
+      const localId = ESPN_ABBREV_TO_LOCAL[t.abbrev];
+      if (!localId) continue;
+      const names = map.get(localId) || new Set();
+      for (const r of (t.roster || [])) names.add(r.name);
+      map.set(localId, names);
+    }
+  }
+  _espnOwnRosterCache = map;
+  return map;
+}
+
+// True when `playerName` (held in `teamId`'s minors) is now on that same
+// owner's ESPN active roster — i.e. a real-life call-up the app hasn't recorded.
+function isMinorOnOwnEspnRoster(playerName, teamId) {
+  const set = _getEspnOwnRosterMap().get(teamId);
+  return !!set && set.has(playerName);
+}
+
+function _findMinorsOnEspnRoster() {
+  // MiL players already on their own owner's ESPN active roster — an unrecorded
+  // call-up. This is the most direct signal (the player is literally rostered),
+  // so it takes precedence over the stats-threshold detector below.
+  const out = [];
+  for (const team of LEAGUE_DATA.teams || []) {
+    for (const p of (team.minors || [])) {
+      if (!isMinorOnOwnEspnRoster(p.name, team.id)) continue;
+      out.push({
+        name: p.name,
+        teamId: team.id,
+        teamName: team.name,
+        careerStat: p.careerStat,
+        statType: p.statType,
+      });
+    }
+  }
+  return out;
+}
+
 function _findMustCallUpPlayers() {
   // MiL players who've crossed the §3(f) 300 AB / 75 IP threshold — must be
   // called up or dropped by the end of the next MiL draft.
   const out = [];
   for (const team of LEAGUE_DATA.teams || []) {
     for (const p of (team.minors || [])) {
+      // Already on the owner's ESPN roster? Surfaced by the more specific
+      // "On Active ESPN Roster" section instead — don't double-list.
+      if (isMinorOnOwnEspnRoster(p.name, team.id)) continue;
       const ms = (typeof getMinorLeagueContractStatus === "function")
         ? getMinorLeagueContractStatus(p, CURRENT_SEASON) : null;
       if (ms && ms.eligibilityWarning) {
@@ -6469,6 +6528,24 @@ function renderCallupPriceReview() {
   }).join("");
 }
 
+function renderEspnCallupReview() {
+  const items = _findMinorsOnEspnRoster();
+  if (!items.length) return "";
+  return items.map(it => _reviewItemCard(`
+    <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px;margin-bottom:6px">
+      <span><strong>${escapeHtml(it.name)}</strong> &middot; <span style="color:var(--accent)">${escapeHtml(it.teamName)}</span></span>
+      <span style="color:var(--purple);font-size:0.74rem;font-weight:700">📈 On active ESPN roster</span>
+    </div>
+    <div style="color:var(--text-dim);font-size:0.78rem;margin-bottom:6px">
+      Still in this team's minors but already on the owner's ESPN active roster${it.careerStat ? ` — ${it.careerStat} career ${it.statType || "AB"}` : ""}. Looks like an unrecorded call-up.
+    </div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap">
+      <button class="trade-btn" style="font-size:0.78rem;padding:4px 10px;background:var(--purple);color:#fff"
+        onclick="reviewCallUp('${escapeJsString(it.name)}','${escapeJsString(it.teamId)}')">Call Up</button>
+    </div>
+  `)).join("");
+}
+
 function renderMustCallUpReview() {
   const items = _findMustCallUpPlayers();
   if (!items.length) return "";
@@ -6492,7 +6569,11 @@ function renderMustCallUpReview() {
 function renderCommissionerReviewSections() {
   const callupItems = _findCallupsWithoutPrice();
   const mustCallUpItems = _findMustCallUpPlayers();
+  const espnCallupItems = _findMinorsOnEspnRoster();
   const sections = [
+    { title: "MiL Player On Active ESPN Roster", body: renderEspnCallupReview(),
+      intro: 'These players are still in a team\'s minors here but already on that owner\'s ESPN active roster — almost certainly a real-life call-up the app hasn\'t recorded yet. Call them up to fix their status (salary is set in the offseason).',
+      collapsible: true, count: espnCallupItems.length },
     { title: "Duplicate Player Names", body: renderDuplicateNamesReview(),
       intro: 'Two MLB players sharing a name (or a stale data-entry duplicate). Cost-basis lookups pick the first match by name, so the commish needs to pin contracts via Keeper Price Exceptions (case (a)) or clean up <code>js/data.js</code> (case (b)).' },
     { title: "Commissioner Add — Needs Classification", body: renderWorkaroundConfirmations(),
@@ -6555,6 +6636,7 @@ function _commishReviewTotal() {
   return _findDuplicateNameOccurrences().length
        + _findCommishWorkaroundsPending().length
        + _findCallupsWithoutPrice().length
+       + _findMinorsOnEspnRoster().length
        + _findMustCallUpPlayers().length;
 }
 
