@@ -3116,8 +3116,14 @@ function _txLogEventsFor(playerId) {
     for (const e of snap.txLog) {
       (_txLogIndex[e.playerId] = _txLogIndex[e.playerId] || []).push(e);
     }
-    // txLog arrives date-sorted from the sync, but don't depend on it.
-    for (const list of Object.values(_txLogIndex)) list.sort((a, b) => a.date - b.date);
+    // txLog arrives date-sorted from the sync, but don't depend on it. Tie-break
+    // equal timestamps by kind (DRAFT<DROP<ADD): a commissioner manual trade's
+    // drop and instant add often share one processDate, and the drop logically
+    // precedes the add — this keeps the ADD newest so the hop look-back finds
+    // its matching DROP regardless of the order mTransactions2 emitted them.
+    const kindRank = { DRAFT: 0, DROP: 1, ADD: 2 };
+    for (const list of Object.values(_txLogIndex))
+      list.sort((a, b) => a.date - b.date || (kindRank[a.kind] ?? 9) - (kindRank[b.kind] ?? 9));
   }
   return _txLogIndex[playerId] || null;
 }
@@ -3137,7 +3143,7 @@ function txContractRoot(playerId) {
       let hop = -1;
       for (let j = i - 1; j >= 0; j--) {
         const d2 = evs[j];
-        if (d2.kind === "DROP" && e.date - d2.date > 0 &&
+        if (d2.kind === "DROP" && e.date - d2.date >= 0 &&
             e.date - d2.date <= 30 * 60 * 1000 && d2.fromTeamId !== e.toTeamId) {
           hop = j; break;
         }

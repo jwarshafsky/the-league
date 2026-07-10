@@ -47,23 +47,42 @@ jq -e '.topics | length' "${TMP_DIR}/activity.json" > /dev/null
 echo "Walking transaction log..."
 SCORING_PERIOD=$(jq -r '.scoringPeriodId' "${TMP_DIR}/rosters.json")
 mkdir -p "${TMP_DIR}/tx"
+# -P 8 parallel; || true so one failed period doesn't abort under pipefail —
+# we validate completeness explicitly below (a PARTIAL log is worse than none:
+# a missing DRAFT or manual-trade DROP silently reprices a keeper to FA $6,
+# whereas an empty log makes resolveCostBasis fall back to the old windowed
+# logic). So we ship txLog ONLY if every period fetched and parsed cleanly.
 seq 1 "${SCORING_PERIOD}" | xargs -P 8 -I {} \
   curl -sf -H "Cookie: ${COOKIE}" \
   "${BASE}?view=mTransactions2&scoringPeriodId={}" \
-  -o "${TMP_DIR}/tx/{}.json" \
-  || echo "  warning: some transaction fetches failed (partial log)"
+  -o "${TMP_DIR}/tx/{}.json" || true
 
-jq -s '[ .[].transactions[]?
-         | select(.status == "EXECUTED" and (.isPending | not))
-         | . as $t
-         | ($t.processDate // $t.proposedDate // 0) as $date
-         | $t.items[]?
-         | select(.type == "ADD" or .type == "DROP" or .type == "DRAFT")
-         | { playerId, date: $date, kind: .type,
-             isWaiverAdd: ($t.type == "WAIVER"),
-             toTeamId: (.toTeamId // 0), fromTeamId: (.fromTeamId // 0) } ]
-       | sort_by(.date)' "${TMP_DIR}"/tx/*.json > "${TMP_DIR}/txlog.json"
-jq -e 'length > 0' "${TMP_DIR}/txlog.json" > /dev/null   # draft events alone guarantee > 0
+TX_COMPLETE=1
+for period in $(seq 1 "${SCORING_PERIOD}"); do
+  if ! jq -e '.transactions? // [] | type == "array"' "${TMP_DIR}/tx/${period}.json" > /dev/null 2>&1; then
+    TX_COMPLETE=0
+    echo "  warning: transaction period ${period} missing/unparseable"
+  fi
+done
+
+if [ "${TX_COMPLETE}" -eq 1 ]; then
+  jq -s '[ .[].transactions[]?
+           | select(.status == "EXECUTED" and (.isPending | not))
+           | . as $t
+           | ($t.processDate // $t.proposedDate // 0) as $date
+           | $t.items[]?
+           | select(.type == "ADD" or .type == "DROP" or .type == "DRAFT")
+           | { playerId, date: $date, kind: .type,
+               isWaiverAdd: ($t.type == "WAIVER"),
+               toTeamId: (.toTeamId // 0), fromTeamId: (.fromTeamId // 0) } ]
+         | sort_by(.date)' "${TMP_DIR}"/tx/*.json > "${TMP_DIR}/txlog.json"
+  jq -e 'length > 0' "${TMP_DIR}/txlog.json" > /dev/null   # draft events alone guarantee > 0
+else
+  # Incomplete fetch → ship an EMPTY txLog rather than a misleading partial one.
+  # resolveCostBasis treats an empty log as "no data" and falls back safely.
+  echo "  transaction log incomplete — shipping empty txLog (app falls back to windowed logic)"
+  echo "[]" > "${TMP_DIR}/txlog.json"
+fi
 
 echo "Building snapshot..."
 
