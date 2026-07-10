@@ -44,7 +44,7 @@ const RULES_DIGEST = `
 §2b ML keepers (drafted): keep up to 3 add'l yrs at draft value, +$2/yr. Min cost $1, non-int rounded up. Traded players keep cost basis.
 §2b ML keepers (FA): $6 first keepable yr, +$2/yr, 3 yrs max. Players dropped in final contract yr → can be added in FA but NOT kept.
 §2c Post-keeper-deadline drops only allowed for newly-reported injury/legal news (not regret).
-§2d $40+ auction price → max 2 add'l yrs. $50+ → max 1 add'l yr.
+§2d Auction price EXCEEDING $40 → max 2 add'l yrs; exceeding $50 → max 1. Exactly $40 stays 3 yrs, exactly $50 stays 2.
 §2e MiL keepers (max 10): no salary while in minors. Pre-2027 drafted = 4-yr contracts (e.g. drafted 2017 → keepable through 2020). 2027+ drafted = "call up + 3 yr" (kept up to 3 yrs after call-up).
 §2e MiL→ML pricing on first ML kept yr, based on ESPN top-200 ranking March 1: outside top 200=$1, 100-199=$3, 50-99=$5, 20-49=$10, top 19=$15. Then +$2/yr after.
 §3a Minor draft: 7 rounds, reverse standings. Anti-tanking: <45 roto pts → bottom of next year's order. Picks traded after May 15 NOT protected (Feb 2025 amendment).
