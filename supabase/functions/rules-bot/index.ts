@@ -73,6 +73,7 @@ function _compactRoster(r: { team_id?: string; name?: string; majors?: unknown[]
   if (!r) return "(no roster — frontend may be stale)";
   const fmt = (p: Record<string, unknown>): string => {
     const name = String(p.name ?? "?");
+    if (p.priceUnverified) return `${name} [price/contract UNVERIFIED]`;
     const price = p.price != null ? `$${p.price}` : "";
     const year = p.yearAcquired != null ? ` y${p.yearAcquired}` : "";
     const src = p.source ? ` ${p.source}` : "";
@@ -234,6 +235,14 @@ Deno.serve(async (req) => {
     "Be concise but informative. Don't invent rules, numbers, or features. If something isn't in the digest",
     "or roster, say so.",
     "",
+    "UNVERIFIED PLAYERS — a player marked [price/contract UNVERIFIED] (or `$?` in the league index) is on",
+    "the ESPN roster but the app has no trusted acquisition price for him (usually a mid-season FA pickup,",
+    "occasionally a drafted player whose add record is missing). NEVER state a salary, next-year price, or",
+    "keeper year for these players — not even the $6 FA default, since he may not actually be an FA pickup.",
+    "Say the price isn't tracked in the app and point the user to ESPN's transaction log (or the draft",
+    "recap) to see how the player was acquired, or to ask a commissioner. A commissioner can fix the record",
+    "via Commissioner Edit.",
+    "",
     "CRITICAL — keeperLastYear is the FINAL year a player can be kept. It already accounts for all caps,",
     "FA rules, MiL contracts, and §2(d) price tiers. NEVER add additional years to it. NEVER apply §2(b)'s",
     "'3 additional years' on top of it. The compact line `keep→2026` means 2026 is the last keepable year",
@@ -268,6 +277,7 @@ Deno.serve(async (req) => {
     "",
     "=== LEAGUE INDEX (other 11 teams) ===",
     "Format per line: `teamId ML: Name$price→YY, ...` or `teamId MiL: Name→YY, ...`",
+    "`Name$?` = acquisition price not tracked (see UNVERIFIED PLAYERS above) — never guess it.",
     "YY is last two digits of last keepable year (e.g. →28 means 2028). (C) marks an active callup.",
     "Use this for cross-team questions. NEVER quote the raw line verbatim to the user — rephrase naturally.",
     "Bad: 'matt MiL: ... Gage Workman→28'.  Good: 'Workman is on Matt's minors roster; contract through 2028.'",

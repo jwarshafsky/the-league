@@ -315,6 +315,12 @@
         ? LEAGUE_DATA.teams.find(t => t.id === teamId)
         : null;
       const annotateMajor = (p) => {
+        // No trusted price → no trusted contract math either (§2(d) keepable
+        // years depend on price tiers). Ship the name flagged unverified and
+        // let the bot say so, rather than deriving years from a guess.
+        if (p.priceUnverified) {
+          return { ...p, keeperLastYear: null, nextYearPrice: null, contractStatus: "unverified" };
+        }
         try {
           const cs = (typeof getContractStatus === "function") ? getContractStatus(p, CURRENT_SEASON) : null;
           const lastKeepableYear = cs ? CURRENT_SEASON + cs.yearsRemaining : null;
@@ -369,13 +375,16 @@
               fromMinors: false,
             });
           } else if (!pick) {
-            // No draft pick → likely FA pickup. §2(b): keepable at $6 first yr.
-            // yearAcquired = CURRENT_SEASON + 1 to match resolveCostBasis; this
-            // tells getContractStatus the price is already the first-kept-year
-            // salary, so the +$2/yr step doesn't double-apply on next-year price.
+            // No draft pick record. USUALLY a mid-season FA pickup ($6 first kept
+            // year per §2(b)) — but it can also be a drafted player whose add
+            // event is missing from the snapshot, in which case his real price is
+            // his auction bid, not $6. We can't tell the difference here, so we
+            // don't assert a price: the bot is instructed to say the price isn't
+            // tracked and point the user at ESPN's transaction log / the commish.
             synthesized.push({
               name: ep.name,
-              price: 6,
+              price: null,
+              priceUnverified: true,
               yearAcquired: CURRENT_SEASON + 1,
               source: "fa",
               fromMinors: false,
@@ -440,18 +449,21 @@
             for (const ep of (espnTeam.roster || [])) {
               if (dataJsNames.has(ep.name) || callupNames.has(ep.name) || minorNames.has(ep.name)) continue;
               const pick = picksByPlayerId[ep.playerId];
+              if (!pick) {
+                // No draft record — probably an FA pickup, but possibly a drafted
+                // player with a missing add event. Price/contract unverifiable;
+                // list the name flagged so the bot doesn't state a number.
+                majors.push(`${ep.name}$?`);
+                continue;
+              }
               // Auction picks: price = bid, yearAcquired = currentSeason (auction year).
-              // FA pickups (no pick): price = $6 (first kept year), yearAcquired = next
-              // season so getContractStatus's pre-contract branch returns the right
-              // yearsRemaining/nextYearPrice.
-              const price = pick ? pick.bidAmount : 6;
               const synth = {
-                name: ep.name, price, fromMinors: false,
-                yearAcquired: pick ? CURRENT_SEASON : CURRENT_SEASON + 1,
+                name: ep.name, price: pick.bidAmount, fromMinors: false,
+                yearAcquired: CURRENT_SEASON,
               };
               try {
                 const cs = getContractStatus(synth, CURRENT_SEASON);
-                majors.push(`${ep.name}$${price}→${ySuffix(CURRENT_SEASON + cs.yearsRemaining)}`);
+                majors.push(`${ep.name}$${pick.bidAmount}→${ySuffix(CURRENT_SEASON + cs.yearsRemaining)}`);
               } catch { /* skip */ }
             }
           }
