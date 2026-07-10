@@ -113,6 +113,12 @@
     document.getElementById("msgboard-close").addEventListener("click", _close);
     document.getElementById("msgboard-clear").addEventListener("click", _onClearAll);
     document.getElementById("msgboard-form").addEventListener("submit", _onSubmit);
+    // Delegated delete — keeps the message id out of an inline onclick string
+    // (no HTML-attribute escaping to get wrong).
+    document.getElementById("msgboard-log").addEventListener("click", e => {
+      const btn = e.target.closest("[data-msg-del]");
+      if (btn) window._deleteMessage(btn.getAttribute("data-msg-del"));
+    });
     document.getElementById("msgboard-input").addEventListener("keydown", e => {
       if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
@@ -240,7 +246,7 @@
       const fg = isMine ? "#fff" : "var(--text)";
       const dim = isMine ? "rgba(255,255,255,0.75)" : "var(--text-dim)";
       const deleteBtn = canDelete
-        ? `<button onclick="_deleteMessage('${_escAttr(m.id)}')" title="Delete" style="background:none;border:none;color:${dim};font-size:0.78rem;cursor:pointer;padding:0 0 0 6px;line-height:1">×</button>`
+        ? `<button data-msg-del="${_esc(m.id)}" title="Delete" style="background:none;border:none;color:${dim};font-size:0.78rem;cursor:pointer;padding:0 0 0 6px;line-height:1">×</button>`
         : "";
       return `
         <div style="display:flex;justify-content:${align}">
@@ -309,9 +315,6 @@
   function _esc(s) {
     return String(s == null ? "" : s).replace(/[&<>"']/g, c =>
       ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
-  }
-  function _escAttr(s) {
-    return String(s == null ? "" : s).replace(/'/g, "\\'").replace(/"/g, "&quot;");
   }
   function _relTime(ts) {
     if (!ts) return "";

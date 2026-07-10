@@ -748,9 +748,16 @@ create policy "lm_select_all"
   on public.league_messages for select
   using (auth.role() = 'authenticated');
 
+-- Insert: only as your own team, and if you stamp a user_id it must be your
+-- own. Without the user_id clause an owner could post a row bearing another
+-- user's user_id, muddying who is allowed to delete it (lm_delete_admin keys
+-- delete rights off user_id = auth.uid()).
 create policy "lm_insert_own"
   on public.league_messages for insert
-  with check (team_id = public.my_team_id());
+  with check (
+    team_id = public.my_team_id()
+    and (user_id is null or user_id = auth.uid())
+  );
 
 -- Delete: commissioners can clear anyone, authors can remove their own row.
 create policy "lm_delete_admin"

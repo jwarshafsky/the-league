@@ -10723,8 +10723,15 @@ function applyLivePlayerStats() {
     [...(team.callups || []), ...(team.minors || [])].forEach(p => {
       const live = stats[p.name];
       if (!live) return;
-      if (p.statType === "AB") p.careerStat = live.careerAB || 0;
-      else if (p.statType === "IP") p.careerStat = Math.round(live.careerIP || 0);
+      const ab = live.careerAB || 0;
+      const ip = Math.round(live.careerIP || 0);
+      // Self-heal a mislabeled statType from the hand-maintained data.js: if the
+      // labeled axis is empty but the other axis has real playing time, trust the
+      // live stat. Without this, a pitcher tagged "AB" always reads 0 and the
+      // §3(f) call-up warnings never fire even though he's blown past the IP cap.
+      if (p.statType === "AB" && ab === 0 && ip > 0) p.statType = "IP";
+      else if (p.statType === "IP" && ip === 0 && ab > 0) p.statType = "AB";
+      p.careerStat = p.statType === "IP" ? ip : ab;
     });
   });
 }

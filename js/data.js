@@ -275,8 +275,8 @@ const LEAGUE_DATA = {
         { name: "Aidan Miller", yearAcquired: 2025, careerStat: 0, statType: "AB" },
         { name: "Tyson Lewis", yearAcquired: 2026, careerStat: 0, statType: "IP" },
         { name: "Christian Scott", yearAcquired: 2026, careerStat: 0, statType: "IP" },
-        { name: "Didier Fuentes", yearAcquired: 2026, careerStat: 0, statType: "AB" },
-        { name: "A.J. Ewing", yearAcquired: 2026, careerStat: 0, statType: "IP" },
+        { name: "Didier Fuentes", yearAcquired: 2026, careerStat: 0, statType: "IP" },
+        { name: "A.J. Ewing", yearAcquired: 2026, careerStat: 0, statType: "AB" },
         { name: "Ralphy Velasquez", yearAcquired: 2026, careerStat: 0, statType: "AB" },
         { name: "Caleb Bonemer", yearAcquired: 2026, careerStat: 0, statType: "AB" },
         { name: "Teruaki Sato", yearAcquired: 2026, careerStat: 0, statType: "AB" },
@@ -341,7 +341,7 @@ const LEAGUE_DATA = {
         { name: "Brady House", yearAcquired: 2024, careerStat: 0, statType: "AB" }
       ],
       minors: [
-        { name: "Connelly Early", yearAcquired: 2026, careerStat: 0, statType: "AB" },
+        { name: "Connelly Early", yearAcquired: 2026, careerStat: 0, statType: "IP" },
         { name: "Kevin Alcantara", yearAcquired: 2023, careerStat: 0, statType: "AB" },
         { name: "James Triantos", yearAcquired: 2024, careerStat: 0, statType: "AB" },
         { name: "Jonathan Long", yearAcquired: 2026, careerStat: 0, statType: "AB" },
