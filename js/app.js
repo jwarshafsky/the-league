@@ -3097,6 +3097,70 @@ function getTradeDeadline() {
   return snap?.tradeDeadline || null;
 }
 
+// --- Full-season transaction log (ESPN_SNAPSHOT.txLog) ---------------------
+// Unlike the ~2000-message activity window (which permanently ages out old
+// adds/drops), txLog holds EVERY executed add/drop/draft of the season, so a
+// player's whole acquisition chain is walkable. Resolves the contract ROOT:
+//   "live" — current stint rooted in a draft pick. Trades never change the
+//            root, and commissioner "manual trades" (drop on team A + instant
+//            cross-team add within 30 min) resolve as chain-preserving hops.
+//   "fa"   — rooted in a genuine FAAB/FA add ($1 salary / $6 keeper), even if
+//            the player was drafted earlier or traded since.
+//   null   — no log / no trail / trail ends in a drop → caller falls back.
+let _txLogIndex = null;
+function _txLogEventsFor(playerId) {
+  const snap = getEspnSnapshot();
+  if (!snap || !snap.txLog || !snap.txLog.length || playerId == null) return null;
+  if (!_txLogIndex) {
+    _txLogIndex = {};
+    for (const e of snap.txLog) {
+      (_txLogIndex[e.playerId] = _txLogIndex[e.playerId] || []).push(e);
+    }
+    // txLog arrives date-sorted from the sync, but don't depend on it.
+    for (const list of Object.values(_txLogIndex)) list.sort((a, b) => a.date - b.date);
+  }
+  return _txLogIndex[playerId] || null;
+}
+
+function txContractRoot(playerId) {
+  const evs = _txLogEventsFor(playerId);
+  if (!evs || !evs.length) return null;
+  let i = evs.length - 1;
+  while (i >= 0) {
+    const e = evs[i];
+    if (e.kind === "DROP") return null;      // rostered but trail ends in a drop
+    if (e.kind === "DRAFT") return "live";
+    if (e.kind === "ADD") {
+      if (e.isWaiverAdd) return "fa";        // genuine FAAB pickup
+      // Instant (non-waiver) add: commissioner manual trade if another team
+      // dropped him within 30 min — a hop; keep walking the older trail.
+      let hop = -1;
+      for (let j = i - 1; j >= 0; j--) {
+        const d2 = evs[j];
+        if (d2.kind === "DROP" && e.date - d2.date > 0 &&
+            e.date - d2.date <= 30 * 60 * 1000 && d2.fromTeamId !== e.toTeamId) {
+          hop = j; break;
+        }
+      }
+      if (hop >= 0) { i = hop - 1; continue; }
+      return "fa";                           // instant add with no matching drop
+    }
+    i--;
+  }
+  return null;
+}
+
+// Most recent ADD in the full log — used to synthesize a lastAdd with a REAL
+// date (and waiver flag) when the windowed activity feed has aged it out.
+function txLastAddEvent(playerId) {
+  const evs = _txLogEventsFor(playerId);
+  if (!evs) return null;
+  for (let i = evs.length - 1; i >= 0; i--) {
+    if (evs[i].kind === "ADD") return evs[i];
+  }
+  return null;
+}
+
 // Resolve original cost basis (before drop/add overrides).
 function getOriginalCostBasis(playerName, currentTeamLocalId) {
   // 1. Existing keeper (price/year known from prior-year sheet)
@@ -3191,20 +3255,32 @@ function resolveCostBasis(playerName, currentTeamLocalId) {
   const playerId = getPlayerIdByName(playerName, currentTeamLocalId);
   let lastAdd = getMostRecentAddEvent(playerId);
   const deadline = getTradeDeadline();
+  // Contract root from the full-season transaction log (see txContractRoot).
+  // Decides chain questions the signals below get wrong: drafted→dropped→
+  // FAABed→traded shows acquisitionType TRADE (draft price kept — wrong, $1
+  // FAAB salary travels), and a commissioner manual-trade shows ADD (FA $6 —
+  // wrong, the contract travels).
+  const txRoot = txContractRoot(playerId);
 
   // The activity-events log only spans ESPN's ~2000 most-recent messages, so a
   // FA pickup whose add happened earlier in the season has no event here and
   // would fall through to the player's stale draft price (mislabeled "auction").
-  // ESPN's per-player roster acquisitionType doesn't age out — if it says ADD
-  // but no add event survived in the window, synthesize one from it so the FA
-  // logic below runs. (acquisitionType is DRAFT / ADD / TRADE; only ADD = a
-  // free-agent/waiver pickup. Callups also show ADD but are caught earlier by
-  // their callup cost basis, so they're unaffected.)
-  if (!lastAdd) {
-    const acq = getRosterAcquisition(playerName, currentTeamLocalId);
-    if (acq && acq.type === "ADD") {
-      lastAdd = { date: acq.date, msgType: 178, playerId,
-        isCommishWorkaround: false, recentDropWithin24h: false, synthetic: true };
+  // Synthesize the missing add — preferably from the full transaction log
+  // (real date + waiver flag), else from the roster acquisitionType (which
+  // never ages out). Never synthesize for a live-rooted player: his adds are
+  // manual-trade hops, not FA pickups. (Callups also show ADD but are caught
+  // by their callup cost basis below, so they're unaffected.)
+  if (!lastAdd && txRoot !== "live") {
+    const logAdd = (txRoot === "fa") ? txLastAddEvent(playerId) : null;
+    if (logAdd) {
+      lastAdd = { date: logAdd.date, msgType: logAdd.isWaiverAdd ? 180 : 178, playerId,
+        isCommishWorkaround: false, recentDropWithin24h: false, synthetic: true, fromTxLog: true };
+    } else {
+      const acq = getRosterAcquisition(playerName, currentTeamLocalId);
+      if (acq && acq.type === "ADD") {
+        lastAdd = { date: acq.date, msgType: 178, playerId,
+          isCommishWorkaround: false, recentDropWithin24h: false, synthetic: true };
+      }
     }
   }
 
@@ -3215,6 +3291,15 @@ function resolveCostBasis(playerName, currentTeamLocalId) {
   if (_co && _co.statusCategory && _co.statusCategory !== "auto") {
     const forced = _basisFromCategory(_co.statusCategory, playerName, currentTeamLocalId, original);
     if (forced) return forced;
+  }
+
+  // Live root = the drafted contract survived every move (only trades and
+  // manual-trade hops, no genuine drop) — keep the original basis and skip
+  // the FA/dropped inference entirely. The Corey Seager case: his windowed
+  // add event looks like a FA pickup, but the log proves it was a
+  // commissioner-processed trade.
+  if (txRoot === "live" && original && original.contractType === "auction") {
+    return { ...original, txRoot: "live" };
   }
 
   // If no ADD event in season, player has been on a roster since season start.
@@ -8811,7 +8896,11 @@ function describeActivity(a) {
     case "constitution_edited":
       return `${actor} updated the league constitution`;
     default:
-      return `${actor} did <code>${a.type}</code>`;
+      // a.type is attacker-controllable: a manager can insert an activity_log
+      // row with their own actor_team_id (RLS permits that) and an arbitrary
+      // type string. Escape it — an unescaped fall-through renders into the
+      // feed's innerHTML for every viewer (stored XSS).
+      return `${actor} did <code>${escapeHtml(a.type)}</code>`;
   }
 }
 

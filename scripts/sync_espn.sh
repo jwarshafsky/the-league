@@ -39,6 +39,32 @@ jq -e '.draftDetail.picks | length' "${TMP_DIR}/draft.json" > /dev/null
 jq -e '.settings.tradeSettings.deadlineDate' "${TMP_DIR}/settings.json" > /dev/null
 jq -e '.topics | length' "${TMP_DIR}/activity.json" > /dev/null
 
+# Full-season transaction log. The activity feed above is a ~2000-message
+# window that permanently ages out older adds/drops; mTransactions2 per
+# scoring period is COMPLETE (every executed add/drop/draft all season), which
+# resolveCostBasis needs to price acquisition chains (drafted→dropped→FAABed→
+# traded) correctly. ~110-185 small requests, 8 in parallel (~5s).
+echo "Walking transaction log..."
+SCORING_PERIOD=$(jq -r '.scoringPeriodId' "${TMP_DIR}/rosters.json")
+mkdir -p "${TMP_DIR}/tx"
+seq 1 "${SCORING_PERIOD}" | xargs -P 8 -I {} \
+  curl -sf -H "Cookie: ${COOKIE}" \
+  "${BASE}?view=mTransactions2&scoringPeriodId={}" \
+  -o "${TMP_DIR}/tx/{}.json" \
+  || echo "  warning: some transaction fetches failed (partial log)"
+
+jq -s '[ .[].transactions[]?
+         | select(.status == "EXECUTED" and (.isPending | not))
+         | . as $t
+         | ($t.processDate // $t.proposedDate // 0) as $date
+         | $t.items[]?
+         | select(.type == "ADD" or .type == "DROP" or .type == "DRAFT")
+         | { playerId, date: $date, kind: .type,
+             isWaiverAdd: ($t.type == "WAIVER"),
+             toTeamId: (.toTeamId // 0), fromTeamId: (.fromTeamId // 0) } ]
+       | sort_by(.date)' "${TMP_DIR}"/tx/*.json > "${TMP_DIR}/txlog.json"
+jq -e 'length > 0' "${TMP_DIR}/txlog.json" > /dev/null   # draft events alone guarantee > 0
+
 echo "Building snapshot..."
 
 # Map ESPN team IDs to our local team IDs (defined by abbreviation matching)
@@ -47,6 +73,7 @@ SNAPSHOT_JSON=$(jq -n \
   --slurpfile draft    "${TMP_DIR}/draft.json" \
   --slurpfile settings "${TMP_DIR}/settings.json" \
   --slurpfile activity "${TMP_DIR}/activity.json" \
+  --slurpfile txlog    "${TMP_DIR}/txlog.json" \
   --arg syncedAt "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
   --arg season  "${SEASON}" \
   '
@@ -135,7 +162,8 @@ SNAPSHOT_JSON=$(jq -n \
         overallPick: .overallPickNumber
       }
     ],
-    events: $events
+    events: $events,
+    txLog: $txlog[0]
   }
   ')
 
@@ -148,6 +176,7 @@ TEAM_COUNT=$(echo "${SNAPSHOT_JSON}" | jq '.teams | length')
 ROSTER_TOTAL=$(echo "${SNAPSHOT_JSON}" | jq '[.teams[].roster | length] | add')
 PICK_COUNT=$(echo "${SNAPSHOT_JSON}" | jq '.draftPicks | length')
 EVENT_COUNT=$(echo "${SNAPSHOT_JSON}" | jq '.events | length')
+TXLOG_COUNT=$(echo "${SNAPSHOT_JSON}" | jq '.txLog | length')
 ADD_COUNT=$(echo "${SNAPSHOT_JSON}" | jq '[.events[] | select(.type=="ADD")] | length')
 DROP_COUNT=$(echo "${SNAPSHOT_JSON}" | jq '[.events[] | select(.type=="DROP")] | length')
 TRADE_COUNT=$(echo "${SNAPSHOT_JSON}" | jq '[.events[] | select(.type=="TRADE")] | length')
@@ -159,6 +188,7 @@ echo "  ${TEAM_COUNT} teams"
 echo "  ${ROSTER_TOTAL} total roster entries"
 echo "  ${PICK_COUNT} draft picks"
 echo "  ${EVENT_COUNT} events (${ADD_COUNT} adds, ${DROP_COUNT} drops, ${TRADE_COUNT} trade-legs)"
+echo "  ${TXLOG_COUNT} full-season transaction-log events"
 echo "  Trade deadline: $(date -r $((DEADLINE/1000)) +"%Y-%m-%d %H:%M %Z")"
 
 # Mirror to /tmp for the running server
