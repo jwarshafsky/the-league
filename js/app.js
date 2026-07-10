@@ -6665,7 +6665,7 @@ function renderWorkaroundConfirmations() {
   if (!items.length) return "";
   return items.map(it => {
     const mkBtn = (val, label, color) => `
-      <button onclick="reviewClassifyWorkaround(${JSON.stringify(it.playerId)}, '${val}')"
+      <button onclick="reviewClassifyWorkaround(${escapeHtml(JSON.stringify(it.playerId))}, '${val}')"
               style="background:${val === it.presumption ? color : 'transparent'};
                      color:${val === it.presumption ? '#fff' : color};
                      border:1px solid ${color};
