@@ -205,12 +205,14 @@ def main():
     email_sent = 0
     push_sent = 0
     push_failed_endpoints = []
+    failed_event_ts = []  # created_at of events with a transient delivery failure
     for a in activity:
         cat = event_category(a.get("type"))
         meta = CATEGORY_META.get(cat) if cat else None
         if not meta:
             continue  # Not an "instant"-eligible category (those are digest-only).
         headline = describe_activity(a)
+        event_failed = False  # any transient send failure holds the marker for retry
         # Email — fan out to every manager on the team.
         targets = recipients_for_activity(a, all_prefs, "email", commish_team_ids)
         for tid in targets:
@@ -224,6 +226,7 @@ def main():
                         send_email(smtp_user, smtp_pass, [addr], subject, html, text)
                         email_sent += 1
                     except Exception as e:
+                        event_failed = True
                         print(f"  ! email failed for {tid} <{addr}>: {e}", file=sys.stderr)
                 else:
                     print(f"[preview email] {tid} <{addr}> — {subject}")
@@ -245,7 +248,11 @@ def main():
                         if is_gone(e):
                             push_failed_endpoints.append(sub["endpoint"])
                         else:
+                            event_failed = True
                             print(f"  ! push failed for {tid}: {e}", file=sys.stderr)
+
+        if event_failed:
+            failed_event_ts.append(a.get("created_at") or "")
 
     # Prune dead push subs.
     for endpoint in set(push_failed_endpoints):
@@ -258,9 +265,21 @@ def main():
         except Exception:
             pass
 
-    # Advance marker to the newest event we saw.
+    # Advance the marker. Normally to the newest event we saw — but if any event
+    # had a transient delivery failure, hold the marker just before the EARLIEST
+    # failed event so it (and everything after) is retried next run. A recipient
+    # who already got an earlier-in-the-batch alert may see a duplicate; that's
+    # the accepted cost of at-least-once delivery vs. silently dropping an alert.
     newest = max((a.get("created_at") or "") for a in activity)
-    upsert_league_state_row(key, MARKER_KEY, {"last_seen_ts": newest, "last_seen_id_ts": newest})
+    if failed_event_ts:
+        earliest_failure = min(ts for ts in failed_event_ts if ts)
+        prior = [ts for ts in ((a.get("created_at") or "") for a in activity) if ts < earliest_failure]
+        marker_ts = max(prior) if prior else (marker.get("last_seen_id_ts") or since_iso)
+        print(f"  … {len(failed_event_ts)} event(s) had delivery failures; "
+              f"holding marker at {marker_ts} for retry.", file=sys.stderr)
+    else:
+        marker_ts = newest
+    upsert_league_state_row(key, MARKER_KEY, {"last_seen_ts": marker_ts, "last_seen_id_ts": marker_ts})
     print(f"Processed {len(activity)} event(s): {email_sent} email, {push_sent} push, pruned {len(set(push_failed_endpoints))} dead push sub(s).")
 
 

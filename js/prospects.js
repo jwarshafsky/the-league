@@ -17,6 +17,20 @@ const MLB_SPORT_ID = 1;
 const MAX_ELIGIBLE_AB = 200; // Career AB < 200 = still minors-eligible
 const MAX_ELIGIBLE_IP = 50;  // Career IP < 50 = still minors-eligible
 
+// MLB innings-pitched use ".1"/".2" to mean 1/3 and 2/3 of an inning, NOT
+// decimals. parseFloat("46.2") = 46.2 but the real value is 46 2/3. Today's
+// thresholds are integers so this can't flip eligibility, but any later
+// comparison/sum would be wrong — convert properly at the source.
+function _ipToNumber(ip) {
+  if (typeof ip === "number") return ip;
+  const s = String(ip == null ? "" : ip).trim();
+  if (!s) return 0;
+  const [wholeStr, fracStr] = s.split(".");
+  const whole = parseInt(wholeStr, 10) || 0;
+  const frac = fracStr === "1" ? 1 / 3 : fracStr === "2" ? 2 / 3 : 0;
+  return whole + frac;
+}
+
 // Supplemental: notable foreign pros (NPB/KBO/CPBL) + elite amateur names
 // not in MLB Stats API until they sign/are drafted.
 const SUPPLEMENTAL_PROSPECTS = [
@@ -80,7 +94,7 @@ async function fetchMLBEligibleNames(season) {
               maxAB = Math.max(maxAB, stat.atBats);
             }
             if (group === "pitching") {
-              const ip = typeof stat.inningsPitched === "string" ? parseFloat(stat.inningsPitched) : (stat.inningsPitched || 0);
+              const ip = _ipToNumber(stat.inningsPitched);
               if (!isNaN(ip)) maxIP = Math.max(maxIP, ip);
             }
           });

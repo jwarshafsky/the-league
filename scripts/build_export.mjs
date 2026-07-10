@@ -210,20 +210,29 @@ function applyRosterAdjustments(teams, trades, callupOverrides, rosterMoves, dra
     applyAssets(t.team1, t.team2, t.team2Receives);
   }
 
-  // 2. Legacy callup_overrides → promote minors to callups
+  // 2. Legacy callup_overrides → promote minors to callups. These rows are keyed
+  //    by player_name ALONE (no team), so a name appearing in two teams' minors
+  //    is ambiguous — promoting the first match could promote the wrong player.
+  //    Only promote when exactly one team owns the name; otherwise defer to the
+  //    team-scoped roster_moves below.
   for (const playerName of Object.keys(callupOverrides || {})) {
-    for (const t of teams) {
-      const minors = teamMinors.get(t.id) || [];
-      const idx = minors.findIndex(p => p.name === playerName);
-      if (idx !== -1) {
-        const player = minors.splice(idx, 1)[0];
-        teamMinors.set(t.id, minors);
-        const callups = teamCallups.get(t.id) || [];
-        if (!callups.find(p => p.name === player.name)) callups.push(player);
-        teamCallups.set(t.id, callups);
-        break;
+    const matches = teams.filter(t =>
+      (teamMinors.get(t.id) || []).some(p => p.name === playerName));
+    if (matches.length !== 1) {
+      if (matches.length > 1) {
+        console.warn(`callup_override for "${playerName}" is ambiguous across ` +
+          `${matches.length} teams; deferring to roster_moves.`);
       }
+      continue;
     }
+    const t = matches[0];
+    const minors = teamMinors.get(t.id) || [];
+    const idx = minors.findIndex(p => p.name === playerName);
+    const player = minors.splice(idx, 1)[0];
+    teamMinors.set(t.id, minors);
+    const callups = teamCallups.get(t.id) || [];
+    if (!callups.find(p => p.name === player.name)) callups.push(player);
+    teamCallups.set(t.id, callups);
   }
 
   // 3. roster_moves: explicit callup / demote / drop, time-ordered
