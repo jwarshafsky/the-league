@@ -74,6 +74,11 @@ if [ "${TX_COMPLETE}" -eq 1 ]; then
            | select(.type == "ADD" or .type == "DROP" or .type == "DRAFT")
            | { playerId, date: $date, kind: .type,
                isWaiverAdd: ($t.type == "WAIVER"),
+               # League rule: only a commissioner can add a player outside FAAB,
+               # so a manual-trade add leg is always league-manager-executed
+               # (WAIVER/FAAB adds never are). txContractRoot uses this to tell a
+               # manual trade from an owner FAAB pickup of a just-dropped player.
+               byLeagueManager: ($t.isLeagueManager // false),
                toTeamId: (.toTeamId // 0), fromTeamId: (.fromTeamId // 0) } ]
          | sort_by(.date)' "${TMP_DIR}"/tx/*.json > "${TMP_DIR}/txlog.json"
   jq -e 'length > 0' "${TMP_DIR}/txlog.json" > /dev/null   # draft events alone guarantee > 0

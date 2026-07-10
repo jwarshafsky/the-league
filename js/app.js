@@ -3137,9 +3137,19 @@ function txContractRoot(playerId) {
     if (e.kind === "DROP") return null;      // rostered but trail ends in a drop
     if (e.kind === "DRAFT") return "live";
     if (e.kind === "ADD") {
-      if (e.isWaiverAdd) return "fa";        // genuine FAAB pickup
-      // Instant (non-waiver) add: commissioner manual trade if another team
-      // dropped him within 30 min — a hop; keep walking the older trail.
+      // Per league rule, only a commissioner (league manager) can add a player
+      // outside FAAB, so a manual trade's add leg is league-manager-executed
+      // while an owner's FAAB/waiver pickup is not. (Fall back to the waiver
+      // flag for snapshots synced before byLeagueManager was captured.)
+      const managerAdd = (e.byLeagueManager != null) ? e.byLeagueManager : !e.isWaiverAdd;
+      if (!managerAdd) return "fa";          // FAAB / waiver pickup
+      // Commissioner add. It's a contract-preserving TRADE only if it pairs with
+      // a cross-team drop of the SAME player in the window — keep walking the
+      // older trail. A commissioner add with NO matching cross-team drop is a
+      // non-trade move (a minor-league call-up, or correcting an errant FAAB of
+      // another team's minor leaguer) → fa root here; call-ups are re-priced
+      // correctly downstream by the call-up cost basis, and minor leaguers have
+      // no auction contract for the "live" root to affect.
       let hop = -1;
       for (let j = i - 1; j >= 0; j--) {
         const d2 = evs[j];
@@ -3149,7 +3159,7 @@ function txContractRoot(playerId) {
         }
       }
       if (hop >= 0) { i = hop - 1; continue; }
-      return "fa";                           // instant add with no matching drop
+      return "fa";                           // commissioner add, no matching drop
     }
     i--;
   }
