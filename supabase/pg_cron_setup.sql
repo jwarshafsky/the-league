@@ -77,6 +77,35 @@ end;
 $$;
 revoke all on function public.dispatch_github_workflow(text) from anon, authenticated;
 
+-- 3b. Conditional ESPN-sync fallback. The unconditional high-frequency
+--     dispatches were dropped (see section 4) because ~5% of
+--     workflow_dispatch-triggered runs hit a transient checkout-auth flake
+--     and emailed failure noise. But that left espn-sync with NO fallback:
+--     when GitHub's scheduler stalls (it throttled espn-sync to ~hourly and
+--     then went 2h dark on 2026-07-11), nothing rescues it. This function
+--     dispatches espn-sync ONLY when the last successful sync is >45 min
+--     old — a no-op in the normal case (zero extra dispatches, zero flake
+--     emails), real coverage during a GitHub scheduler outage.
+create or replace function public.dispatch_espn_sync_if_stale()
+returns void
+language plpgsql
+security definer
+set search_path = public, private
+as $$
+declare
+  last_success timestamptz;
+begin
+  select (state->>'lastSuccessAt')::timestamptz into last_success
+  from public.league_state
+  where key = 'espn_sync_status';
+
+  if last_success is null or now() - last_success > interval '45 minutes' then
+    perform public.dispatch_github_workflow('espn-sync.yml');
+  end if;
+end;
+$$;
+revoke all on function public.dispatch_espn_sync_if_stale() from anon, authenticated;
+
 -- 4. Schedule entries. Times are UTC. Cadence matches .github/workflows/*.
 --    Unschedule before scheduling so this script is re-runnable.
 select cron.unschedule('league-espn-sync')     where exists (select 1 from cron.job where jobname='league-espn-sync');
@@ -87,8 +116,12 @@ select cron.unschedule('league-daily-report')  where exists (select 1 from cron.
 select cron.unschedule('league-notify-instant') where exists (select 1 from cron.job where jobname='league-notify-instant');
 select cron.unschedule('league-weekly-report') where exists (select 1 from cron.job where jobname='league-weekly-report');
 select cron.unschedule('league-key-date-reminders') where exists (select 1 from cron.job where jobname='league-key-date-reminders');
+select cron.unschedule('league-heartbeat') where exists (select 1 from cron.job where jobname='league-heartbeat');
+select cron.unschedule('league-espn-sync-fallback') where exists (select 1 from cron.job where jobname='league-espn-sync-fallback');
 
--- High-frequency workflows are dispatched by GitHub's own scheduler only.
+-- High-frequency workflows are dispatched by GitHub's own scheduler only
+-- (except the conditional espn-sync rescue below, which stays silent
+-- unless the sync actually goes stale).
 -- The pg_cron path here was useful when GH's scheduler had multi-hour
 -- outages, but the workflow_dispatch token sporadically fails the
 -- actions/checkout auth step (transient GH infra issue), which produced
@@ -110,6 +143,31 @@ select cron.schedule('league-weekly-report', '7 1 * * 1',    $$select public.dis
 -- Key date reminders fire 1-week and 24-hour ahead. The script tolerates
 -- ±3-6h slack so 30-min cadence is plenty.
 select cron.schedule('league-key-date-reminders','*/30 * * * *', $$select public.dispatch_github_workflow('key-date-reminders.yml');$$);
+
+-- Heartbeat-only job: bumps league_state.pg_cron_heartbeat every 15 min
+-- WITHOUT dispatching anything on GitHub (no PAT use, no dispatch flakes,
+-- no failure emails). The app's "Both schedulers offline" banner treats a
+-- heartbeat >30 min old as a pg_cron outage — that check is only meaningful
+-- if something beats at least every 30 min. Before this job existed, the
+-- only frequent beat came from the (removed) high-frequency dispatch jobs,
+-- so the heartbeat went stale daily and the banner cried wolf whenever
+-- GitHub's scheduler lagged 90+ min.
+select cron.schedule('league-heartbeat', '*/15 * * * *', $$
+  insert into public.league_state (key, state)
+  values ('pg_cron_heartbeat', jsonb_build_object(
+    'lastFiredAt', to_jsonb(now()),
+    'lastWorkflow', '(heartbeat)'
+  ))
+  on conflict (key) do update set state = jsonb_set(
+    jsonb_set(coalesce(public.league_state.state, '{}'::jsonb),
+              '{lastFiredAt}', to_jsonb(now())),
+    '{lastWorkflow}', '"(heartbeat)"'::jsonb);
+$$);
+
+-- Conditional ESPN-sync rescue (see section 3b): no-op while GitHub's own
+-- schedule keeps the sync fresh; dispatches only when the last success is
+-- >45 min stale.
+select cron.schedule('league-espn-sync-fallback', '*/15 * * * *', $$select public.dispatch_espn_sync_if_stale();$$);
 
 -- ============================================================================
 -- NEXT STEP — paste the GitHub PAT (do this AFTER creating it on GitHub):
