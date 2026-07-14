@@ -3132,9 +3132,17 @@ function txContractRoot(playerId) {
   const evs = _txLogEventsFor(playerId);
   if (!evs || !evs.length) return null;
   let i = evs.length - 1;
+  // Trailing DROP for a player still on a roster: ESPN's waiver run (11:00 PM
+  // EDT) writes the executed DROP to the transaction feed before the roster
+  // feed removes the player, and the 15-min snapshot sync lands inside that
+  // window (Jul 12 2026: Cowser dropped 11:00 PM, app re-priced him $7 all
+  // night). Price the stint that's ending — the row disappears on its own
+  // once the roster feed catches up.
+  while (i >= 0 && evs[i].kind === "DROP") i--;
+  if (i < 0) return null;
   while (i >= 0) {
     const e = evs[i];
-    if (e.kind === "DROP") return null;      // rostered but trail ends in a drop
+    if (e.kind === "DROP") return null;      // mid-trail drop → unreadable
     if (e.kind === "DRAFT") return "live";
     if (e.kind === "ADD") {
       // Per league rule, only a commissioner (league manager) can add a player
