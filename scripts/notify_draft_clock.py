@@ -121,6 +121,8 @@ def clock_state(draft, now_ms):
 
 def current_pick_info(draft):
     """Find the next un-made, un-passed pick."""
+    # Commish-ended draft: no current pick (mirrors getCurrentPickInfo in app.js).
+    if draft.get("endedAt"): return None
     picks = draft.get("picks") or []
     passed = draft.get("passed") or []
     made_keys = {f"{p['round']}p{p['pickInRound']}" for p in picks}
@@ -171,6 +173,7 @@ def neighbor_pick(draft, current, offset):
 
 def rule5_current_pick(state):
     """Mirror of getRule5CurrentPick in app.js — snake order, end-of-round termination."""
+    if state.get("endedAt"): return None  # commish-ended draft
     order = state.get("order") or []
     n = len(order)
     if n == 0: return None
@@ -252,16 +255,22 @@ def main():
     # ------------------------------------------------------------------
     key_dates = fetch_league_state_row(key, "key_dates") or {}
     now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
+    # Only auto-start within a week of the scheduled time. key_dates keeps
+    # last season's dates until the commish updates them, and a year-old
+    # "passed" date must not start next season's draft (that's how the
+    # 2027 Minors Draft clock started itself in May 2026).
+    AUTO_START_WINDOW_MS = 7 * 24 * 60 * 60 * 1000
     def _date_passed(iso):
         if not iso: return False
         try:
-            return int(parse_ts(iso).timestamp() * 1000) <= now_ms
+            sched_ms = int(parse_ts(iso).timestamp() * 1000)
+            return sched_ms <= now_ms <= sched_ms + AUTO_START_WINDOW_MS
         except Exception:
             return False
 
     rule5_state = fetch_league_state_row(key, "rule5")
     rule5_scheduled = key_dates.get("rule5_draft")
-    if rule5_state and rule5_state.get("order") and not rule5_state.get("started"):
+    if rule5_state and rule5_state.get("order") and not rule5_state.get("started") and not rule5_state.get("endedAt"):
         if _date_passed(rule5_scheduled):
             try:
                 rule5_state["started"] = True
@@ -286,6 +295,10 @@ def main():
         print("No draft state."); return
     if not (draft.get("baseOrder") and len(draft["baseOrder"]) == 12):
         print("Draft not initialized."); return
+    if draft.get("endedAt"):
+        # Commish ended the draft — no clock, no auto-skips, no alerts.
+        print(f"Minors Draft ended at {draft['endedAt']}; nothing to do.")
+        return
 
     # Auto-START Minors Draft clock at the scheduled auction-draft time
     # (the Minors Draft conventionally runs immediately after the auction).
