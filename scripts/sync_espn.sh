@@ -33,11 +33,13 @@ curl -sf -H "Cookie: ${COOKIE}" \
   -H 'X-Fantasy-Filter: {"topics":{"limit":2000,"sortMessageDate":{"sortPriority":1,"sortAsc":false}}}' \
   "${BASE}/communication/?view=kona_league_communication"                -o "${TMP_DIR}/activity.json"
 
-# Validate
-jq -e '.teams | length' "${TMP_DIR}/rosters.json" > /dev/null
-jq -e '.draftDetail.picks | length' "${TMP_DIR}/draft.json" > /dev/null
+# Validate. Require the keys to actually EXIST (an ESPN 200-with-error-JSON
+# body has none of them; `.teams | length` would pass on it because a missing
+# key yields null|length = 0 and jq -e treats 0 as truthy).
+jq -e 'has("teams") and (.teams | length > 0)' "${TMP_DIR}/rosters.json" > /dev/null
+jq -e 'has("draftDetail") and (.draftDetail | has("picks")) and (.draftDetail.picks | length > 0)' "${TMP_DIR}/draft.json" > /dev/null
 jq -e '.settings.tradeSettings.deadlineDate' "${TMP_DIR}/settings.json" > /dev/null
-jq -e '.topics | length' "${TMP_DIR}/activity.json" > /dev/null
+jq -e 'has("topics")' "${TMP_DIR}/activity.json" > /dev/null
 
 # Full-season transaction log. The activity feed above is a ~2000-message
 # window that permanently ages out older adds/drops; mTransactions2 per
@@ -59,7 +61,7 @@ seq 1 "${SCORING_PERIOD}" | xargs -P 8 -I {} \
 
 TX_COMPLETE=1
 for period in $(seq 1 "${SCORING_PERIOD}"); do
-  if ! jq -e '.transactions? // [] | type == "array"' "${TMP_DIR}/tx/${period}.json" > /dev/null 2>&1; then
+  if ! jq -e 'has("transactions") and (.transactions | type == "array")' "${TMP_DIR}/tx/${period}.json" > /dev/null 2>&1; then
     TX_COMPLETE=0
     echo "  warning: transaction period ${period} missing/unparseable"
   fi

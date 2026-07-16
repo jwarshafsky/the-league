@@ -42,6 +42,14 @@ TAG_STYLES = {
 }
 
 
+def _escape_keep_strong(s):
+    """Escape user-supplied text (player names, vote titles, payload fields)
+    while preserving the <strong> emphasis markup that describe_activity /
+    reminder bodies emit deliberately. Everything else is neutralized."""
+    s = escape(s or "")
+    return s.replace("&lt;strong&gt;", "<strong>").replace("&lt;/strong&gt;", "</strong>")
+
+
 def _tag_html(tag):
     if not tag:
         return ""
@@ -70,7 +78,7 @@ def _section_html(section):
         rows.append(
             f'<tr><td style="padding:12px 14px;{border}">'
             f'{_tag_html(item.get("tag"))}'
-            f'<span style="font-size:14px;color:{TEXT_PRIMARY};line-height:1.4">{item["headline"]}</span>'
+            f'<span style="font-size:14px;color:{TEXT_PRIMARY};line-height:1.4">{_escape_keep_strong(item["headline"])}</span>'
             f'{sub_html}'
             f'</td></tr>'
         )
@@ -171,7 +179,7 @@ def render_alert(title, body_text, url=None, cta_label="View"):
     url = url or APP_URL
     body = (
         f'<tr><td style="padding:24px 28px 8px 28px">'
-        f'<div style="font-size:15px;color:{TEXT_PRIMARY};line-height:1.55">{body_text}</div>'
+        f'<div style="font-size:15px;color:{TEXT_PRIMARY};line-height:1.55">{_escape_keep_strong(body_text)}</div>'
         f'</td></tr>'
         f'<tr><td style="padding:8px 28px 24px 28px">'
         f'<a href="{escape(url)}" style="display:inline-block;background:{ACCENT_DARK};'

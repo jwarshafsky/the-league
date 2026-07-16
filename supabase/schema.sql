@@ -153,6 +153,7 @@ create policy "trades_delete_admin"
 create table if not exists public.league_state (
   key         text primary key,        -- e.g. 'draft_2027', 'rule5'
   state       jsonb not null,
+  version     bigint not null default 0,  -- optimistic-concurrency counter (save_league_state)
   updated_at  timestamptz not null default now()
 );
 
@@ -169,6 +170,40 @@ create policy "ls_write_admin"
   on public.league_state for all
   using (public.is_commissioner())
   with check (public.is_commissioner());
+
+-- Compare-and-swap writer. All read-modify-write callers (browser + crons)
+-- pass the version they read; a stale version raises a version_conflict
+-- error so the caller re-fetches instead of silently clobbering a concurrent
+-- write (e.g. the draft-clock cron erasing a just-submitted pick).
+-- SECURITY INVOKER, so ls_write_admin still gates who can write.
+create or replace function public.save_league_state(
+  p_key text, p_state jsonb, p_expected_version bigint
+)
+returns bigint
+language plpgsql
+security invoker
+set search_path = public
+as $$
+declare
+  new_version bigint;
+begin
+  insert into public.league_state as ls (key, state, version)
+  values (p_key, p_state, coalesce(p_expected_version, 0) + 1)
+  on conflict (key) do update
+    set state   = excluded.state,
+        version = ls.version + 1
+    where ls.version = coalesce(p_expected_version, 0)
+  returning version into new_version;
+  if new_version is null then
+    -- NOTE: deliberately NOT errcode 40001 — PostgREST auto-retries
+    -- serialization_failure, which turns a conflict into a request timeout.
+    raise exception 'version_conflict for key %', p_key;
+  end if;
+  return new_version;
+end;
+$$;
+revoke all on function public.save_league_state(text, jsonb, bigint) from public, anon;
+grant execute on function public.save_league_state(text, jsonb, bigint) to authenticated, service_role;
 
 
 -- ============================================================================
@@ -624,6 +659,7 @@ grant execute on function public.my_team_id() to authenticated;
 create or replace function public.touch_updated_at()
 returns trigger
 language plpgsql
+set search_path = public
 as $$
 begin
   new.updated_at := now();
@@ -662,11 +698,14 @@ create table if not exists public.notification_prefs (
 alter table public.notification_prefs enable row level security;
 
 drop policy if exists "np_select_all"  on public.notification_prefs;
+drop policy if exists "np_select_own"  on public.notification_prefs;
 drop policy if exists "np_write_owner" on public.notification_prefs;
 
-create policy "np_select_all"
+-- Own row (or commish) only: the row carries the team's contact email, which
+-- must not be readable league-wide. Server scripts use the service role.
+create policy "np_select_own"
   on public.notification_prefs for select
-  using (auth.role() = 'authenticated');
+  using (team_id = public.my_team_id() or public.is_commissioner());
 
 create policy "np_write_owner"
   on public.notification_prefs for all

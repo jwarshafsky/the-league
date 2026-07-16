@@ -12,6 +12,7 @@ league_state.notify_draft_marker.
 
 import json
 import os
+import re
 import sys
 import urllib.request
 from datetime import datetime, timezone
@@ -21,7 +22,8 @@ from _notify_db import (
     SUPABASE_URL, APP_URL,
     load_env, fetch_all_owners, fetch_emails_by_user_id,
     fetch_notify_prefs, fetch_push_subs, fetch_league_state_row,
-    upsert_league_state_row, team_name, parse_ts,
+    fetch_league_state_row_v, save_league_state_row_cas, LeagueStateConflict,
+    fetch_trades, upsert_league_state_row, team_name, parse_ts,
 )
 from _email_template import render_alert
 from _mail import send_email
@@ -32,15 +34,56 @@ MARKER_KEY = "notify_draft_marker"
 STATE_LABELS = {"on_clock": "On the clock", "on_deck": "On deck", "in_hole": "In the hole"}
 
 
-def get_pick_owner(draft, round_num, pick_in_round):
-    """Mirror of getPickOwner in app.js."""
+def parse_milb_pick_value(value):
+    """Mirror of parseMilbPickValue in app.js — '2027 1st round' → {year, round}."""
+    if not isinstance(value, str): return None
+    v = value.lower()
+    year_m = re.search(r"\b(20\d{2})\b", v)
+    cleaned = v.replace(year_m.group(1), " ", 1) if year_m else v
+    round_n = None
+    for pat in (r"(\d+)\s*(?:st|nd|rd|th)", r"round\s+(\d+)", r"\b(\d+)\b"):
+        m = re.search(pat, cleaned)
+        if m:
+            round_n = int(m.group(1)); break
+    if not round_n or round_n < 1 or round_n > 20: return None
+    return {"year": int(year_m.group(1)) if year_m else None, "round": round_n}
+
+
+def trade_log_owner(trades, round_num, draft_year, base_owner):
+    """Mirror of getTradeLogOwner in app.js: walk milb_pick trade assets
+    chronologically and apply chained ownership transfers."""
+    owner = base_owner
+    for t in trades:
+        for receives, from_team, to_team in (
+            (t.get("team1_receives") or [], t.get("team2"), t.get("team1")),
+            (t.get("team2_receives") or [], t.get("team1"), t.get("team2")),
+        ):
+            for asset in receives:
+                if asset.get("type") != "milb_pick": continue
+                parsed = parse_milb_pick_value(asset.get("value")) or {}
+                pick_round = asset.get("pickRound") if asset.get("pickRound") is not None else parsed.get("round")
+                pick_year  = asset.get("pickYear")  if asset.get("pickYear")  is not None else parsed.get("year")
+                orig = asset.get("pickOriginalOwner")
+                if not pick_round or pick_round != round_num: continue
+                if not pick_year or pick_year != draft_year: continue
+                if orig and orig != base_owner: continue
+                if from_team == owner: owner = to_team
+    return owner
+
+
+def get_pick_owner(draft, round_num, pick_in_round, trades):
+    """Mirror of getPickOwner in app.js, INCLUDING the trade-log walk —
+    without it, picks traded via the in-app Trade Log alert the old owner."""
     traded = (draft.get("tradedPicks") or {})
     key = f"{round_num}p{pick_in_round}"
     if key in traded: return traded[key]
-    base = draft.get("baseOrder") or []
+    base_list = draft.get("baseOrder") or []
     if draft.get("type") == "snake" and round_num % 2 == 0:
-        return base[len(base) - pick_in_round] if 0 <= len(base) - pick_in_round < len(base) else None
-    return base[pick_in_round - 1] if 0 <= pick_in_round - 1 < len(base) else None
+        base = base_list[len(base_list) - pick_in_round] if 0 <= len(base_list) - pick_in_round < len(base_list) else None
+    else:
+        base = base_list[pick_in_round - 1] if 0 <= pick_in_round - 1 < len(base_list) else None
+    if base is None: return None
+    return trade_log_owner(trades, round_num, draft.get("year"), base)
 
 
 # --- Clock math (Python port of js/app.js activeDraftElapsedMs) ---
@@ -110,16 +153,38 @@ def clock_state(draft, now_ms):
     clk = draft.get("clock") or {}
     started_at = clk.get("startedAt")
     if not started_at: return False, False, False, DRAFT_CLOCK_MS
-    started_ms = int(parse_ts(started_at).timestamp() * 1000)
+    started_dt = parse_ts(started_at)
+    if started_dt is None:
+        # Malformed timestamp: treat as not-started instead of crashing the
+        # whole run (which would also kill auto-skip every 5 min).
+        print(f"  ! malformed clock.startedAt {started_at!r}; treating clock as not started", file=sys.stderr)
+        return False, False, False, DRAFT_CLOCK_MS
+    started_ms = int(started_dt.timestamp() * 1000)
     paused = bool(clk.get("paused"))
-    paused_at = clk.get("pausedAt")
-    ref_ms = int(parse_ts(paused_at).timestamp() * 1000) if (paused and paused_at) else now_ms
-    elapsed = active_elapsed_ms(started_ms, ref_ms)
+    paused_at_dt = parse_ts(clk.get("pausedAt")) if (paused and clk.get("pausedAt")) else None
+    ref_ms = int(paused_at_dt.timestamp() * 1000) if paused_at_dt else now_ms
+    # bankedMs: active time consumed before the current startedAt segment
+    # (accumulated by pause/resume — mirrors computeDraftClockState).
+    banked = int(clk.get("bankedMs") or 0)
+    elapsed = banked + active_elapsed_ms(started_ms, ref_ms)
     remaining = max(0, DRAFT_CLOCK_MS - elapsed)
     return True, paused, remaining <= 0, remaining
 
 
-def current_pick_info(draft):
+DRAFT_ROUNDS = 7  # mirrors DRAFT_ROUNDS/_normalizeDraft in app.js
+
+
+def normalize_draft(draft):
+    """Mirror of _normalizeDraft in app.js: rounds are pinned to 7 and
+    out-of-range picks/passes are ignored, so the cron can't keep passing
+    through phantom rounds the app doesn't recognize."""
+    draft["rounds"] = DRAFT_ROUNDS
+    draft["picks"] = [p for p in (draft.get("picks") or []) if (p.get("round") or 0) <= DRAFT_ROUNDS]
+    draft["passed"] = [p for p in (draft.get("passed") or []) if (p.get("round") or 0) <= DRAFT_ROUNDS]
+    return draft
+
+
+def current_pick_info(draft, trades):
     """Find the next un-made, un-passed pick."""
     # Commish-ended draft: no current pick (mirrors getCurrentPickInfo in app.js).
     if draft.get("endedAt"): return None
@@ -138,12 +203,12 @@ def current_pick_info(draft):
                 continue
             return {
                 "round": r, "pickInRound": pir, "overall": overall,
-                "team": get_pick_owner(draft, r, pir), "key": k,
+                "team": get_pick_owner(draft, r, pir, trades), "key": k,
             }
     return None
 
 
-def neighbor_pick(draft, current, offset):
+def neighbor_pick(draft, current, offset, trades):
     """The pick `offset` slots after current (offset=1 → on deck, 2 → in hole)."""
     if not current: return None
     rounds = draft.get("rounds") or 0
@@ -166,7 +231,7 @@ def neighbor_pick(draft, current, offset):
             if (seen - current["overall"]) == offset:
                 return {
                     "round": r, "pickInRound": pir,
-                    "team": get_pick_owner(draft, r, pir), "key": k,
+                    "team": get_pick_owner(draft, r, pir, trades), "key": k,
                 }
     return None
 
@@ -183,16 +248,18 @@ def rule5_current_pick(state):
     idx = N % n
     team_idx = (n - 1 - idx) if (rnd % 2 == 0) else idx
     team_id = order[team_idx] if 0 <= team_idx < n else None
-    # End if previous full round was all passes.
-    if N >= n:
+    # End if the previous FULL round was all passes — only test at round
+    # boundaries (idx == 0). A rolling last-N window can span two rounds and,
+    # with snake reversal, end the draft mid-round (mirrors app.js fix).
+    if N >= n and idx == 0:
         prev_round = picks[N - n:N]
         if all(p.get("pass") for p in prev_round):
             return None
     return {"round": rnd, "idx": idx, "teamId": team_id}
 
 
-def auto_skip_rule5(key, state):
-    """Push pass entries for expired Rule 5 picks and persist."""
+def auto_skip_rule5(key, state, version):
+    """Push pass entries for expired Rule 5 picks and persist (CAS-guarded)."""
     skipped = 0
     for _ in range(50):
         cur = rule5_current_pick(state)
@@ -210,7 +277,7 @@ def auto_skip_rule5(key, state):
         })
         state["clock"] = {
             "startedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
-            "paused": False, "pausedAt": None,
+            "paused": False, "pausedAt": None, "bankedMs": 0,
         }
         try:
             urllib.request.urlopen(urllib.request.Request(
@@ -231,7 +298,13 @@ def auto_skip_rule5(key, state):
             print(f"  ! rule5 activity_log insert failed: {e}", file=sys.stderr)
         skipped += 1
     if skipped:
-        upsert_league_state_row(key, "rule5", state)
+        try:
+            save_league_state_row_cas(key, "rule5", state, version)
+        except LeagueStateConflict:
+            # Someone (a browser) wrote rule5 while we worked — drop our
+            # changes rather than clobber theirs; next run re-evaluates.
+            print("  ! rule5 changed mid-run; auto-skip abandoned this tick.")
+            return 0
         print(f"Auto-skipped {skipped} expired Rule 5 pick(s).")
     return skipped
 
@@ -268,7 +341,7 @@ def main():
         except Exception:
             return False
 
-    rule5_state = fetch_league_state_row(key, "rule5")
+    rule5_state, rule5_ver = fetch_league_state_row_v(key, "rule5")
     rule5_scheduled = key_dates.get("rule5_draft")
     if rule5_state and rule5_state.get("order") and not rule5_state.get("started") and not rule5_state.get("endedAt"):
         if _date_passed(rule5_scheduled):
@@ -276,21 +349,24 @@ def main():
                 rule5_state["started"] = True
                 rule5_state["clock"] = {
                     "startedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
-                    "paused": False, "pausedAt": None,
+                    "paused": False, "pausedAt": None, "bankedMs": 0,
                 }
-                upsert_league_state_row(key, "rule5", rule5_state)
+                rule5_ver = save_league_state_row_cas(key, "rule5", rule5_state, rule5_ver)
                 print(f"Auto-started Rule 5 draft (scheduled {rule5_scheduled}).")
+            except LeagueStateConflict:
+                print("  ! rule5 changed mid-run; auto-start skipped this tick.")
+                rule5_state = None  # don't act on a stale copy below
             except Exception as e:
                 print(f"  ! rule5 auto-start failed: {e}", file=sys.stderr)
 
     # Rule 5 auto-skip (after potentially auto-starting).
     if rule5_state and rule5_state.get("started") and rule5_state.get("order"):
         try:
-            auto_skip_rule5(key, rule5_state)
+            auto_skip_rule5(key, rule5_state, rule5_ver)
         except Exception as e:
             print(f"  ! rule5 auto-skip failed: {e}", file=sys.stderr)
 
-    draft = fetch_league_state_row(key, "draft_2027")
+    draft, draft_ver = fetch_league_state_row_v(key, "draft_2027")
     if not draft:
         print("No draft state."); return
     if not (draft.get("baseOrder") and len(draft["baseOrder"]) == 12):
@@ -298,6 +374,15 @@ def main():
     if draft.get("endedAt"):
         # Commish ended the draft — no clock, no auto-skips, no alerts.
         print(f"Minors Draft ended at {draft['endedAt']}; nothing to do.")
+        return
+    normalize_draft(draft)
+
+    # Trade-log pick ownership needs the trades table. If it can't be read we
+    # must not guess owners (wrong-team alerts + wrong auto-pass attribution).
+    try:
+        trades = fetch_trades(key)
+    except Exception as e:
+        print(f"  ! trades fetch failed ({e}); skipping this run.", file=sys.stderr)
         return
 
     # Auto-START Minors Draft clock at the scheduled auction-draft time
@@ -308,10 +393,13 @@ def main():
             try:
                 draft["clock"] = {
                     "startedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
-                    "paused": False, "pausedAt": None,
+                    "paused": False, "pausedAt": None, "bankedMs": 0,
                 }
-                upsert_league_state_row(key, "draft_2027", draft)
+                draft_ver = save_league_state_row_cas(key, "draft_2027", draft, draft_ver)
                 print(f"Auto-started Minors Draft clock (scheduled {minors_scheduled}).")
+            except LeagueStateConflict:
+                print("  ! draft_2027 changed mid-run; auto-start skipped this tick.")
+                return
             except Exception as e:
                 print(f"  ! minors auto-start failed: {e}", file=sys.stderr)
 
@@ -323,7 +411,7 @@ def main():
     # ------------------------------------------------------------------
     skipped = 0
     for _ in range(50):  # safety cap
-        cur = current_pick_info(draft)
+        cur = current_pick_info(draft, trades)
         if not cur: break
         started, paused, expired, _rem = clock_state(draft, int(datetime.now(timezone.utc).timestamp() * 1000))
         if not started or paused or not expired: break
@@ -335,7 +423,7 @@ def main():
         })
         draft["clock"] = {
             "startedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
-            "paused": False, "pausedAt": None,
+            "paused": False, "pausedAt": None, "bankedMs": 0,
         }
         # Log activity (best-effort; failure here shouldn't block the skip).
         try:
@@ -357,16 +445,24 @@ def main():
             print(f"  ! activity_log insert failed: {e}", file=sys.stderr)
         skipped += 1
     if skipped:
-        upsert_league_state_row(key, "draft_2027", draft)
+        try:
+            save_league_state_row_cas(key, "draft_2027", draft, draft_ver)
+        except LeagueStateConflict:
+            # A pick landed (or the commish acted) while we worked. Abort the
+            # whole run rather than notify off a stale board; the next 5-min
+            # tick re-evaluates from fresh state.
+            print("  ! draft_2027 changed mid-run; auto-skip abandoned this tick.")
+            return
         print(f"Auto-skipped {skipped} expired pick(s).")
         # Re-load to make sure we work on the saved version below.
-        draft = fetch_league_state_row(key, "draft_2027") or draft
+        fresh, _v = fetch_league_state_row_v(key, "draft_2027")
+        if fresh: draft = normalize_draft(fresh)
 
-    cur = current_pick_info(draft)
+    cur = current_pick_info(draft, trades)
     if not cur:
         print("Draft complete."); return
-    on_deck = neighbor_pick(draft, cur, 1)
-    in_hole = neighbor_pick(draft, cur, 2)
+    on_deck = neighbor_pick(draft, cur, 1, trades)
+    in_hole = neighbor_pick(draft, cur, 2, trades)
     slots = []
     if cur:     slots.append(("on_clock", cur))
     if on_deck: slots.append(("on_deck",  on_deck))
@@ -375,18 +471,24 @@ def main():
     marker = fetch_league_state_row(key, MARKER_KEY) or {}
     # marker structure: { "<team_id>": { "on_clock": "<pick-key>", "on_deck": "...", "in_hole": "..." } }
 
-    # Be defensive about the new notification tables — they only exist after
-    # the commissioner runs the schema additions. Auto-skip above runs
-    # whether or not these tables are reachable.
+    # Distinguish "fetch failed" (None) from "fetched, legitimately empty".
+    # A transient failure here must NOT record markers — that would treat
+    # every team as opted out and permanently suppress this pick's alerts.
     def _safe(fn, default):
-        try: return fn() or default
+        try:
+            got = fn()
+            return default if got is None else got
         except Exception as e:
-            print(f"  ! {fn.__name__} skipped: {e}", file=sys.stderr); return default
+            print(f"  ! {fn.__name__} failed: {e}", file=sys.stderr); return None
 
     owners = _safe(lambda: fetch_all_owners(key), [])
     emails_by_uid = _safe(lambda: fetch_emails_by_user_id(key), {})
     all_prefs = _safe(lambda: fetch_notify_prefs(key), {})
     push_subs = _safe(lambda: fetch_push_subs(key), [])
+    if owners is None or emails_by_uid is None or all_prefs is None:
+        print("  ! prefs/owner fetch failed — skipping notifications this run (no markers recorded).", file=sys.stderr)
+        return
+    if push_subs is None: push_subs = []
     push_by_team = {}
     for s in push_subs:
         push_by_team.setdefault(s["team_id"], []).append(s)
@@ -423,14 +525,16 @@ def main():
         title = f"{STATE_LABELS[state_key]} — R{pick['round']}.{pick['pickInRound']}"
         body = f"Your team ({team_name(team_id)}) is {STATE_LABELS[state_key].lower()} for the Minors Draft (Round {pick['round']}, Pick {pick['pickInRound']})."
         url = APP_URL + "?tab=draft"
+        attempted = delivered = 0
         if wants_email:
             addrs = emails_by_team.get(team_id) or set()
             for addr in addrs:
                 if smtp_user and smtp_pass:
+                    attempted += 1
                     try:
                         html, text = render_alert(title, body, url=url, cta_label="Open Minors Draft")
                         send_email(smtp_user, smtp_pass, [addr], f"The League: Draft alert — {title}", html, text)
-                        notify_count += 1
+                        notify_count += 1; delivered += 1
                     except Exception as e:
                         print(f"  ! email failed for {team_id} <{addr}>: {e}", file=sys.stderr)
                 else:
@@ -443,12 +547,21 @@ def main():
                     "url": url,
                     "tag": f"the-league-draftclock-{state_key}-{pick['key']}",
                 }
+                attempted += 1
                 try:
                     send_push(to_subscription_info(sub), payload, vapid_priv, vapid_sub)
-                    notify_count += 1
+                    notify_count += 1; delivered += 1
                 except Exception as e:
-                    if is_gone(e): push_failed_endpoints.append(sub["endpoint"])
+                    if is_gone(e):
+                        push_failed_endpoints.append(sub["endpoint"])
+                        attempted -= 1  # dead sub, not a transient failure
                     else: print(f"  ! push failed for {team_id}: {e}", file=sys.stderr)
+        if attempted > 0 and delivered == 0:
+            # Every send failed (SMTP outage, push service down): leave the
+            # marker unset so the next run retries instead of dropping the
+            # alert forever. Nothing was delivered, so no duplicate risk.
+            print(f"  ! all sends failed for {team_id}/{state_key}; will retry next run.", file=sys.stderr)
+            continue
         marker.setdefault(team_id, {})[state_key] = pick["key"]
 
     # Prune dead push subs.

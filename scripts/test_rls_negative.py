@@ -209,6 +209,10 @@ def teardown(*user_ids):
     as_admin("DELETE", f"/rest/v1/league_messages?body=eq.{SENTINEL}")
     as_admin("DELETE", f"/rest/v1/activity_log?target_team_id=eq.{SENTINEL}")
     as_admin("DELETE", f"/rest/v1/notification_prefs?team_id=eq.{OTHER_TEAM}")
+    as_admin("DELETE", f"/rest/v1/push_subscriptions?endpoint=eq.https://example.com/{SENTINEL}")
+    as_admin("DELETE", f"/rest/v1/draft_events?type=eq.{SENTINEL}")
+    # trade_proposal_messages first (FK to trade_proposals), then the proposals.
+    as_admin("DELETE", f"/rest/v1/trade_proposal_messages?body=eq.{SENTINEL}")
     as_admin("DELETE", f"/rest/v1/trade_proposals?notes=eq.{SENTINEL}")
     for uid in user_ids:
         if uid:
@@ -380,6 +384,75 @@ def main():
         expect_empty_read_b(
             "owner A reads Jeff-only draft_sessions",
             "/rest/v1/draft_sessions?select=id")
+
+        # 17. Read Jeff-only draft_events (same my_team_id()='jeff' gate as
+        #     draft_sessions; previously untested for read). de_jeff_all filters
+        #     a non-jeff owner's read to zero rows.
+        expect_empty_read_b(
+            "owner A reads Jeff-only draft_events",
+            "/rest/v1/draft_events?select=session_id,seq,cmd")
+
+        # 19. Harvest another owner's contact email via notification_prefs.
+        #     np_select_own (2026-07-16) must filter the read to own team, so
+        #     the attacker sees zero of OTHER_TEAM's rows. Plant one first.
+        as_admin("POST", "/rest/v1/notification_prefs",
+                 body={"team_id": OTHER_TEAM, "prefs": {}, "email": "leak-canary@example.com"},
+                 prefer="resolution=merge-duplicates")
+        expect_empty_read_b(
+            "owner A reads another team's notification_prefs email",
+            f"/rest/v1/notification_prefs?team_id=eq.{OTHER_TEAM}&select=team_id,email")
+
+        # 20. Read another owner's push subscription (ps_select_own) — endpoint
+        #     + p256dh/auth keys are sensitive. Plant one for the victim team.
+        as_admin("POST", "/rest/v1/push_subscriptions",
+                 body={"team_id": VICTIM_TEAM, "endpoint": "https://example.com/" + SENTINEL,
+                       "p256dh": "x", "auth": "y"},
+                 prefer="resolution=merge-duplicates")
+        expect_empty_read_b(
+            "owner A reads team B's push_subscriptions",
+            f"/rest/v1/push_subscriptions?team_id=eq.{VICTIM_TEAM}&select=endpoint")
+
+        # 21. Read a private trade-proposal thread the attacker isn't party to.
+        #     Admin plants a proposal between VICTIM and OTHER, plus a message;
+        #     the attacker (party to neither) must read zero.
+        _pp = as_admin("POST", "/rest/v1/trade_proposals",
+                       body={"from_team_id": VICTIM_TEAM, "to_team_id": OTHER_TEAM, "notes": SENTINEL},
+                       prefer="return=representation")[1]
+        _thread = _pp[0]["thread_id"] if isinstance(_pp, list) and _pp else None
+        if _thread:
+            as_admin("POST", "/rest/v1/trade_proposal_messages",
+                     body={"thread_id": _thread, "from_team_id": VICTIM_TEAM, "body": SENTINEL})
+            expect_empty_read_b(
+                "owner A reads a trade thread they're not party to",
+                f"/rest/v1/trade_proposal_messages?thread_id=eq.{_thread}&select=body")
+            # 22. Inject a message into that thread (tpm_insert_self).
+            blocked_b("owner A injects into a trade thread they're not party to",
+                      "POST", "/rest/v1/trade_proposal_messages",
+                      {"thread_id": _thread, "from_team_id": ATTACKER_TEAM, "body": SENTINEL})
+        else:
+            record("owner A reads a trade thread they're not party to", True,
+                   "skipped — could not plant a proposal")
+
+        # 23. Rewrite an existing trade's contents (trades_update_party is
+        #     commissioner-only; a party may INSERT but not UPDATE).
+        _tr = as_admin("GET", "/rest/v1/trades?select=id&limit=1")[1]
+        if isinstance(_tr, list) and _tr:
+            _tid = _tr[0]["id"]
+            blocked_b("owner A rewrites an existing trade",
+                      "PATCH", f"/rest/v1/trades?id=eq.{_tid}",
+                      {"notes": SENTINEL})
+        else:
+            record("owner A rewrites an existing trade", True,
+                   "skipped — no trades in DB to target")
+
+        # 24. Call the pg_cron dispatch RPC (2026-07-16: PUBLIC execute revoked).
+        #     Must be rejected for a normal authenticated user.
+        _st, _pl = as_user_b("POST", "/rest/v1/rpc/dispatch_github_workflow",
+                             body={"workflow_file": "nightly-sync.yml"})
+        record("owner A cannot dispatch a GitHub workflow via RPC",
+               _st >= 400,
+               f"rejected with HTTP {_st}" if _st >= 400
+               else f"BREACH: RPC returned HTTP {_st}: {_pl}")
 
     finally:
         teardown(user_id, user_b_id)

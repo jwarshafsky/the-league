@@ -258,6 +258,7 @@ async function _fetchAll() {
     };
   }
 
+  _lsVersions = {};
   _cache.draft = null;
   _cache.rule5 = null;
   _cache.commishOverrides = {};
@@ -272,6 +273,7 @@ async function _fetchAll() {
   // data lived in league_state was the cause of a bug where send-downs
   // appeared to work in the DB but never moved the player in the UI.
   for (const r of (ls.data || [])) {
+    _lsVersions[r.key] = r.version || 0;
     if (r.key === "draft_2027") _cache.draft = r.state;
     else if (r.key === "rule5") _cache.rule5 = r.state;
     else if (r.key === "commish_overrides") _cache.commishOverrides = r.state || {};
@@ -299,6 +301,7 @@ async function _fetchAll() {
   for (const r of (co.data || [])) {
     _cache.callup[r.player_name] = { price: r.price, year: r.year };
   }
+  _lastFetchAllAt = Date.now();
 }
 
 function _rowToTrade(r) {
@@ -416,6 +419,13 @@ async function initDb() {
 }
 
 let _realtimeChannel = null;
+// league_state optimistic-concurrency versions, keyed by row key. Populated
+// by _fetchAll and bumped by save_league_state; a stale version means someone
+// else wrote the row since we read it.
+let _lsVersions = {};
+let _realtimeClosing = false;   // suppress auto-reconnect on intentional teardown
+let _realtimeRetryMs = 5000;    // reconnect backoff, reset on successful join
+let _lastFetchAllAt = 0;
 
 function _subscribeToChanges() {
   if (_realtimeChannel) return;
@@ -583,16 +593,67 @@ function _subscribeToChanges() {
           if (typeof renderHeaderUser === "function") renderHeaderUser();
         }
       );
-    _realtimeChannel.subscribe();
+    // Subscribe WITH a status callback: a dropped socket (laptop sleep, JWT
+    // rotation, network blip) otherwise silently freezes all live updates
+    // until a hard reload. On any terminal status, tear down and re-subscribe
+    // with backoff, then refetch to catch anything missed while offline.
+    _realtimeChannel.subscribe((status) => {
+      if (status === "SUBSCRIBED") { _realtimeRetryMs = 5000; return; }
+      if (_realtimeClosing) return;
+      if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
+        const delay = _realtimeRetryMs;
+        _realtimeRetryMs = Math.min(_realtimeRetryMs * 2, 60000);
+        setTimeout(() => {
+          if (_realtimeClosing) return;
+          try { supabaseClient.removeChannel(_realtimeChannel); } catch {}
+          _realtimeChannel = null;
+          _subscribeToChanges();
+          _fetchAll().then(() => {
+            if (typeof renderHeaderUser === "function") renderHeaderUser();
+          }).catch(() => {});
+        }, delay);
+      }
+    });
   } catch (e) {
     console.warn("Realtime subscribe failed:", e);
   }
 
   _setupPresence();
+  _setupConnectionRecovery();
+}
+
+// One-time global listeners that keep a long-lived tab alive: refresh the
+// realtime socket's JWT when Supabase rotates it (~hourly — without this the
+// socket dies silently), and refetch on wake/reconnect since realtime events
+// that fired while asleep are gone forever.
+let _connectionRecoverySetup = false;
+function _setupConnectionRecovery() {
+  if (_connectionRecoverySetup) return;
+  _connectionRecoverySetup = true;
+  try {
+    supabaseClient.auth.onAuthStateChange((event, session) => {
+      if (event === "TOKEN_REFRESHED" && session?.access_token) {
+        try { supabaseClient.realtime.setAuth(session.access_token); } catch {}
+      }
+    });
+  } catch (e) { console.warn("token-refresh hook failed:", e); }
+  const wake = () => {
+    if (document.visibilityState !== "visible") return;
+    if (Date.now() - _lastFetchAllAt < 60000) return;  // fresh enough
+    _fetchAll().then(() => {
+      if (typeof renderHeaderUser === "function") renderHeaderUser();
+      if (typeof switchTab === "function" && typeof currentView !== "undefined") switchTab(currentView);
+    }).catch(() => {});
+  };
+  document.addEventListener("visibilitychange", wake);
+  window.addEventListener("online", wake);
+  window.addEventListener("pageshow", wake);
 }
 
 function _resetDb() {
   // Tear down everything when the user signs out (or switches accounts).
+  _realtimeClosing = true;
+  setTimeout(() => { _realtimeClosing = false; }, 2000);  // re-arm for next sign-in
   try { _realtimeChannel?.unsubscribe(); } catch {}
   try { _presenceChannel?.unsubscribe(); } catch {}
   try { supabaseClient.removeAllChannels(); } catch {}
@@ -955,13 +1016,47 @@ async function _saveLeagueStateAsync(key, state, cacheField) {
     if (isReset) {
       const { error } = await supabaseClient.from("league_state").delete().eq("key", key);
       if (error) throw error;
+      delete _lsVersions[key];
     } else {
-      const { error } = await supabaseClient.from("league_state").upsert({ key, state });
-      if (error) throw error;
+      // Compare-and-swap via save_league_state so a concurrent writer (the
+      // draft-clock cron, another commish tab) can't be silently clobbered.
+      // Falls back to a plain upsert until the 2026-07-16 migration is run.
+      const { data, error } = await supabaseClient.rpc("save_league_state", {
+        p_key: key, p_state: state, p_expected_version: _lsVersions[key] ?? 0,
+      });
+      if (error) {
+        const msg = String(error.message || "");
+        if (error.code === "40001" || msg.includes("version_conflict")) {
+          // Someone else wrote this row since we read it. Refresh to server
+          // truth (reverting our optimistic cache) and make the caller redo.
+          await _fetchAll();
+          throw new Error("Someone else changed this at the same time — the latest data has been reloaded. Please redo your change.");
+        }
+        if (error.code === "PGRST202" || msg.includes("save_league_state")) {
+          const up = await supabaseClient.from("league_state").upsert({ key, state });
+          if (up.error) throw up.error;
+        } else {
+          throw error;
+        }
+      } else {
+        _lsVersions[key] = data;
+      }
     }
   } catch (e) {
-    _cache[cacheField] = prev;
+    if (_cache[cacheField] === (isReset ? null : state)) _cache[cacheField] = prev;
     throw e;
+  }
+}
+
+// Delete the draft-clock cron's notified-pick marker row (used on draft
+// reset — stale markers would suppress the new draft's first alerts).
+async function clearNotifyDraftMarkerAsync() {
+  try {
+    const { error } = await supabaseClient.from("league_state").delete().eq("key", "notify_draft_marker");
+    if (error) throw error;
+    delete _lsVersions["notify_draft_marker"];
+  } catch (e) {
+    console.warn("notify_draft_marker clear failed:", e);
   }
 }
 

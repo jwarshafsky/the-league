@@ -160,8 +160,12 @@ function getTeamMilCount(teamId) {
   const team = LEAGUE_DATA.teams.find(t => t.id === teamId);
   if (!team) return 0;
   const draft = (typeof getDraft === "function") ? getDraft() : null;
+  // applyRosterAdjustments already folds made picks into team.minors; only
+  // count picks NOT yet reflected there, or every made pick counts twice and
+  // the 10-man enforcement blocks teams ~2 slots early.
+  const minorsNames = new Set((team.minors || []).map(p => p.name));
   const minorsPicks = draft && Array.isArray(draft.picks)
-    ? draft.picks.filter(p => p.team === teamId).length
+    ? draft.picks.filter(p => p.team === teamId && p.player && !minorsNames.has(p.player)).length
     : 0;
   return (team.minors || []).length + minorsPicks;
 }
@@ -298,7 +302,7 @@ function _findOriginalMinorRecord(name) {
   return null;
 }
 
-function _moveBetweenLists(map, fromTeamId, toTeamId, name) {
+function _moveBetweenLists(map, fromTeamId, toTeamId, name, otherMap) {
   const fromList = map.get(fromTeamId) || [];
   let player;
   const idx = fromList.findIndex(p => p.name === name);
@@ -324,6 +328,26 @@ function _moveBetweenLists(map, fromTeamId, toTeamId, name) {
       const j = list.findIndex(p => p.name === name);
       player = list.splice(j, 1)[0];
       map.set(actualFromTeamId, list);
+    } else if (otherMap) {
+      // (c) The player lives in the OTHER bucket (e.g. a callup-typed trade
+      //     asset applied before the call-up roster_move has run, so the
+      //     player is still in a minors list). Remove them from there —
+      //     falling back to a snapshot copy here would leave the player on
+      //     both teams.
+      let otherTeamId = null;
+      for (const [tid, list] of otherMap.entries()) {
+        if (list.some(p => p.name === name)) { otherTeamId = tid; break; }
+      }
+      if (otherTeamId) {
+        const list = otherMap.get(otherTeamId);
+        const j = list.findIndex(p => p.name === name);
+        player = list.splice(j, 1)[0];
+        otherMap.set(otherTeamId, list);
+      } else {
+        const orig = _findOriginalMinorRecord(name);
+        if (!orig) return;
+        player = { ...orig };
+      }
     } else {
       const orig = _findOriginalMinorRecord(name);
       if (!orig) return;
@@ -340,8 +364,8 @@ function _applyAssetMoves(teamMinors, teamCallups, fromTeamId, toTeamId, receive
   for (const asset of receives) {
     const name = asset.value || asset.name;
     if (!name) continue;
-    if (asset.type === "minor")  _moveBetweenLists(teamMinors,  fromTeamId, toTeamId, name);
-    else if (asset.type === "callup") _moveBetweenLists(teamCallups, fromTeamId, toTeamId, name);
+    if (asset.type === "minor")  _moveBetweenLists(teamMinors,  fromTeamId, toTeamId, name, teamCallups);
+    else if (asset.type === "callup") _moveBetweenLists(teamCallups, fromTeamId, toTeamId, name, teamMinors);
   }
 }
 
@@ -1925,9 +1949,12 @@ function _luxuryFreezeWindow() {
   const tradeDl = dates.trade_deadline ? new Date(dates.trade_deadline).getTime() : null;
   if (tradeDl == null || !Number.isFinite(tradeDl)) return { isFrozen: false };
   const now = Date.now();
-  const tradeDate = new Date(tradeDl);
-  let unfreeze = new Date(tradeDate.getFullYear(), 10, 1).getTime();
-  if (unfreeze <= tradeDl) unfreeze = new Date(tradeDate.getFullYear() + 1, 10, 1).getTime();
+  // Nov 1 midnight in LEAGUE time (ET), not the viewer's local timezone —
+  // otherwise viewers in different timezones disagree on the freeze boundary
+  // (and the commish auto-snapshot keys off the same device-local boundary).
+  const etYear = _getETParts(tradeDl).year;
+  let unfreeze = _etMsAt(etYear, 11, 1, 0, 0);
+  if (unfreeze <= tradeDl) unfreeze = _etMsAt(etYear + 1, 11, 1, 0, 0);
   return { isFrozen: now > tradeDl && now < unfreeze, tradeDl, nov1: unfreeze };
 }
 
@@ -4425,7 +4452,11 @@ function computeDraftClockState(draft, nowMs) {
   const paused = !!clock.paused;
   const pausedAt = clock.pausedAt ? new Date(clock.pausedAt).getTime() : null;
   const referenceMs = paused && pausedAt ? pausedAt : nowMs;
-  const elapsed = activeDraftElapsedMs(startedAt, referenceMs);
+  // bankedMs = active time consumed before the current startedAt (accumulated
+  // by resume). Resume can't just shift startedAt forward in wall-clock space:
+  // if the shifted window crosses an overnight blackout, blackout hours get
+  // counted as elapsed and teams lose clock time.
+  const elapsed = (clock.bankedMs || 0) + activeDraftElapsedMs(startedAt, referenceMs);
   const remainingMs = Math.max(0, DRAFT_CLOCK_MS - elapsed);
   const overnight = !paused && isDraftOvernightBlackout(nowMs);
   return {
@@ -4616,6 +4647,9 @@ async function reopenMinorsDraft() {
   if (!confirm("Reopen the Minors Draft? Picks resume from where they left off and the on-the-clock card reappears.")) return;
   const wasEndedAt = draft.endedAt;
   delete draft.endedAt;
+  // Fresh clock for the now-current pick — the stored startedAt predates the
+  // end and would make the cron auto-pass the reopened pick within minutes.
+  _resetDraftClock(draft);
   try {
     if (typeof saveDraftAsync === "function") await saveDraftAsync(draft);
     else saveDraft(draft);
@@ -4669,6 +4703,9 @@ function resetDraftConfirm() {
   if (typeof saveDraftAsync === "function") {
     saveDraftAsync(null)
       .then(() => {
+        // Clear the cron's notified-pick markers, or teams landing on the
+        // same pick keys in the new draft never get their first alert.
+        if (typeof clearNotifyDraftMarkerAsync === "function") clearNotifyDraftMarkerAsync();
         if (typeof logActivityAsync === "function") logActivityAsync("minors_draft_reset", {});
         switchTab("draft");
       })
@@ -5113,6 +5150,7 @@ function unpassPickFromEditor(round, pickInRound) {
   const draft = getDraft();
   if (!draft.passed) return;
   draft.passed = draft.passed.filter(p => !(p.round === round && p.pickInRound === pickInRound));
+  _resetDraftClock(draft);  // reopened slot gets a fresh clock, not the stale one
   saveDraft(draft);
   document.getElementById("pick-editor-modal").remove();
   showDraftBoard();
@@ -5137,6 +5175,7 @@ function deletePickFromEditor(round, pickInRound) {
   if (!confirm("Delete this pick? Subsequent picks will stay the same, but this slot will be open again.")) return;
   const draft = getDraft();
   draft.picks = draft.picks.filter(p => !(p.round === round && p.pickInRound === pickInRound));
+  _resetDraftClock(draft);  // reopened slot gets a fresh clock, not the stale one
   saveDraft(draft);
   document.getElementById("pick-editor-modal").remove();
   showDraftBoard();
@@ -5220,6 +5259,7 @@ function _resetDraftClock(draft) {
   draft.clock.startedAt = new Date().toISOString();
   draft.clock.paused = false;
   draft.clock.pausedAt = null;
+  draft.clock.bankedMs = 0;
 }
 
 function startDraftClock() {
@@ -5250,13 +5290,13 @@ function resumeDraftClock() {
   if (!isCommissioner()) { alert("Commissioners only."); return; }
   const draft = getDraft();
   if (!draft.clock || !draft.clock.paused || !draft.clock.pausedAt) return;
-  // Shift startedAt forward by the active time elapsed during the pause so
-  // remaining time is preserved. activeDraftElapsedMs handles overnight.
-  const pausedAtMs = new Date(draft.clock.pausedAt).getTime();
-  const nowMs = Date.now();
-  const pauseActiveMs = activeDraftElapsedMs(pausedAtMs, nowMs);
+  // Bank the active time consumed before the pause, then restart the segment
+  // at now. (Shifting startedAt forward in wall-clock space double-counts any
+  // overnight blackout the shifted window crosses.)
   const startedAtMs = new Date(draft.clock.startedAt).getTime();
-  draft.clock.startedAt = new Date(startedAtMs + pauseActiveMs).toISOString();
+  const pausedAtMs = new Date(draft.clock.pausedAt).getTime();
+  draft.clock.bankedMs = (draft.clock.bankedMs || 0) + activeDraftElapsedMs(startedAtMs, pausedAtMs);
+  draft.clock.startedAt = new Date().toISOString();
   draft.clock.paused = false;
   draft.clock.pausedAt = null;
   saveDraft(draft);
@@ -5300,6 +5340,7 @@ function undoLastPick() {
   if (!draft.picks.length) return;
   if (!confirm("Undo last pick?")) return;
   const last = draft.picks.pop();
+  _resetDraftClock(draft);  // reopened slot gets a fresh clock, not the stale one
   saveDraft(draft);
   if (last && typeof logActivityAsync === "function") {
     logActivityAsync("minors_pick_undone", {
@@ -10155,6 +10196,8 @@ async function reopenRule5Draft() {
   if (!confirm("Reopen the Rule 5 Draft? Picks resume from where they left off and the on-the-clock card reappears.")) return;
   const wasEndedAt = state.endedAt;
   delete state.endedAt;
+  // Fresh clock for the now-current pick (see reopenMinorsDraft).
+  _resetRule5Clock(state);
   try {
     if (typeof saveRule5Async === "function") await saveRule5Async(state);
     else localStorage.setItem("flm_rule5", JSON.stringify(state));
@@ -10529,13 +10572,20 @@ function getRule5CurrentPick(state) {
   const teamIdx = (round % 2 === 0) ? (numTeams - 1 - idx) : idx;
   const teamId = order[teamIdx];
 
-  // End if previous full round was all passes
-  if (N >= numTeams) {
+  // End if the previous full round was all passes. Only test at round
+  // boundaries: a rolling last-12 window can span two rounds, and with snake
+  // reversal 12 consecutive passes can come from as few as 6 teams — ending
+  // the draft mid-round before the other teams get their turns.
+  if (N >= numTeams && idx === 0) {
     const prevRoundPicks = state.picks.slice(N - numTeams, N);
     if (prevRoundPicks.every(p => p.pass)) return null;
   }
   return { round, idx, teamId };
 }
+
+// In-flight Rule 5 trade inserts, keyed by pickClientId — lets an immediate
+// Undo await the real server id instead of matching the optimistic temp row.
+const _pendingRule5TradeInserts = {};
 
 function makeRule5Pick(playerName) {
   const state = getRule5State();
@@ -10600,19 +10650,26 @@ function makeRule5Pick(playerName) {
   };
 
   if (typeof addTradeAsync === "function") {
-    addTradeAsync(trade)
+    // Register the in-flight insert by client ID so an immediate Undo can
+    // await the real server id — the optimistic cache row only has a temp id,
+    // and _rowToTrade strips rule5PickClientId, so the old "find the orphan
+    // later" fallback could never match.
+    const insertPromise = addTradeAsync(trade)
       .then(id => {
         // Re-read the latest state and patch by stable client ID so concurrent
         // picks / realtime overwrites don't clobber the wrong row.
         const fresh = getRule5State();
-        if (!fresh) return;
-        const target = (fresh.picks || []).find(p => p.pickClientId === pickClientId);
+        const target = fresh ? (fresh.picks || []).find(p => p.pickClientId === pickClientId) : null;
         if (target) {
           target.tradeId = id;
           saveRule5State(fresh);
         }
-      })
-      .catch(err => alert("Trade log save failed: " + err.message));
+        return id;
+      });
+    _pendingRule5TradeInserts[pickClientId] = insertPromise;
+    insertPromise
+      .catch(err => alert("Trade log save failed: " + err.message))
+      .finally(() => { delete _pendingRule5TradeInserts[pickClientId]; });
   } else {
     const trades = getTrades();
     trades.push(trade);
@@ -10668,6 +10725,7 @@ function _resetRule5Clock(state) {
   state.clock.startedAt = new Date().toISOString();
   state.clock.paused = false;
   state.clock.pausedAt = null;
+  state.clock.bankedMs = 0;
 }
 
 function startRule5Clock() {
@@ -10695,11 +10753,11 @@ function resumeRule5Clock() {
   if (!isCommissioner()) { alert("Commissioners only."); return; }
   const state = getRule5State();
   if (!state || !state.clock || !state.clock.paused || !state.clock.pausedAt) return;
-  const pausedAtMs = new Date(state.clock.pausedAt).getTime();
-  const nowMs = Date.now();
-  const pauseActiveMs = activeDraftElapsedMs(pausedAtMs, nowMs);
+  // Bank consumed active time, restart the segment at now (see resumeDraftClock).
   const startedAtMs = new Date(state.clock.startedAt).getTime();
-  state.clock.startedAt = new Date(startedAtMs + pauseActiveMs).toISOString();
+  const pausedAtMs = new Date(state.clock.pausedAt).getTime();
+  state.clock.bankedMs = (state.clock.bankedMs || 0) + activeDraftElapsedMs(startedAtMs, pausedAtMs);
+  state.clock.startedAt = new Date().toISOString();
   state.clock.paused = false;
   state.clock.pausedAt = null;
   saveRule5State(state);
@@ -10779,17 +10837,25 @@ function undoRule5Pick() {
   if (!state.picks.length) return;
   if (!confirm("Undo last pick?")) return;
   const last = state.picks.pop();
+  _resetRule5Clock(state);  // reopened slot gets a fresh clock, not the stale one
   saveRule5State(state);
 
-  // Remove the corresponding trade log entry, if any. Fall back to matching by
-  // rule5PickClientId — addTradeAsync may not have resolved when undo fires,
-  // leaving tradeId null. Without this fallback the trade row is orphaned.
+  // Remove the corresponding trade log entry, if any. If the insert hasn't
+  // resolved yet (undo within the round-trip), await the registered pending
+  // promise to get the real server id — the optimistic cache row only carries
+  // a temp id, so matching the cache here would orphan the real row.
   if (last) {
     if (typeof deleteTradeAsync === "function") {
-      if (last.tradeId) {
+      const pending = last.pickClientId ? _pendingRule5TradeInserts[last.pickClientId] : null;
+      if (pending) {
+        pending
+          .then(id => { if (id) return deleteTradeAsync(id); })
+          .catch(err => console.warn("Trade undo (pending insert) failed:", err));
+      } else if (last.tradeId) {
         deleteTradeAsync(last.tradeId).catch(err => console.warn("Trade undo failed:", err));
       } else if (last.pickClientId && typeof getTrades === "function") {
-        const orphan = (getTrades() || []).find(t => t.rule5PickClientId === last.pickClientId);
+        const orphan = (getTrades() || []).find(t =>
+          t.rule5PickClientId === last.pickClientId && t._id && !String(t._id).startsWith("temp-"));
         if (orphan && orphan._id) {
           deleteTradeAsync(orphan._id).catch(err => console.warn("Trade undo (clientId) failed:", err));
         }
@@ -11103,7 +11169,30 @@ function openMessageBoard() {
 function _renderEspnSyncBanner() {
   let banner = document.getElementById("espn-sync-banner");
   const hide = () => { if (banner) banner.style.display = "none"; };
-  if (typeof isRealCommissioner !== "function" || !isRealCommissioner()) return hide();
+  const ensure = () => {
+    if (!banner) {
+      banner = document.createElement("div");
+      banner.id = "espn-sync-banner";
+      banner.style.cssText = "background:rgba(249,115,22,0.18);border-bottom:1px solid var(--orange);color:var(--text-bright);padding:8px 14px;font-size:0.82rem;display:flex;align-items:center;gap:10px;flex-wrap:wrap;line-height:1.4";
+      const stack = document.querySelector(".header-stack");
+      if (stack && stack.parentNode) stack.parentNode.insertBefore(banner, stack.nextSibling);
+      else document.body.insertBefore(banner, document.body.firstChild);
+    }
+    banner.style.display = "flex";
+    return banner;
+  };
+  if (typeof isRealCommissioner !== "function" || !isRealCommissioner()) {
+    // Managers get a staleness warning keyed on the SHIPPED snapshot — the
+    // data they're actually looking at. (The DB heartbeat can look healthy
+    // while a hung deploy leaves the site serving day-old rosters.)
+    const snap = (typeof getEspnSnapshot === "function") ? getEspnSnapshot() : null;
+    const snapMs = snap && snap.syncedAt ? new Date(snap.syncedAt).getTime() : 0;
+    const ageMs = snapMs ? (Date.now() - snapMs) : 0;
+    if (!snapMs || ageMs <= 3 * 60 * 60 * 1000) return hide();
+    const hours = Math.round(ageMs / 36e5);
+    ensure().innerHTML = `<b>Heads up:</b>&nbsp;ESPN data was last refreshed ~${hours} hours ago — rosters, salaries, and stats may be out of date.`;
+    return;
+  }
   if (typeof dbGetEspnSyncStatus !== "function") return hide();
   const s = dbGetEspnSyncStatus();
   const lastSuccessMs = s.lastSuccessAt ? new Date(s.lastSuccessAt).getTime() : 0;
@@ -11196,7 +11285,7 @@ function renderHeaderUser() {
   const online = (typeof dbGetOnlineTeams === "function") ? dbGetOnlineTeams() : [];
   const others = online.filter(t => t.teamId !== currentOwner?.team_id);
   const onlineHtml = others.length
-    ? `<span title="Online: ${others.map(t => t.teamName).join(", ")}" style="display:flex;align-items:center;gap:4px"><span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:#22c55e;box-shadow:0 0 6px rgba(34,197,94,0.7)"></span>${others.length} online</span>`
+    ? `<span title="Online: ${escapeHtml(others.map(t => t.teamName).join(", "))}" style="display:flex;align-items:center;gap:4px"><span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:#22c55e;box-shadow:0 0 6px rgba(34,197,94,0.7)"></span>${others.length} online</span>`
     : `<span style="color:rgba(255,255,255,0.45)" title="No other owners online">no one else online</span>`;
 
   // Message-board button — unread count = messages not yet seen by this owner.
@@ -11234,7 +11323,7 @@ function renderHeaderUser() {
   const drawerBar = document.getElementById("drawer-user-bar");
   if (drawerBar) {
     const drawerOnlineHtml = others.length
-      ? `<span class="user-online" title="Online: ${others.map(t => t.teamName).join(", ")}"><span class="dot"></span>${others.length} online</span>`
+      ? `<span class="user-online" title="Online: ${escapeHtml(others.map(t => t.teamName).join(", "))}"><span class="dot"></span>${others.length} online</span>`
       : `<span class="user-online" style="color:rgba(255,255,255,0.45)" title="No other owners online">no one else online</span>`;
     drawerBar.innerHTML = `
       <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">

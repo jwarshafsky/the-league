@@ -24,10 +24,38 @@ except Exception:
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _notify_db import (  # noqa: E402
     load_env, fetch_activity_since, fetch_all_owners, fetch_emails_by_user_id,
-    fetch_notify_prefs, event_category, describe_activity, team_name, APP_URL,
+    fetch_notify_prefs, fetch_league_state_row, upsert_league_state_row,
+    event_category, describe_activity, team_name, parse_ts, APP_URL,
 )
 from _email_template import render_digest  # noqa: E402
 from _mail import send_email  # noqa: E402
+
+
+# Idempotency marker (league_state). Shape: {"lastSentThrough": "<iso>"}.
+# The digest window is (lastSentThrough, now] so cron jitter and manual
+# re-runs never drop or double-send events.
+MARKER_KEY = "digest_daily_marker"
+DEFAULT_WINDOW = timedelta(hours=24)
+MIN_GAP = timedelta(hours=12)  # refuse to re-send sooner than this
+
+
+def build_team_addresses(owners, all_prefs, emails_by_uid):
+    """Per-team SET of recipient addresses: every owner's email plus the
+    team-level broadcast address if set. Mirrors notify_instant.py — a
+    broadcast address adds to (never replaces) individual owner emails, and
+    the set dedupes co-manager teams like Josh/Doug."""
+    emails_by_team = {}
+    for o in owners:
+        tid = o.get("team_id"); uid = o.get("id")
+        if not tid or not uid: continue
+        addr = emails_by_uid.get(uid)
+        if addr:
+            emails_by_team.setdefault(tid, set()).add(addr)
+    for tid, row in (all_prefs or {}).items():
+        broadcast = (row or {}).get("email")
+        if broadcast:
+            emails_by_team.setdefault(tid, set()).add(broadcast)
+    return emails_by_team
 
 
 # Sections shown in the per-team digest, in display order.
@@ -115,14 +143,31 @@ def main():
     if not key:
         print("SUPABASE_SERVICE_ROLE_KEY not set", file=sys.stderr); sys.exit(1)
 
-    since_dt = datetime.now(timezone.utc) - timedelta(hours=24)
+    now_dt = datetime.now(timezone.utc)
+    now_iso = now_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    marker = fetch_league_state_row(key, MARKER_KEY) or {}
+    last_through = parse_ts(marker.get("lastSentThrough"))
+    if last_through and now_dt - last_through < MIN_GAP:
+        print(f"Daily digest already sent through {marker.get('lastSentThrough')} "
+              f"(< {MIN_GAP} ago); skipping.")
+        return
+    since_dt = last_through or (now_dt - DEFAULT_WINDOW)
+
     since_iso = since_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
     activity = fetch_activity_since(key, since_iso=since_iso, limit=1000) or []
+    # Clamp to the (lastSentThrough, now] window — the fetch is >=, and events
+    # landing while we run belong to the NEXT digest.
+    def _in_window(a):
+        ts = parse_ts(a.get("created_at"))
+        return ts is not None and since_dt < ts <= now_dt
+    activity = [a for a in activity if _in_window(a)]
     grouped = group_by_category(activity)
 
     owners = fetch_all_owners(key) or []
     emails_by_uid = fetch_emails_by_user_id(key)
     all_prefs = fetch_notify_prefs(key)
+    emails_by_team = build_team_addresses(owners, all_prefs, emails_by_uid)
 
     # ET label so the digest matches recipients' calendars (cron fires at 01:07
     # UTC = 9:07 PM ET the prior day; using runner-local TZ would show the next
@@ -131,11 +176,8 @@ def main():
     today_subtitle = f"Daily digest · {now_label}"
 
     sent = []
-    for owner in owners:
-        team_id = owner.get("team_id"); uid = owner.get("id")
-        if not team_id or not uid: continue
-        addr = (all_prefs.get(team_id) or {}).get("email") or emails_by_uid.get(uid)
-        if not addr: continue
+    attempted = 0
+    for team_id in sorted(emails_by_team):
         receive_all = bool((all_prefs.get(team_id) or {}).get("receive_all"))
         prefs = (all_prefs.get(team_id) or {}).get("prefs") or {}
         sections = build_sections(grouped, prefs, receive_all=receive_all, target_frequency="daily")
@@ -148,21 +190,33 @@ def main():
         html, text = render_digest(title, today_subtitle, sections, greeting=greeting)
         n = sum(len(s["items"]) for s in sections)
         subject = f"The League: Daily digest — {n} event{'s' if n != 1 else ''}"
-        if smtp_user and smtp_pass:
-            try:
-                send_email(smtp_user, smtp_pass, [addr], subject, html, text)
-                sent.append((team_id, addr, n))
-            except Exception as e:
-                print(f"  ! failed for {team_id} {addr}: {e}", file=sys.stderr)
-        else:
-            # Print previews if SMTP isn't configured.
-            print(f"[preview] would email {team_id} <{addr}> — {n} events")
+        for addr in sorted(emails_by_team[team_id]):
+            if smtp_user and smtp_pass:
+                attempted += 1
+                try:
+                    send_email(smtp_user, smtp_pass, [addr], subject, html, text)
+                    sent.append((team_id, addr, n))
+                except Exception as e:
+                    print(f"  ! failed for {team_id} {addr}: {e}", file=sys.stderr)
+            else:
+                # Print previews if SMTP isn't configured.
+                print(f"[preview] would email {team_id} <{addr}> — {n} events")
     if sent:
         print(f"Sent {len(sent)} digest(s):")
         for t, a, n in sent:
             print(f"  {t} <{a}> ({n} events)")
     else:
         print("No digests sent.")
+
+    # Advance the marker only AFTER sends complete. If every attempted send
+    # failed (SMTP outage), hold the marker so the whole window retries next
+    # run; a partial failure still advances (the alternative double-sends
+    # everyone who already got theirs). Preview mode never advances.
+    if attempted and not sent:
+        print("  ! all sends failed; holding digest marker for retry.", file=sys.stderr)
+        return
+    if smtp_user and smtp_pass:
+        upsert_league_state_row(key, MARKER_KEY, {"lastSentThrough": now_iso})
 
 
 if __name__ == "__main__":

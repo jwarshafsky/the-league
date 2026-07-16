@@ -75,7 +75,7 @@ begin
   );
 end;
 $$;
-revoke all on function public.dispatch_github_workflow(text) from anon, authenticated;
+revoke all on function public.dispatch_github_workflow(text) from public, anon, authenticated;
 
 -- 3b. Conditional ESPN-sync fallback. The unconditional high-frequency
 --     dispatches were dropped (see section 4) because ~5% of
@@ -104,7 +104,7 @@ begin
   end if;
 end;
 $$;
-revoke all on function public.dispatch_espn_sync_if_stale() from anon, authenticated;
+revoke all on function public.dispatch_espn_sync_if_stale() from public, anon, authenticated;
 
 -- 4. Schedule entries. Times are UTC. Cadence matches .github/workflows/*.
 --    Unschedule before scheduling so this script is re-runnable.

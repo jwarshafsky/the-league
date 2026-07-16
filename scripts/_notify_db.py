@@ -131,6 +131,58 @@ def fetch_league_state_row(key, state_key):
     return rows[0]["state"] if rows else None
 
 
+def fetch_league_state_row_v(key, state_key):
+    """Like fetch_league_state_row but also returns the row's optimistic-
+    concurrency version (0 if the row or column doesn't exist yet)."""
+    url = f"{SUPABASE_URL}/rest/v1/league_state?key=eq.{state_key}&select=state,version"
+    try:
+        rows = http_get(url, key) or []
+    except Exception:
+        # version column not deployed yet — fall back to unversioned read.
+        return fetch_league_state_row(key, state_key), 0
+    if not rows: return None, 0
+    return rows[0]["state"], rows[0].get("version") or 0
+
+
+class LeagueStateConflict(Exception):
+    """Raised when a CAS write loses to a concurrent writer."""
+
+
+def save_league_state_row_cas(key, state_key, state, expected_version):
+    """Compare-and-swap write via the save_league_state RPC so this script
+    can never clobber a row a browser wrote after we read it (e.g. a draft
+    pick submitted mid-run). Raises LeagueStateConflict on a lost race.
+    Falls back to a blind upsert until the 2026-07-16 migration is applied."""
+    body = json.dumps({
+        "p_key": state_key, "p_state": state,
+        "p_expected_version": expected_version,
+    }).encode("utf-8")
+    req = urllib.request.Request(
+        f"{SUPABASE_URL}/rest/v1/rpc/save_league_state",
+        method="POST", data=body, headers={
+            "apikey": key, "Authorization": f"Bearer {key}",
+            "Content-Type": "application/json",
+        })
+    try:
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            return int((resp.read() or b"0").decode("utf-8").strip() or 0)
+    except urllib.error.HTTPError as e:
+        detail = ""
+        try: detail = e.read().decode("utf-8", "replace")
+        except Exception: pass
+        if "version_conflict" in detail or '"40001"' in detail:
+            raise LeagueStateConflict(state_key)
+        if e.code == 404 or "PGRST202" in detail:
+            upsert_league_state_row(key, state_key, state)
+            return (expected_version or 0) + 1
+        raise
+
+
+def fetch_trades(key):
+    """All trades, chronological — needed to resolve trade-log pick ownership."""
+    return http_get(f"{SUPABASE_URL}/rest/v1/trades?select=*&order=created_at.asc", key) or []
+
+
 def upsert_league_state_row(key, state_key, state):
     url = f"{SUPABASE_URL}/rest/v1/league_state?on_conflict=key"
     req = urllib.request.Request(url, method="POST", data=json.dumps({

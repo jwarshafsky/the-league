@@ -56,13 +56,17 @@ CATEGORY_META = {
 }
 
 
-def recipients_for_activity(activity, all_prefs, channel, commish_team_ids=None):
+def recipients_for_activity(activity, all_prefs, channel, commish_team_ids=None,
+                            all_team_ids=None):
     """Return list of team_ids that should be notified for this event on
     the given channel ('email' or 'push'). Builds a small set keyed by team_id
     so each recipient gets at most one notification per event.
 
     commish_team_ids: set of team_ids whose owners are flagged commissioner
     (used for vote_* events which fan out to commissioners only).
+    all_team_ids: every team in the league (from the owners fetch) — used for
+    league-wide fan-outs so teams that never saved notification settings
+    still get their defaults (a missing prefs row ≠ opted out).
     """
     a = activity
     cat = event_category(a.get("type"))
@@ -71,6 +75,7 @@ def recipients_for_activity(activity, all_prefs, channel, commish_team_ids=None)
     actor = a.get("actor_team_id")
     target = a.get("target_team_id")
     commish_team_ids = commish_team_ids or set()
+    all_team_ids = all_team_ids or set()
 
     # Determine "candidate" recipients per event type. The recipient is
     # whoever is meaningfully affected; receive_all flag overrides this and
@@ -98,8 +103,10 @@ def recipients_for_activity(activity, all_prefs, channel, commish_team_ids=None)
         for tid in commish_team_ids:
             candidates.add(tid)
     elif t == "vote_result_broadcast":
-        # Commish-triggered league-wide announcement — fan out to every team.
-        for team_id in (all_prefs or {}).keys():
+        # Commish-triggered league-wide announcement — fan out to EVERY team
+        # in the league, not just teams with a notification_prefs row: a
+        # missing row means the app.js defaults apply (email instant + push).
+        for team_id in (all_team_ids or (all_prefs or {}).keys()):
             candidates.add(team_id)
         # Also include the actor so they get a confirmation copy even if
         # their team has no notify_prefs row yet.
@@ -138,10 +145,13 @@ def recipients_for_activity(activity, all_prefs, channel, commish_team_ids=None)
             out.append(tid); continue
         prefs = row.get("prefs") or {}
         cur = prefs.get(cat) or {}
-        # vote_result defaults to "instant" when no pref row is set, since
-        # the UI offers only Instant or Never (opt-out) and most users won't
-        # have toggled it off.
+        # vote_result defaults to "instant" email + push true when no pref
+        # is set (matches NOTIFY_EVENTS defaults in app.js) — the UI offers
+        # only Instant or Never (opt-out) and most users won't have toggled
+        # it off.
         if cat == "vote_result" and channel == "email" and cur.get("email") in (None, "instant"):
+            out.append(tid); continue
+        if cat == "vote_result" and channel == "push" and cur.get("push") in (None, True):
             out.append(tid); continue
         if channel == "email" and cur.get("email") == "instant":
             out.append(tid)
@@ -172,8 +182,20 @@ def main():
         print("No new activity.")
         return
 
-    # Skip events whose created_at == marker (we already processed them).
-    activity = [a for a in activity if (a.get("created_at") or "") > (marker.get("last_seen_id_ts") or since_iso)]
+    # Skip events we already processed. The fetch is >= so rows sharing the
+    # marker's exact created_at aren't lost when a 500-row page ends on that
+    # timestamp — the marker carries the ids seen AT that timestamp and we
+    # skip just those. Old-format markers (timestamp only, no id list) fall
+    # back to the strict > filter for that one run.
+    prev_ts = marker.get("last_seen_id_ts") or since_iso
+    has_id_list = "last_seen_ids" in marker
+    prev_ids = set(marker.get("last_seen_ids") or [])
+    def _is_new(a):
+        ts = a.get("created_at") or ""
+        if ts > prev_ts: return True
+        if ts == prev_ts and has_id_list: return a.get("id") not in prev_ids
+        return False
+    activity = [a for a in activity if _is_new(a)]
     if not activity:
         print("No new activity after marker.")
         return
@@ -184,6 +206,9 @@ def main():
     all_prefs = fetch_notify_prefs(key)
     # Set of team_ids whose owners are commissioners (used for vote events).
     commish_team_ids = {o["team_id"] for o in owners if o.get("is_commissioner") and o.get("team_id")}
+    # Every team in the league — league-wide fan-outs must include teams that
+    # never saved notification settings (they get the app.js defaults).
+    all_team_ids = {o["team_id"] for o in owners if o.get("team_id")}
     push_subs = fetch_push_subs(key)
     push_by_team = {}
     for s in push_subs:
@@ -205,7 +230,7 @@ def main():
     email_sent = 0
     push_sent = 0
     push_failed_endpoints = []
-    failed_event_ts = []  # created_at of events with a transient delivery failure
+    failed_events = []  # (created_at, id) of events with a transient delivery failure
     for a in activity:
         cat = event_category(a.get("type"))
         meta = CATEGORY_META.get(cat) if cat else None
@@ -214,7 +239,7 @@ def main():
         headline = describe_activity(a)
         event_failed = False  # any transient send failure holds the marker for retry
         # Email — fan out to every manager on the team.
-        targets = recipients_for_activity(a, all_prefs, "email", commish_team_ids)
+        targets = recipients_for_activity(a, all_prefs, "email", commish_team_ids, all_team_ids)
         for tid in targets:
             addrs = emails_by_team.get(tid) or set()
             if not addrs: continue
@@ -232,7 +257,7 @@ def main():
                     print(f"[preview email] {tid} <{addr}> — {subject}")
         # Push
         if vapid_priv:
-            targets = recipients_for_activity(a, all_prefs, "push", commish_team_ids)
+            targets = recipients_for_activity(a, all_prefs, "push", commish_team_ids, all_team_ids)
             payload = {
                 "title": f"{meta['tag'].title()}: {team_name(a.get('actor_team_id') or '?')}",
                 "body": headline.replace("<strong>", "").replace("</strong>", ""),
@@ -252,7 +277,7 @@ def main():
                             print(f"  ! push failed for {tid}: {e}", file=sys.stderr)
 
         if event_failed:
-            failed_event_ts.append(a.get("created_at") or "")
+            failed_events.append((a.get("created_at") or "", a.get("id")))
 
     # Prune dead push subs.
     for endpoint in set(push_failed_endpoints):
@@ -271,15 +296,28 @@ def main():
     # who already got an earlier-in-the-batch alert may see a duplicate; that's
     # the accepted cost of at-least-once delivery vs. silently dropping an alert.
     newest = max((a.get("created_at") or "") for a in activity)
-    if failed_event_ts:
-        earliest_failure = min(ts for ts in failed_event_ts if ts)
+    if failed_events:
+        earliest_failure = min(ts for ts, _ in failed_events if ts)
         prior = [ts for ts in ((a.get("created_at") or "") for a in activity) if ts < earliest_failure]
-        marker_ts = max(prior) if prior else (marker.get("last_seen_id_ts") or since_iso)
-        print(f"  … {len(failed_event_ts)} event(s) had delivery failures; "
+        marker_ts = max(prior) if prior else prev_ts
+        print(f"  … {len(failed_events)} event(s) had delivery failures; "
               f"holding marker at {marker_ts} for retry.", file=sys.stderr)
     else:
         marker_ts = newest
-    upsert_league_state_row(key, MARKER_KEY, {"last_seen_ts": marker_ts, "last_seen_id_ts": marker_ts})
+    # Record the ids seen at exactly marker_ts so the next run (which fetches
+    # >= marker_ts) can skip them without losing any row that shares that
+    # timestamp. Failed events are excluded so they retry; if the marker
+    # didn't move, carry the previously-seen ids forward too.
+    failed_ids = {eid for _, eid in failed_events if eid}
+    marker_ids = {a.get("id") for a in activity
+                  if (a.get("created_at") or "") == marker_ts
+                  and a.get("id") and a.get("id") not in failed_ids}
+    if marker_ts == prev_ts and has_id_list:
+        marker_ids |= prev_ids
+    upsert_league_state_row(key, MARKER_KEY, {
+        "last_seen_ts": marker_ts, "last_seen_id_ts": marker_ts,
+        "last_seen_ids": sorted(marker_ids),
+    })
     print(f"Processed {len(activity)} event(s): {email_sent} email, {push_sent} push, pruned {len(set(push_failed_endpoints))} dead push sub(s).")
 
 

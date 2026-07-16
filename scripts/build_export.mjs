@@ -449,23 +449,53 @@ function getBaseOwner(draft, round, pickInRound) {
   }
   return order[pickInRound - 1] ?? null;
 }
+// Parse a trade-log milb_pick value like "2027 1st round" → { year, round }.
+// Port of app.js parseMilbPickValue. Returns null if a round can't be extracted.
+function parseMilbPickValue(value) {
+  if (typeof value !== "string") return null;
+  const v = value.toLowerCase();
+  const yearMatch = v.match(/\b(20\d{2})\b/);
+  // Remove the year from the string before searching for round, otherwise "2027" parses as round 2027.
+  const cleaned = yearMatch ? v.replace(yearMatch[1], " ") : v;
+  let round = null;
+  const ordinal = cleaned.match(/(\d+)\s*(?:st|nd|rd|th)/);
+  const roundWord = cleaned.match(/round\s+(\d+)/);
+  const standalone = cleaned.match(/\b(\d+)\b/);
+  if (ordinal) round = parseInt(ordinal[1], 10);
+  else if (roundWord) round = parseInt(roundWord[1], 10);
+  else if (standalone) round = parseInt(standalone[1], 10);
+  if (!round || round < 1 || round > 20) return null;
+  return { year: yearMatch ? parseInt(yearMatch[1], 10) : null, round };
+}
 function getPickOwner(draft, round, pickInRound, trades) {
   const key = `${round}p${pickInRound}`;
   if (draft.tradedPicks && draft.tradedPicks[key]) return draft.tradedPicks[key];
   const base = getBaseOwner(draft, round, pickInRound);
-  // Apply trade-log moves of milb_pick assets in chronological order.
+  // Apply trade-log moves of milb_pick assets in chronological order — port
+  // of app.js getTradeLogOwner (structured pickRound/pickYear/
+  // pickOriginalOwner fields, with parseMilbPickValue as the legacy-string
+  // fallback).
   let owner = base;
   const sorted = [...(trades || [])].sort((a, b) =>
     new Date(a.createdAt || 0) - new Date(b.createdAt || 0));
   for (const t of sorted) {
-    for (const a of (t.team1Receives || [])) {
-      if (a.type === "milb_pick" && a.pickRound === round && a.pickYear === draft.year) {
-        if (owner === t.team2) owner = t.team1;
-      }
-    }
-    for (const a of (t.team2Receives || [])) {
-      if (a.type === "milb_pick" && a.pickRound === round && a.pickYear === draft.year) {
-        if (owner === t.team1) owner = t.team2;
+    const sides = [
+      { receives: t.team1Receives, fromTeam: t.team2, toTeam: t.team1 },
+      { receives: t.team2Receives, fromTeam: t.team1, toTeam: t.team2 },
+    ];
+    for (const side of sides) {
+      for (const a of (side.receives || [])) {
+        if (a.type !== "milb_pick") continue;
+        // New trades store structured pickRound/pickOriginalOwner/pickYear. Older trades fall back to parsing.
+        const pickRound = a.pickRound ?? parseMilbPickValue(a.value)?.round;
+        const pickYear  = a.pickYear  ?? parseMilbPickValue(a.value)?.year;
+        const pickOriginalOwner = a.pickOriginalOwner;
+        if (!pickRound || pickRound !== round) continue;
+        // Require an explicit year match — apply only to the matching draft.
+        if (!pickYear || pickYear !== draft.year) continue;
+        // Structured trades pinpoint exactly which slot — only apply to the matching baseOwner.
+        if (pickOriginalOwner && pickOriginalOwner !== base) continue;
+        if (side.fromTeam === owner) owner = side.toTeam;
       }
     }
   }

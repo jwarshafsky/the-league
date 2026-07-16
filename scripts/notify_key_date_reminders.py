@@ -129,12 +129,22 @@ def main():
         url = APP_URL + "?tab=rules"
         if smtp_user and smtp_pass:
             html, text = render_alert(title, body, url=url, cta_label="View League Rules")
+            ok = 0
+            failed = 0
             for addr in addresses:
                 try:
                     send_email(smtp_user, smtp_pass, [addr], f"The League: {title}", html, text)
-                    sent += 1
+                    sent += 1; ok += 1
                 except Exception as e:
+                    failed += 1
                     print(f"  ! email failed for {addr}: {e}", file=sys.stderr)
+            # If EVERY send failed (SMTP outage), don't record this reminder's
+            # marker — it retries next run. Mirrors notify_instant.py's
+            # hold-marker-on-failure behavior.
+            if failed and not ok:
+                print(f"  ! all {failed} send(s) failed for {p['marker_id']}; "
+                      f"holding marker for retry.", file=sys.stderr)
+                continue
         else:
             print(f"[preview] would email {len(addresses)} addresses for: {title}")
         marker[p["marker_id"]] = now.isoformat().replace("+00:00", "Z")

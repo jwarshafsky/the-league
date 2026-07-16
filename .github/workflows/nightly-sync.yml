@@ -10,6 +10,12 @@ on:
 permissions:
   contents: write
 
+# Shares espn-sync.yml's group so the two workflows never commit
+# js/espn-snapshot.js concurrently and race each other's pushes.
+concurrency:
+  group: espn-sync
+  cancel-in-progress: false
+
 jobs:
   sync:
     runs-on: ubuntu-latest
