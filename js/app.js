@@ -225,6 +225,20 @@ function getContractStatus(player, currentSeason) {
   return { yearsKept, yearsRemaining, originalPrice, maxYears, nextYearPrice, canKeepNextYear, status, label };
 }
 
+// Final keepable season for a called-up minor leaguer — the single source of
+// truth for the "call-up + 3" rule so the display, the drop/re-add guard, and
+// the minors/rule5 tables all agree.
+//   - Drafted before 2027: the MiLB clock runs from the DRAFT year, so the
+//     player is keepable through draftYear + 3 regardless of when (or whether)
+//     they were called up. (Drafted 2026 → through 2029.)
+//   - Drafted 2027 or later: "call-up + 3" — the clock does not start until the
+//     player is called up to the majors, then runs callUpYear + 3.
+//     (Drafted 2027, called up 2030 → through 2033.)
+function callupFinalKeeperYear(draftYear, callUpYear) {
+  if (draftYear != null && draftYear < 2027) return draftYear + 3;
+  return (callUpYear != null ? callUpYear : draftYear) + 3;
+}
+
 function getMinorLeagueContractStatus(player, currentSeason) {
   const yearDrafted = player.yearAcquired;
   const yearsHeld = currentSeason - yearDrafted;
@@ -3411,13 +3425,13 @@ function resolveCostBasis(playerName, currentTeamLocalId) {
     }
   }
   if (original && original.contractType === "callup") {
-    // For callups, the MiLB clock runs from `originalDraftYear` (when they were
-    // first added to the league's minors). Max 3 keeper years from that point
-    // — even FA re-add can't reset it. (MiLB rules: drafted <2027 = 4 years
-    // total in MiLB before mandatory promotion, but on majors the standard
-    // 3-yr cap applies; once a callup, the clock is from original draft.)
+    // A callup's keeper horizon follows the "call-up + 3" rule (see
+    // callupFinalKeeperYear): pre-2027 draftees anchor on the draft year,
+    // 2027+ draftees on the call-up year. An FA re-add can't reset it, so once
+    // the player is in their final keeper year, keep the callup basis.
     const draftYear = original.originalDraftYear ?? original.yearAcquired;
-    if (draftYear && CURRENT_SEASON >= draftYear + 3) {
+    const finalYear = callupFinalKeeperYear(draftYear, original.yearAcquired);
+    if (CURRENT_SEASON >= finalYear) {
       return {
         ...original,
         droppedDuringSeason: true,
@@ -3530,6 +3544,24 @@ function getEligiblePlayers(team) {
           }
         } else {
           cs = getContractStatus(fakePlayer, CURRENT_SEASON);
+          // getContractStatus anchors a fromMinors contract's 3-year cap on
+          // yearAcquired (the call-up year). That's right for 2027+ callups but
+          // over-grants pre-2027 ones, whose clock runs from the DRAFT year.
+          // Re-derive the horizon from callupFinalKeeperYear so every path
+          // agrees; keep getContractStatus's price-escalation math (nextYearPrice).
+          if (basis.contractType === "callup") {
+            const draftYear = basis.originalDraftYear ?? basis.yearAcquired;
+            const finalYear = callupFinalKeeperYear(draftYear, basis.yearAcquired);
+            const canKeep = CURRENT_SEASON < finalYear;
+            const yrsRemaining = Math.max(0, finalYear - CURRENT_SEASON);
+            cs = {
+              ...cs,
+              canKeepNextYear: canKeep,
+              yearsRemaining: yrsRemaining,
+              status: canKeep ? (yrsRemaining === 1 ? "expiring" : cs.status) : "final",
+              label: canKeep ? (yrsRemaining === 1 ? "1 yr left" : `${yrsRemaining} yrs left`) : "Final Year",
+            };
+          }
           // If they were dropped this season AND already had a non-final-year contract,
           // that's a different case (handled in resolveCostBasis). The "stays final year"
           // case still has canKeepNextYear=false from getContractStatus, so we just amend the label:
