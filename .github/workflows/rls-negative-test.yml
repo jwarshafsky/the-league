@@ -1,0 +1,40 @@
+name: RLS Negative Test (privilege-escalation guard)
+
+# Proves a normal (non-commissioner) user cannot escalate privileges or perform
+# commissioner-only actions. Runs on every push/PR, and weekly as a canary —
+# RLS can be changed from the Supabase dashboard without a git commit, so the
+# schedule catches drift that a push-triggered run never would.
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  schedule:
+    # 06:23 UTC Mondays — weekly drift check.
+    - cron: '23 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rls-negative-test
+  cancel-in-progress: false
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # No pip install: the test uses only the stdlib (urllib) + the repo's
+      # own _notify_db helper.
+      - name: Run RLS negative test
+        env:
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: python3 scripts/test_rls_negative.py
