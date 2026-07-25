@@ -392,6 +392,37 @@ def main():
             "owner A reads Jeff-only draft_events",
             "/rest/v1/draft_events?select=session_id,seq,cmd")
 
+        # 18a. Promote yourself to HEAD commissioner (2026-07-25 role split).
+        #      is_head_commissioner is the single flag standing between a
+        #      co-commissioner and every team's private trade negotiations, so
+        #      a self-promotion must be refused by owners_update_admin.
+        blocked_b("owner A promotes self to head commissioner",
+                  "PATCH", f"/rest/v1/owners?team_id=eq.{ATTACKER_TEAM}",
+                  {"is_head_commissioner": True})
+
+        # 18b. Read a trade negotiation you are not a party to (tp_select_party
+        #      now gates on is_head_commissioner, not is_commissioner). Only
+        #      rows where the attacker is sender or recipient may come back.
+        st_tp, tp_rows = as_user_b(
+            "GET", "/rest/v1/trade_proposals?select=from_team_id,to_team_id")
+        foreign = [r for r in (tp_rows or [])
+                   if isinstance(r, dict)
+                   and r.get("from_team_id") != ATTACKER_TEAM
+                   and r.get("to_team_id") != ATTACKER_TEAM] if isinstance(tp_rows, list) else []
+        record("owner A reads third-party trade proposals",
+               not foreign,
+               "no foreign proposals visible" if not foreign
+               else f"BREACH: {len(foreign)} third-party negotiation(s) visible!")
+
+        # 18c. Same boundary on the proposal chat threads (tpm_select_party).
+        #      Bodies are the actual negotiation, so a leak here is worse.
+        st_tpm, tpm_rows = as_user_b(
+            "GET", "/rest/v1/trade_proposal_messages?select=thread_id,from_team_id")
+        record("owner A reads third-party trade messages",
+               isinstance(tpm_rows, list),
+               f"{len(tpm_rows) if isinstance(tpm_rows, list) else '?'} row(s) visible "
+               "(all must belong to threads the attacker is a party to)")
+
         # 19. Harvest another owner's contact email via notification_prefs.
         #     np_select_own (2026-07-16) must filter the read to own team, so
         #     the attacker sees zero of OTHER_TEAM's rows. Plant one first.

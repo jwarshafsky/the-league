@@ -82,9 +82,21 @@ function _applyPriceShiftToData() {
 const ML_ROSTER_MAX = 25;
 const MIL_ROSTER_MAX = 10;
 
+// Keeper caps (league constitution): 8 major-league, 10 minor-league.
+const ML_KEEPER_CAP = 8;
+const MIL_KEEPER_CAP = 10;
+
 function getLeagueSettings() {
   if (typeof dbGetSettings === "function") return dbGetSettings();
   return {};
+}
+
+// Teams are deliberately allowed to sit OVER the keeper cap while they work
+// through their options — the caps are shown in red but not blocked. The
+// commissioner flips this on (Commissioner Tools → Roster Limits) at the keeper
+// deadline, at which point over-cap selections are refused.
+function isKeeperCapEnforced() {
+  return !!getLeagueSettings().enforceKeeperCap;
 }
 
 function _applySettingsFromCache() {
@@ -380,11 +392,157 @@ function _applyAssetMoves(teamMinors, teamCallups, fromTeamId, toTeamId, receive
     if (!name) continue;
     if (asset.type === "minor")  _moveBetweenLists(teamMinors,  fromTeamId, toTeamId, name, teamCallups);
     else if (asset.type === "callup") _moveBetweenLists(teamCallups, fromTeamId, toTeamId, name, teamMinors);
+    else if (asset.type === "major") {
+      // Major-league OWNERSHIP is handled by the trade overlay (ESPN is the
+      // roster of record). But the composer labels everything on the ESPN
+      // major-league roster as "major" — including call-ups — so if this player
+      // also occupies a call-up slot, that record has to follow the trade too.
+      // Otherwise he counts for both teams: the buyer's ML roster via the
+      // overlay AND the seller's MiL keeper count and trade block.
+      let inCallups = false;
+      for (const list of teamCallups.values()) {
+        if (list.some(p => p.name === name)) { inCallups = true; break; }
+      }
+      // otherMap omitted on purpose: a player who only exists in a minors list
+      // must not be dragged along by a major-typed asset.
+      if (inCallups) _moveBetweenLists(teamCallups, fromTeamId, toTeamId, name, null);
+    }
   }
+}
+
+// --- Major-league trade overlay ---------------------------------------------
+//
+// ESPN is the source of truth for who sits on a major-league roster, but an
+// in-app accepted trade never touches ESPN. Until the commissioner executes the
+// deal over there and the 15-minute sync lands, the snapshot still shows the
+// pre-trade rosters. _applyAssetMoves above only ever moved "minor" and
+// "callup" assets, so major leaguers silently stayed put — which is the single
+// root cause of the whole ghost-player family found in the sandbox trial: a
+// traded player still on the seller's trade block, missing entirely for the
+// buyer on Select Keepers, offered by BOTH teams in the composer, and still
+// counted on the seller's luxury-tax bill a day after the deal.
+//
+// This derives the canonical major-league ownership delta from the trades log
+// (chronological, last trade wins) so every view can reconcile ESPN against it.
+//
+// An overlay entry is only ACTIVE while ESPN still shows the player on the
+// SELLER's roster — i.e. while ESPN hasn't caught up yet. The moment ESPN moves
+// them anywhere (to the buyer, or to a third team after a later drop/re-add),
+// ESPN wins and the entry is ignored. Without that check the overlay would
+// permanently mis-attribute a player: trade him in April, ESPN catches up, he's
+// dropped and claimed by a third team in August — and the app would still hand
+// him to the April buyer forever.
+let _majorTradeOverlayMemo = null;
+
+function _invalidateMajorTradeOverlay() { _majorTradeOverlayMemo = null; }
+
+function getMajorTradeOverlay() {
+  if (_majorTradeOverlayMemo) return _majorTradeOverlayMemo;
+  const ownerOf = new Map();          // playerName -> { to, from } of the last in-app trade
+  const trades = (typeof getTrades === "function") ? getTrades() : [];
+  const sorted = [...trades].sort((a, b) =>
+    new Date(a.createdAt || 0) - new Date(b.createdAt || 0)
+  );
+  const record = (toTeamId, fromTeamId, receives) => {
+    for (const asset of (receives || [])) {
+      if (!asset || asset.type !== "major") continue;
+      const name = asset.value || asset.name;
+      if (name && toTeamId) ownerOf.set(name, { to: toTeamId, from: fromTeamId || null });
+    }
+  };
+  for (const t of sorted) {
+    // team1Receives is what team1 GETS, so those assets came from team2.
+    record(t.team1, t.team2, t.team1Receives);
+    record(t.team2, t.team1, t.team2Receives);
+  }
+  // Name -> { record, teamId } for every player on any ESPN roster, built once.
+  // majorTradeOwner() is called per player per render, so a linear scan of the
+  // whole snapshot per call would be quadratic.
+  const espnByName = new Map();
+  const snap = getEspnSnapshot();
+  if (snap) {
+    for (const t of (snap.teams || [])) {
+      const localId = ESPN_ABBREV_TO_LOCAL[t.abbrev] || null;
+      for (const r of (t.roster || [])) {
+        if (!espnByName.has(r.name)) espnByName.set(r.name, { record: r, teamId: localId });
+      }
+    }
+  }
+  _majorTradeOverlayMemo = { ownerOf, espnByName };
+  return _majorTradeOverlayMemo;
+}
+
+// Which team owns this major leaguer per the trade log, or null if ESPN is
+// already authoritative (never traded in-app, no longer rostered, or ESPN has
+// since moved them off the seller).
+function majorTradeOwner(name) {
+  const ov = getMajorTradeOverlay();
+  const entry = ov.ownerOf.get(name);
+  if (!entry) return null;
+  const found = ov.espnByName.get(name);
+  if (!found) return null;                       // not on any ESPN roster — nothing to reconcile
+  if (entry.from && found.teamId !== entry.from) return null;  // ESPN moved on; ESPN wins
+  return entry.to;
+}
+
+// Every player with an ACTIVE overlay entry pointing at teamId, i.e. acquired
+// in-app and not yet reflected in ESPN.
+function incomingTradeNames(teamId) {
+  const out = [];
+  for (const name of getMajorTradeOverlay().ownerOf.keys()) {
+    if (majorTradeOwner(name) === teamId) out.push(name);
+  }
+  return out;
+}
+
+// Find a player's ESPN roster record anywhere in the snapshot, plus the local
+// team id that currently rosters them (i.e. the seller, pre-sync).
+function _findEspnRosterRecord(snap, name) {
+  if (!snap || !name) return null;
+  return getMajorTradeOverlay().espnByName.get(name) || null;
+}
+
+// The team's reconciled major-league roster as plain names — ESPN minus
+// players traded away, plus players traded in. Cheap enough for membership
+// tests that don't need full cost-basis resolution.
+function reconciledMajorNames(teamId) {
+  const snap = getEspnSnapshot();
+  const names = new Set();
+  const espnTeam = snap ? snap.teams.find(t => ESPN_ABBREV_TO_LOCAL[t.abbrev] === teamId) : null;
+  if (espnTeam) {
+    for (const r of (espnTeam.roster || [])) {
+      const owner = majorTradeOwner(r.name);
+      if (owner && owner !== teamId) continue;
+      names.add(r.name);
+    }
+  } else {
+    // No snapshot at all, or this team isn't in it (unmapped ESPN abbrev, or a
+    // partial sync). Fall back to the static roster rather than returning an
+    // empty set — callers treat "not on the roster" as a reason to HIDE things,
+    // so an empty set here would silently erase the team's whole trade block.
+    const team = LEAGUE_DATA.teams.find(t => t.id === teamId);
+    for (const p of ((team && team.majors) || [])) names.add(p.name);
+  }
+  for (const name of incomingTradeNames(teamId)) names.add(name);
+  return names;
+}
+
+// Every player a team currently rosters, majors + minors + callups, as names.
+// team.minors / team.callups are already trade-adjusted by
+// applyRosterAdjustments(); majors go through the overlay above.
+function teamRosterNames(teamId) {
+  const names = reconciledMajorNames(teamId);
+  const team = LEAGUE_DATA.teams.find(t => t.id === teamId);
+  if (team) {
+    for (const p of (team.minors || []))  names.add(p.name);
+    for (const p of (team.callups || [])) names.add(p.name);
+  }
+  return names;
 }
 
 function applyRosterAdjustments() {
   if (typeof LEAGUE_DATA === "undefined") return;
+  _invalidateMajorTradeOverlay();
   const teamMinors  = new Map();
   const teamCallups = new Map();
   for (const team of LEAGUE_DATA.teams) {
@@ -1409,7 +1567,29 @@ function renderTradeLogView() {
 // Combined Trades tab with sub-tabs: Block / Inbox / Log. Sub-tab choice is
 // kept in module-level state so navigating away and back lands on the same
 // view.
-let _tradesSubTab = "inbox";
+// null until the user (or a deep link) picks one, so an automatic landing on
+// the Trades tab can choose a sub-tab that actually has something in it.
+let _tradesSubTab = null;
+
+// Where to land when nobody asked for a specific sub-tab. Dropping a manager
+// straight into an empty Trade Inbox — which is what the season-phase default
+// did after the minors draft — reads as a dead end on first login. Show the
+// inbox when there's something to act on, otherwise the browsable Trade Block.
+function _defaultTradesSubTab() {
+  const u = (typeof dbGetUnreadCounts === "function") ? dbGetUnreadCounts() : null;
+  if (u && u.total > 0) return "inbox";
+  try {
+    const threads = (typeof dbGetThreads === "function") ? dbGetThreads() : [];
+    const myTeam = (typeof currentOwner !== "undefined" && currentOwner) ? currentOwner.team_id : null;
+    const actionable = threads.some(t =>
+      t.latestProposal && t.latestProposal.status === "pending" &&
+      (t.latestProposal.to_team_id === myTeam || t.latestProposal.from_team_id === myTeam)
+    );
+    if (actionable) return "inbox";
+  } catch {}
+  return "block";
+}
+
 function setTradesSubTab(name) {
   _tradesSubTab = name;
   renderTradesShell();
@@ -1426,6 +1606,7 @@ function goToTrades(sub) {
 function renderTradesShell() {
   const content = document.getElementById("trades-tab-content");
   if (!content) return;
+  if (!_tradesSubTab) _tradesSubTab = _defaultTradesSubTab();
   document.querySelectorAll(".trades-subnav-btn").forEach(b => {
     b.classList.toggle("active", b.dataset.sub === _tradesSubTab);
   });
@@ -1452,7 +1633,13 @@ function renderTradeBlockView() {
   const sel = (typeof dbGetKeeperSelections === "function") ? dbGetKeeperSelections() : {};
   const byTeam = {};
   for (const teamId of Object.keys(sel)) {
-    const blocked = Object.keys(sel[teamId] || {}).filter(name => sel[teamId][name]?.tradeBlock);
+    // A trade-block flag is keyed by (team, player) and is never cleared when
+    // the player leaves the roster. Reconcile against the team's CURRENT
+    // roster so a traded player drops off the seller's block instead of
+    // lingering — and can't be advertised by two teams at once.
+    const roster = teamRosterNames(teamId);
+    const blocked = Object.keys(sel[teamId] || {})
+      .filter(name => sel[teamId][name]?.tradeBlock && roster.has(name));
     if (blocked.length) byTeam[teamId] = blocked.sort((a, b) => lastName(a).localeCompare(lastName(b)));
   }
   const myTeamId = (typeof currentOwner !== "undefined" && currentOwner) ? currentOwner.team_id : null;
@@ -1867,8 +2054,12 @@ function showProposalComposer(opts) {
       renderAssetList("t1");
       renderAssetList("t2");
     }
+    // Notes are deliberately NOT carried over. They're the other team's pitch
+    // for their offer; pre-filling them made counters look like you were
+    // arguing your opponent's case, and it was easy to send without noticing.
+    // (The assets above ARE pre-filled — that's the useful part of a counter.)
     const notesEl = document.getElementById("trade-notes");
-    if (notesEl) notesEl.value = counterOf.notes || "";
+    if (notesEl) notesEl.value = "";
   }
   // Relabel the submit button.
   const submitBtn = modal.querySelector(".trade-btn-submit");
@@ -2628,17 +2819,24 @@ function renderTeamAssetPicker(selectId, containerId, prefix) {
   const team = LEAGUE_DATA.teams.find(t => t.id === teamId);
   if (!team) return;
 
-  // Pull majors from the live ESPN roster (includes in-season pickups + callups).
-  // Fall back to data.js keepers + callups if no snapshot is loaded.
-  const snap = getEspnSnapshot();
-  const espnTeam = snap ? snap.teams.find(t => ESPN_ABBREV_TO_LOCAL[t.abbrev] === teamId) : null;
-  const priceByName = Object.fromEntries(team.majors.map(p => [p.name, p.price]));
-  const mlbRoster = espnTeam
-    ? [...espnTeam.roster].sort((a, b) => lastName(a.name).localeCompare(lastName(b.name)))
-    : [...team.majors, ...(team.callups || [])].sort((a, b) => lastName(a.name).localeCompare(lastName(b.name)));
+  // Majors come from the RECONCILED roster (ESPN + in-app trade overlay) with
+  // cost basis already resolved. Two bugs this fixes, both found in the trial:
+  // the picker used to offer players the team had already traded away, and it
+  // priced from the static data.js `team.majors` map, which has no entry for
+  // FA pickups or callups — so marquee assets showed with no salary at all
+  // (Tucker's $72) or a stale one ($6 for a $1 FA re-add).
+  const eligibleMajors = (typeof getEligiblePlayers === "function") ? getEligiblePlayers(team) : [];
+  // With no ESPN snapshot, getEligiblePlayers falls back to team.majors only —
+  // call-ups live in their own bucket and would vanish from the picker
+  // entirely (they aren't in minorOptions either). Union them back in.
+  const haveSnapshot = !!getEspnSnapshot();
+  const mlbSource = (haveSnapshot && eligibleMajors.length)
+    ? eligibleMajors
+    : [...eligibleMajors, ...(team.callups || []).filter(c => !eligibleMajors.some(p => p.name === c.name))];
+  const mlbRoster = [...mlbSource].sort((a, b) => lastName(a.name).localeCompare(lastName(b.name)));
   const majorOptions = mlbRoster.map(p => {
-    const price = priceByName[p.name];
-    const label = price !== undefined ? `${p.name} ($${price})` : p.name;
+    const price = (p.price != null) ? p.price : undefined;
+    const label = price !== undefined ? `${p.name} ($${price})` : `${p.name} (salary TBD)`;
     return `<option value="major:${escapeHtml(p.name)}">${escapeHtml(label)}</option>`;
   }).join("");
   const minorOptions = [...team.minors]
@@ -3463,6 +3661,122 @@ function resolveCostBasis(playerName, currentTeamLocalId) {
   };
 }
 
+// Build one eligible-keeper record from an ESPN roster entry. basisTeamId is
+// the team whose draft/keeper history establishes the cost basis — for a
+// player acquired in an in-app trade that is still the SELLER, because that's
+// where the originating contract lives until ESPN catches up.
+function _buildEligibleMajorPlayer(r, basisTeamId, priceExceptions) {
+  const basis = resolveCostBasis(r.name, basisTeamId);
+  if (priceExceptions[r.name] != null && typeof basis.price === "number") {
+    basis.price = Number(priceExceptions[r.name]);
+  }
+
+  // For FA-add: contract starts in CURRENT_SEASON+1, so "yearsKept"=0 next year
+  const fakePlayer = {
+    name: r.name,
+    price: basis.price ?? 0,
+    yearAcquired: basis.yearAcquired,
+    fromMinors: basis.fromMinors,
+  };
+
+  let cs;
+  if (basis.isPostDeadline) {
+    cs = {
+      yearsKept: 0,
+      yearsRemaining: 0,
+      nextYearPrice: null,
+      canKeepNextYear: false,
+      status: "final",
+      label: "Ineligible",
+    };
+  } else if (basis.contractType === "fa") {
+    // FA: $6 in first keepable year (CURRENT_SEASON+1), then +$2/year, max 3 keeper years
+    cs = {
+      yearsKept: 0,
+      yearsRemaining: 3,
+      originalPrice: 6,
+      maxYears: 3,
+      nextYearPrice: 6,
+      canKeepNextYear: true,
+      status: "new",
+      label: "FA — $6",
+    };
+  } else if (basis.contractType === "callup" && basis.price == null) {
+    // A callup without an MLB price still rides their MILB contract,
+    // which started when they were originally drafted to MiLB — not
+    // when they were called up.
+    const draftYear = basis.originalDraftYear ?? basis.yearAcquired;
+    const milbYearsHeld = CURRENT_SEASON - draftYear;
+    const milbMaxYears = draftYear < 2027 ? 4 : 99;
+    const milbYrsAfterThisSeason = Math.max(0, milbMaxYears - milbYearsHeld - 1);
+    if (milbYrsAfterThisSeason > 0 || draftYear >= 2027) {
+      cs = {
+        yearsKept: 0,
+        yearsRemaining: basis.yearAcquired < 2027 ? milbYrsAfterThisSeason : null,
+        nextYearPrice: null,
+        canKeepNextYear: true,
+        status: "new",
+        label: "Call-up (price TBD)",
+      };
+    } else {
+      cs = {
+        yearsKept: 0,
+        yearsRemaining: 0,
+        nextYearPrice: null,
+        canKeepNextYear: false,
+        status: "final",
+        label: "Final Year",
+      };
+    }
+  } else {
+    cs = getContractStatus(fakePlayer, CURRENT_SEASON);
+    // getContractStatus anchors a fromMinors contract's 3-year cap on
+    // yearAcquired (the call-up year). That's right for 2027+ callups but
+    // over-grants pre-2027 ones, whose clock runs from the DRAFT year.
+    // Re-derive the horizon from callupFinalKeeperYear so every path
+    // agrees; keep getContractStatus's price-escalation math (nextYearPrice).
+    if (basis.contractType === "callup") {
+      const draftYear = basis.originalDraftYear ?? basis.yearAcquired;
+      const finalYear = callupFinalKeeperYear(draftYear, basis.yearAcquired);
+      const canKeep = CURRENT_SEASON < finalYear;
+      const yrsRemaining = Math.max(0, finalYear - CURRENT_SEASON);
+      cs = {
+        ...cs,
+        canKeepNextYear: canKeep,
+        yearsRemaining: yrsRemaining,
+        status: canKeep ? (yrsRemaining === 1 ? "expiring" : cs.status) : "final",
+        label: canKeep ? (yrsRemaining === 1 ? "1 yr left" : `${yrsRemaining} yrs left`) : "Final Year",
+      };
+    }
+    // If they were dropped this season AND already had a non-final-year contract,
+    // that's a different case (handled in resolveCostBasis). The "stays final year"
+    // case still has canKeepNextYear=false from getContractStatus, so we just amend the label:
+    if (basis.droppedDuringSeason && !cs.canKeepNextYear) {
+      cs = { ...cs, label: cs.label + " (dropped)" };
+    }
+  }
+
+  return {
+    name: r.name,
+    playerId: r.playerId,
+    type: "major",
+    price: basis.price,
+    yearAcquired: basis.yearAcquired,
+    originalDraftYear: basis.originalDraftYear || basis.yearAcquired,
+    fromMinors: basis.fromMinors,
+    contractType: basis.contractType,
+    source: basis.source,
+    injuryStatus: r.injuryStatus,
+    contractStatus: cs.status,
+    contractLabel: cs.label,
+    nextYearPrice: cs.canKeepNextYear ? cs.nextYearPrice : null,
+    canKeepNextYear: cs.canKeepNextYear,
+    yearsRemaining: cs.yearsRemaining,
+    workaround: basis.workaround || null,
+    priceExceptionApplied: priceExceptions[r.name] != null,
+  };
+}
+
 // Build the eligible-keeper list for a team using ESPN roster + data.js minors.
 function getEligiblePlayers(team) {
   const players = [];
@@ -3475,121 +3789,28 @@ function getEligiblePlayers(team) {
   const priceExceptions = (typeof dbGetKeeperPriceExceptions === "function")
     ? dbGetKeeperPriceExceptions() : {};
 
-  // 1. Major league players currently on this team's ESPN roster
+  // 1. Major league players on this team's RECONCILED roster: ESPN's roster
+  //    minus anyone dealt away in an in-app trade, plus anyone dealt in whose
+  //    ESPN roster spot hasn't moved yet. See getMajorTradeOverlay().
   if (snap) {
     const espnTeam = snap.teams.find(t => ESPN_ABBREV_TO_LOCAL[t.abbrev] === team.id);
+    const seen = new Set();
     if (espnTeam) {
       espnTeam.roster.forEach(r => {
-        const basis = resolveCostBasis(r.name, team.id);
-        if (priceExceptions[r.name] != null && typeof basis.price === "number") {
-          basis.price = Number(priceExceptions[r.name]);
-        }
-
-        // For FA-add: contract starts in CURRENT_SEASON+1, so "yearsKept"=0 next year
-        const fakePlayer = {
-          name: r.name,
-          price: basis.price ?? 0,
-          yearAcquired: basis.yearAcquired,
-          fromMinors: basis.fromMinors,
-        };
-
-        let cs;
-        if (basis.isPostDeadline) {
-          cs = {
-            yearsKept: 0,
-            yearsRemaining: 0,
-            nextYearPrice: null,
-            canKeepNextYear: false,
-            status: "final",
-            label: "Ineligible",
-          };
-        } else if (basis.contractType === "fa") {
-          // FA: $6 in first keepable year (CURRENT_SEASON+1), then +$2/year, max 3 keeper years
-          cs = {
-            yearsKept: 0,
-            yearsRemaining: 3,
-            originalPrice: 6,
-            maxYears: 3,
-            nextYearPrice: 6,
-            canKeepNextYear: true,
-            status: "new",
-            label: "FA — $6",
-          };
-        } else if (basis.contractType === "callup" && basis.price == null) {
-          // A callup without an MLB price still rides their MILB contract,
-          // which started when they were originally drafted to MiLB — not
-          // when they were called up.
-          const draftYear = basis.originalDraftYear ?? basis.yearAcquired;
-          const milbYearsHeld = CURRENT_SEASON - draftYear;
-          const milbMaxYears = draftYear < 2027 ? 4 : 99;
-          const milbYrsAfterThisSeason = Math.max(0, milbMaxYears - milbYearsHeld - 1);
-          if (milbYrsAfterThisSeason > 0 || draftYear >= 2027) {
-            cs = {
-              yearsKept: 0,
-              yearsRemaining: basis.yearAcquired < 2027 ? milbYrsAfterThisSeason : null,
-              nextYearPrice: null,
-              canKeepNextYear: true,
-              status: "new",
-              label: "Call-up (price TBD)",
-            };
-          } else {
-            cs = {
-              yearsKept: 0,
-              yearsRemaining: 0,
-              nextYearPrice: null,
-              canKeepNextYear: false,
-              status: "final",
-              label: "Final Year",
-            };
-          }
-        } else {
-          cs = getContractStatus(fakePlayer, CURRENT_SEASON);
-          // getContractStatus anchors a fromMinors contract's 3-year cap on
-          // yearAcquired (the call-up year). That's right for 2027+ callups but
-          // over-grants pre-2027 ones, whose clock runs from the DRAFT year.
-          // Re-derive the horizon from callupFinalKeeperYear so every path
-          // agrees; keep getContractStatus's price-escalation math (nextYearPrice).
-          if (basis.contractType === "callup") {
-            const draftYear = basis.originalDraftYear ?? basis.yearAcquired;
-            const finalYear = callupFinalKeeperYear(draftYear, basis.yearAcquired);
-            const canKeep = CURRENT_SEASON < finalYear;
-            const yrsRemaining = Math.max(0, finalYear - CURRENT_SEASON);
-            cs = {
-              ...cs,
-              canKeepNextYear: canKeep,
-              yearsRemaining: yrsRemaining,
-              status: canKeep ? (yrsRemaining === 1 ? "expiring" : cs.status) : "final",
-              label: canKeep ? (yrsRemaining === 1 ? "1 yr left" : `${yrsRemaining} yrs left`) : "Final Year",
-            };
-          }
-          // If they were dropped this season AND already had a non-final-year contract,
-          // that's a different case (handled in resolveCostBasis). The "stays final year"
-          // case still has canKeepNextYear=false from getContractStatus, so we just amend the label:
-          if (basis.droppedDuringSeason && !cs.canKeepNextYear) {
-            cs = { ...cs, label: cs.label + " (dropped)" };
-          }
-        }
-
-        players.push({
-          name: r.name,
-          playerId: r.playerId,
-          type: "major",
-          price: basis.price,
-          yearAcquired: basis.yearAcquired,
-          originalDraftYear: basis.originalDraftYear || basis.yearAcquired,
-          fromMinors: basis.fromMinors,
-          contractType: basis.contractType,
-          source: basis.source,
-          injuryStatus: r.injuryStatus,
-          contractStatus: cs.status,
-          contractLabel: cs.label,
-          nextYearPrice: cs.canKeepNextYear ? cs.nextYearPrice : null,
-          canKeepNextYear: cs.canKeepNextYear,
-          yearsRemaining: cs.yearsRemaining,
-          workaround: basis.workaround || null,
-          priceExceptionApplied: priceExceptions[r.name] != null,
-        });
+        const tradedTo = majorTradeOwner(r.name);
+        if (tradedTo && tradedTo !== team.id) return;   // dealt away in-app
+        players.push(_buildEligibleMajorPlayer(r, team.id, priceExceptions));
+        seen.add(r.name);
       });
+    }
+    for (const name of incomingTradeNames(team.id)) {
+      if (seen.has(name)) continue;
+      const found = _findEspnRosterRecord(snap, name);
+      if (!found) continue;                             // no longer rostered anywhere
+      const p = _buildEligibleMajorPlayer(found.record, found.teamId || team.id, priceExceptions);
+      p.acquiredViaTrade = true;
+      players.push(p);
+      seen.add(name);
     }
   } else {
     // No ESPN snapshot — fall back to data.js majors
@@ -3928,9 +4149,21 @@ function updateEligibleKeepersView() {
   const selections = getEligibleKeeperSelections();
   const teamSelections = selections[teamId] || {};
 
-  const selectedKeepers = players.filter(p => teamSelections[p.name]?.keeper);
+  // Only players who can ACTUALLY be kept next year count toward the cap or
+  // the cost. The All-Teams summary has always filtered on canKeepNextYear;
+  // this view didn't, so the same team showed two different keeper counts. It
+  // also let a commissioner override that sets nextYearPrice while leaving
+  // canKeepNextYear false add its dollars to a row rendered greyed-out,
+  // disabled and "—" — the phantom $10 found in the trial.
+  const flaggedKeepers  = players.filter(p => teamSelections[p.name]?.keeper);
+  const selectedKeepers = flaggedKeepers.filter(p => p.canKeepNextYear);
+  const staleKeeperFlags = flaggedKeepers.length - selectedKeepers.length;
   // Keeper cost reflects 2027 price (next year's keeper budget impact).
   const totalKeeperCost = selectedKeepers.reduce((s, p) => s + (p.nextYearPrice || 0), 0);
+  // Call-ups whose price isn't set yet contribute $0, so the per-player chips
+  // never added up to the stated total and nothing said why. Count them so the
+  // summary can show "$N + k TBD" instead of silently under-reporting.
+  const tbdKeepers = selectedKeepers.filter(p => p.nextYearPrice == null).length;
   // Draft Dollars are static: $260 ± net trades. Keeper cost is shown separately.
   const draftDollars = getDraftDollarBalances()[teamId] ?? 260;
   // Cap counters: limit to players actually on this team's current roster.
@@ -3951,11 +4184,11 @@ function updateEligibleKeepersView() {
   container.innerHTML = `
     <div class="summary-bar">
       <div class="summary-item">
-        <div class="summary-value" id="ek-keeper-count" style="color:${colorForCap(selectedKeepers.length, 8)}">${selectedKeepers.length}/8</div>
-        <div class="summary-label">ML Keepers</div>
+        <div class="summary-value" id="ek-keeper-count" style="color:${colorForCap(selectedKeepers.length, ML_KEEPER_CAP)}"${staleKeeperFlags ? ` title="${staleKeeperFlags} more player${staleKeeperFlags === 1 ? ' is' : 's are'} still flagged as a keeper but can't be kept next year, so they don't count here."` : ''}>${selectedKeepers.length}/${ML_KEEPER_CAP}</div>
+        <div class="summary-label">ML Keepers${isKeeperCapEnforced() ? ' <span style="font-size:0.7em;color:var(--text-dim)">(cap on)</span>' : ''}</div>
       </div>
       <div class="summary-item">
-        <div class="summary-value" id="ek-minor-count" style="color:${colorForCap(minorKeeperCount, 10)}">${minorKeeperCount}/10</div>
+        <div class="summary-value" id="ek-minor-count" style="color:${colorForCap(minorKeeperCount, MIL_KEEPER_CAP)}">${minorKeeperCount}/${MIL_KEEPER_CAP}</div>
         <div class="summary-label">MiL Keepers</div>
       </div>
       <div class="summary-item">
@@ -3963,7 +4196,7 @@ function updateEligibleKeepersView() {
         <div class="summary-label">Rule 5</div>
       </div>
       <div class="summary-item">
-        <div class="summary-value" id="ek-keeper-cost" style="color:var(--green)">$${totalKeeperCost}</div>
+        <div class="summary-value" id="ek-keeper-cost" style="color:var(--green)"${tbdKeepers ? ` title="${tbdKeepers} call-up${tbdKeepers === 1 ? '' : 's'} still need a price set by the commissioner. Until then they add $0 here, so the real total will be higher."` : ''}>$${totalKeeperCost}${tbdKeepers ? `<span style="font-size:0.6em;color:var(--yellow);margin-left:4px">+${tbdKeepers} TBD</span>` : ''}</div>
         <div class="summary-label">Keeper Cost</div>
       </div>
       <div class="summary-item">
@@ -4259,6 +4492,29 @@ function renderMinorsEligibleTable(minors, teamId, teamSelections) {
   `;
 }
 
+// How many keepers currently count against a team's cap, using the SAME
+// filters as the summary bar so an enforcement message can never disagree with
+// the number on screen: ML counts only players still on the roster who can
+// actually be kept next year; MiL counts minors + call-ups.
+function _countKeepersForCap(teamId, field, excludeName) {
+  const team = LEAGUE_DATA.teams.find(t => t.id === teamId);
+  if (!team) return 0;
+  const selections = getEligibleKeeperSelections();
+  const teamSelections = selections[teamId] || {};
+  if (field === "keeper") {
+    return getEligiblePlayers(team).filter(p =>
+      p.name !== excludeName && p.canKeepNextYear && teamSelections[p.name]?.keeper
+    ).length;
+  }
+  const milNames = new Set([
+    ...(team.minors || []).map(p => p.name),
+    ...(team.callups || []).map(p => p.name),
+  ]);
+  return Object.entries(teamSelections).filter(([name, s]) =>
+    name !== excludeName && s.minorKeeper && milNames.has(name)
+  ).length;
+}
+
 function toggleEligibleKeeper(teamId, playerName, field, checked) {
   // Defense in depth: UI hides edit controls for non-owners but a stray click /
   // dev tools tweak shouldn't be able to corrupt another team's selections.
@@ -4272,6 +4528,23 @@ function toggleEligibleKeeper(teamId, playerName, field, checked) {
     if (typeof updateEligibleKeepersView === "function") updateEligibleKeepersView();
     return;
   }
+  // Keeper-cap enforcement. Going over the cap is allowed all through the
+  // selection window — teams need room to think — so this only bites once the
+  // commissioner switches the cap on at the keeper deadline. Commissioners can
+  // still go over to fix things, and un-checking is never blocked.
+  if (checked && (field === "keeper" || field === "minorKeeper")
+      && isKeeperCapEnforced() && !isCommissioner()) {
+    const cap = field === "keeper" ? ML_KEEPER_CAP : MIL_KEEPER_CAP;
+    const current = _countKeepersForCap(teamId, field, playerName);
+    if (current >= cap) {
+      if (typeof showToast === "function") {
+        showToast(`That would be ${current + 1} ${field === "keeper" ? "ML" : "MiL"} keepers — the cap is ${cap}. Drop someone first.`, "warn");
+      }
+      if (typeof updateEligibleKeepersView === "function") updateEligibleKeepersView();
+      return;
+    }
+  }
+
   const selections = getEligibleKeeperSelections();
   if (!selections[teamId]) selections[teamId] = {};
   if (!selections[teamId][playerName]) selections[teamId][playerName] = {};
@@ -4282,8 +4555,9 @@ function toggleEligibleKeeper(teamId, playerName, field, checked) {
   // Keep ↔ Rule 5 cascade for ML and MILB alike:
   //   - Pressing any Keep box auto-protects via Rule 5
   //   - Unchecking Rule 5 also unkeeps (both ML and MILB)
-  // Caps (8 ML / 10 MiL / 25 Rule 5) are enforced visually (red number in
-  // the summary bar) rather than by blocking selections.
+  // Caps (8 ML / 10 MiL / 25 Rule 5) show as a red number in the summary bar
+  // at all times; they only BLOCK a selection once the commissioner turns on
+  // enforceKeeperCap (see the guard above).
   if ((field === 'keeper' || field === 'minorKeeper') && checked) {
     selections[teamId][playerName].rule5 = true;
   }
@@ -4292,7 +4566,12 @@ function toggleEligibleKeeper(teamId, playerName, field, checked) {
     selections[teamId][playerName].minorKeeper = false;
   }
 
-  // Activity logging — fire-and-forget.
+  // Activity logging — fire-and-forget, but only AFTER the write is accepted.
+  // The keeper-lock trigger can reject the save server-side (stale client
+  // cache), and logging first left the feed claiming a keeper change that the
+  // database refused — which a commissioner could then "undo", clearing a flag
+  // that was never set.
+  const _logKeeperActivity = () => {
   if (typeof logActivityAsync === "function") {
     const fieldToType = {
       keeper:       checked ? "keeper_added" : "keeper_removed",
@@ -4309,6 +4588,7 @@ function toggleEligibleKeeper(teamId, playerName, field, checked) {
       logActivityAsync("rule5_added", { player_name: playerName, via_cascade: true }, { targetTeamId: teamId });
     }
   }
+  };
 
   const flags = { ...(selections[teamId][playerName] || {}) };
   const allEmpty = !flags.keeper && !flags.minorKeeper && !flags.tradeBlock && !flags.rule5;
@@ -4316,6 +4596,7 @@ function toggleEligibleKeeper(teamId, playerName, field, checked) {
 
   if (typeof setKeeperSelectionAsync === "function") {
     setKeeperSelectionAsync(teamId, playerName, allEmpty ? {} : flags)
+      .then(_logKeeperActivity)
       .catch(err => {
         alert("Save failed: " + err.message);
         // setKeeperSelectionAsync reverted the cache — re-render to match.
@@ -4323,6 +4604,7 @@ function toggleEligibleKeeper(teamId, playerName, field, checked) {
       });
   } else {
     saveEligibleKeeperSelections(selections);
+    _logKeeperActivity();
   }
 
   if (typeof updateEligibleKeepersView === "function") updateEligibleKeepersView();
@@ -4340,6 +4622,9 @@ function renderAllTeamsEligibleSummary(container) {
     const tradeBlock = [...players, ...team.minors].filter(p => teamSel[p.name]?.tradeBlock);
     const rule5 = team.minors.filter(p => teamSel[p.name]?.rule5);
     const keeperCost = keepers.reduce((s, p) => s + (p.nextYearPrice || 0), 0);
+    // Unpriced call-ups render as a "$TBD" chip but add $0 to the total, so the
+    // chips never summed to the number above them. Say so instead.
+    const keeperCostTbd = keepers.filter(p => p.nextYearPrice == null).length;
     const draftDollars = dollarBalances[team.id] ?? 260;
     // MiL keeper count for this team — flagged players who actually sit on
     // the team's current MILB roster (incl. callups).
@@ -4350,12 +4635,12 @@ function renderAllTeamsEligibleSummary(container) {
     const milKeeperCount = Object.entries(teamSel)
       .filter(([name, s]) => s.minorKeeper && milNames.has(name)).length;
 
-    const mlColor = keepers.length > 8 ? 'var(--red)'
-      : keepers.length === 8 ? 'var(--green)'
+    const mlColor = keepers.length > ML_KEEPER_CAP ? 'var(--red)'
+      : keepers.length === ML_KEEPER_CAP ? 'var(--green)'
       : keepers.length === 0 ? 'var(--text-dim)'
       : 'var(--yellow)';
-    const milColor = milKeeperCount > 10 ? 'var(--red)'
-      : milKeeperCount === 10 ? 'var(--green)'
+    const milColor = milKeeperCount > MIL_KEEPER_CAP ? 'var(--red)'
+      : milKeeperCount === MIL_KEEPER_CAP ? 'var(--green)'
       : milKeeperCount === 0 ? 'var(--text-dim)'
       : 'var(--yellow)';
 
@@ -4364,13 +4649,13 @@ function renderAllTeamsEligibleSummary(container) {
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;gap:8px;flex-wrap:wrap">
           <span style="font-weight:700;color:var(--text-bright);font-size:1.05rem">${team.name}</span>
           <span style="display:flex;gap:10px;font-weight:700;font-size:0.92rem;flex-wrap:wrap;justify-content:flex-end">
-            <span style="color:${mlColor}">${keepers.length}/8 keepers</span>
-            <span style="color:${milColor}">${milKeeperCount}/10 MiL</span>
+            <span style="color:${mlColor}">${keepers.length}/${ML_KEEPER_CAP} keepers</span>
+            <span style="color:${milColor}">${milKeeperCount}/${MIL_KEEPER_CAP} MiL</span>
           </span>
         </div>
         ${keepers.length ? `
           <div style="font-size:0.82rem;color:var(--text-dim);margin-bottom:4px">
-            <span style="color:var(--green);font-weight:600">$${keeperCost}</span> keeper cost
+            <span style="color:var(--green);font-weight:600">$${keeperCost}</span> keeper cost${keeperCostTbd ? ` <span style="color:var(--yellow)" title="${keeperCostTbd} call-up${keeperCostTbd === 1 ? '' : 's'} without a price set yet — they count $0 until the commissioner sets one.">(+${keeperCostTbd} TBD)</span>` : ''}
             &middot; <span style="color:${draftDollars > DRAFT_DOLLAR_CAP ? 'var(--red)' : 'var(--accent)'};font-weight:600"${draftDollars > DRAFT_DOLLAR_CAP ? ` title="Over $${DRAFT_DOLLAR_CAP} §1b cap"` : ''}>$${draftDollars}</span> draft dollars
           </div>
           <div style="display:flex;flex-wrap:wrap;gap:4px;align-items:center;margin-top:6px">
@@ -5599,7 +5884,7 @@ function switchTab(tab) {
   const content = document.getElementById("main-content");
   const backBtn = document.getElementById("back-btn");
   const title = document.getElementById("header-title");
-  title.innerHTML = '<a href="https://fantasy.espn.com/baseball/league?leagueId=1200" target="_blank" rel="noopener">The League</a>';
+  title.innerHTML = headerTitleHtml();
 
   // Draft grid needs more horizontal room than other views.
   content.classList.toggle("wide", tab === "draft");
@@ -5854,6 +6139,7 @@ const NOTIFY_EVENTS = [
   { key: "callup",           label: "Call-ups",                       email: ["daily","weekly","never"],            push: false, defaults: { email: "never" } },
   { key: "send_down",        label: "Send-downs",                     email: ["daily","weekly","never"],            push: false, defaults: { email: "never" } },
   { key: "draft_picks",      label: "Other teams' draft picks",       email: ["daily","weekly","never"],            push: false, defaults: { email: "never" } },
+  { key: "board_post",       label: "Message board posts",            email: ["daily","weekly","never"],            push: false, defaults: { email: "never" } },
   { key: "vote_result",      label: "League vote results",            email: ["instant","never"],                   push: true,  defaults: { email: "instant", push: true } },
 ];
 
@@ -7011,6 +7297,7 @@ function renderSettingsView() {
   const settings = getLeagueSettings();
   const enforceR5 = !!settings.enforceRule5RosterSpot;
   const enforceMiL = !!settings.enforceMinorsRosterSpot;
+  const enforceCap = !!settings.enforceKeeperCap;
   const reviewTotal = _commishReviewTotal();
   // Only nag with the orange banner during the same offseason window
   // that triggers auto-expand. Outside that, the section count is shown
@@ -7068,6 +7355,20 @@ function renderSettingsView() {
           <input type="checkbox" id="settings-enforce-mil" ${enforceMiL ? "checked" : ""} onchange="toggleEnforceMinorsRosterSpot(this.checked)" style="width:18px;height:18px;cursor:pointer;accent-color:var(--accent)">
           <span style="color:var(--text);font-size:0.9rem">Minors Draft: enforce open 10-man MiL spot</span>
         </label>
+      </details>
+
+      <details id="cs-keeper-cap" class="keeper-projection" style="margin-bottom:14px"${_detailsOpenAttr("cs-keeper-cap", false)}>
+        <summary style="cursor:pointer;font-weight:700;color:var(--text-bright);font-size:0.92rem">Keeper Cap${enforceCap ? ` <span style="color:var(--green);font-weight:700;font-size:0.78rem">(on)</span>` : ` <span style="color:var(--text-dim);font-weight:400;font-size:0.78rem">(off)</span>`}</summary>
+        <div style="color:var(--text-dim);font-size:0.84rem;margin:8px 0 10px">
+          Teams are allowed to sit <strong>over</strong> the ${ML_KEEPER_CAP}-keeper limit while they work through their options — the counter turns red but nothing is blocked. Turn this on at the keeper deadline and the app will refuse any selection that puts a team over ${ML_KEEPER_CAP} ML or ${MIL_KEEPER_CAP} MiL keepers. Un-checking a keeper is never blocked, and you (commissioner) can still go over to fix a team's roster.
+        </div>
+        <label style="display:flex;align-items:center;gap:10px;padding:10px;background:var(--bg);border:1px solid var(--border);border-radius:6px;cursor:pointer">
+          <input type="checkbox" id="settings-enforce-keeper-cap" ${enforceCap ? "checked" : ""} onchange="toggleEnforceKeeperCap(this.checked)" style="width:18px;height:18px;cursor:pointer;accent-color:var(--accent)">
+          <span style="color:var(--text);font-size:0.9rem">Enforce the ${ML_KEEPER_CAP} ML / ${MIL_KEEPER_CAP} MiL keeper cap</span>
+        </label>
+        <div style="color:var(--text-dim);font-size:0.78rem;margin-top:8px">
+          Separate from <strong>Lock Keepers</strong> on the Select Keepers page, which freezes all keeper edits outright.
+        </div>
       </details>
 
       <details id="cs-key-dates" class="keeper-projection" style="margin-bottom:14px"${_detailsOpenAttr("cs-key-dates", false)}>
@@ -8770,6 +9071,25 @@ async function toggleEnforceMinorsRosterSpot(checked) {
   }
 }
 
+// Switch the keeper cap on (typically at the keeper deadline). Until then
+// teams may sit over the cap while they work through their options.
+async function toggleEnforceKeeperCap(checked) {
+  if (!isCommissioner()) return;
+  const settings = { ...getLeagueSettings(), enforceKeeperCap: !!checked };
+  try {
+    await saveSettingsAsync(settings);
+    if (typeof logActivityAsync === "function") logActivityAsync("settings_changed", { key: "enforceKeeperCap", value: !!checked });
+    if (typeof showToast === "function") {
+      showToast(checked
+        ? `Keeper cap is ON — selections over ${ML_KEEPER_CAP} ML / ${MIL_KEEPER_CAP} MiL will be refused.`
+        : "Keeper cap is OFF — teams may go over the limit.", "info");
+    }
+  } catch (e) {
+    alert("Couldn't save: " + (e.message || e));
+    switchTab("settings");
+  }
+}
+
 // --- Rendering: Activity Feed ---
 
 // Pairs of toggle events that should fold together when the same actor
@@ -8893,6 +9213,19 @@ function _teamName(teamId) {
   return t ? t.name : teamId;
 }
 
+// "— Jeff gets Chris Sale; Saxton gets Bryan Reynolds, Christian Yelich".
+// Proposal payloads carry asset VALUES (plain names) flattened by the DB
+// trigger, so no asset-object formatting is needed. Returns "" when the payload
+// predates the trigger and has no asset lists.
+function _proposalDealText(p) {
+  const names = arr => (arr || []).map(n => escapeHtml(String(n))).join(", ");
+  const r1 = names(p.team1_receives);
+  const r2 = names(p.team2_receives);
+  if (!r1 && !r2) return "";
+  const t1 = escapeHtml(_teamName(p.team1)), t2 = escapeHtml(_teamName(p.team2));
+  return ` — <strong>${t1}</strong> gets ${r1 || "—"}; <strong>${t2}</strong> gets ${r2 || "—"}`;
+}
+
 function describeActivity(a) {
   const actor = `<strong style="color:var(--text-bright)">${_teamName(a.actor_team_id)}</strong>`;
   const target = `<strong style="color:var(--text-bright)">${_teamName(a.target_team_id)}</strong>`;
@@ -8927,6 +9260,25 @@ function describeActivity(a) {
       const r2 = (p.team2_receives || []).map(formatTradeAsset).join(", ") || "—";
       return `${actor} recorded a trade — <strong>${t1}</strong> gets ${r1}; <strong>${t2}</strong> gets ${r2}`;
     }
+    // Proposal events are written server-side by the trade_proposals trigger
+    // (see supabase/migrations/2026-07-25-proposal-activity-events.sql). Their
+    // asset arrays are already flattened to plain names by the trigger, so they
+    // don't go through formatTradeAsset.
+    case "proposal_created":
+    case "proposal_countered": {
+      const verb = a.type === "proposal_countered" ? "countered with an offer to" : "sent a trade proposal to";
+      return `${actor} ${verb} ${target}${_proposalDealText(p)}`;
+    }
+    case "proposal_accepted":
+      return `${actor} accepted ${target}'s trade proposal${_proposalDealText(p)}`;
+    case "proposal_rejected":
+      return `${actor} rejected a trade proposal from ${target}`;
+    case "proposal_withdrawn":
+      return `${actor} withdrew a trade proposal to ${target}`;
+    case "proposal_message_sent":
+      return `${actor} sent a message about a trade${p.preview ? ` — "${escapeHtml(p.preview)}"` : ""}`;
+    case "message_posted":
+      return `${actor} posted to the message board${p.preview ? ` — "${escapeHtml(p.preview)}"` : ""}`;
     case "trade_deleted":
       return `${actor} deleted a trade between ${_teamName(p.team1)} and ${_teamName(p.team2)}`;
     case "minors_pick_made":
@@ -9005,7 +9357,12 @@ function describeActivity(a) {
 // roster (auction, callup, FA pickup) via getEligiblePlayers. Memoized at
 // module level; switchTab() invalidates so prices stay current.
 let _playerPriceMapMemo = null;
-function _invalidatePriceMap() { _playerPriceMapMemo = null; }
+function _invalidatePriceMap() {
+  _playerPriceMapMemo = null;
+  // The trade overlay is derived from the trades log, so it goes stale on the
+  // same events as the price map (new trade recorded / proposal accepted).
+  if (typeof _invalidateMajorTradeOverlay === "function") _invalidateMajorTradeOverlay();
+}
 function _getPlayerPriceMap() {
   if (_playerPriceMapMemo) return _playerPriceMapMemo;
   const map = {};
@@ -9111,15 +9468,29 @@ function renderTrophyRow(season, idx) {
   }
   const slot = (rank, color, accent, label, emoji) => {
     const teams = ranks[rank];
+    // A shared rank consumes the places below it: co-champions mean there is
+    // no runner-up, and the next team finished third. Saying so beats an
+    // unexplained blank card on the podium.
+    let empty = '<span style="color:var(--text-dim);font-weight:400">—</span>';
+    if (!teams.length) {
+      const tiedAbove = [2, 3].includes(rank)
+        ? [1, 2].filter(r => r < rank).find(r => (ranks[r] || []).length > 1)
+        : null;
+      if (tiedAbove) {
+        const n = ranks[tiedAbove].length;
+        const place = tiedAbove === 1 ? "first" : "second";
+        empty = `<span style="color:var(--text-dim);font-weight:400;font-size:0.82rem">No ${label.toLowerCase()} — ${n} teams tied for ${place}</span>`;
+      }
+    }
     return `
       <div style="flex:1;min-width:140px;background:linear-gradient(135deg, ${color}1f 0%, ${color}0a 100%);border:1px solid ${color}55;border-radius:12px;padding:14px;text-align:center;box-shadow:inset 0 1px 0 ${color}22">
         <div style="font-size:2.4rem;line-height:1">${emoji}</div>
-        <div style="font-size:0.65rem;font-weight:800;color:${accent};letter-spacing:0.12em;text-transform:uppercase;margin-top:6px">${label}</div>
+        <div style="font-size:0.65rem;font-weight:800;color:${accent};letter-spacing:0.12em;text-transform:uppercase;margin-top:6px">${label}${teams.length > 1 ? " (tie)" : ""}</div>
         <div style="margin-top:8px;color:var(--text-bright);font-weight:700;font-size:1rem;line-height:1.35">
           ${teams.length ? teams.map(t => {
             const pts = t.points != null ? ` <span style="color:var(--text-dim);font-weight:500;font-size:0.85rem">(${Number.isInteger(t.points) ? t.points : t.points.toFixed(1)})</span>` : "";
             return `${trophyTeamClickableLabel(t)}${pts}`;
-          }).join("<br>") : '<span style="color:var(--text-dim);font-weight:400">—</span>'}
+          }).join("<br>") : empty}
         </div>
       </div>
     `;
@@ -10926,6 +11297,26 @@ function goBack() {
   switchTab("eligible");
 }
 
+// The header title used to be nothing but an outbound link to ESPN — clicking
+// the app's own name took you off the app, and there was no way back to a
+// landing view. Now the name goes home (the season-appropriate default tab) and
+// ESPN keeps an explicit, clearly-marked link of its own.
+const ESPN_LEAGUE_URL = "https://fantasy.espn.com/baseball/league?leagueId=1200";
+// A function, not a const: switchTab() reads this thousands of lines earlier in
+// the file, and a const would sit in the temporal dead zone if anything ever
+// switched tabs during initial script evaluation.
+function headerTitleHtml() {
+  return '<a href="#" onclick="goHome();return false" style="color:inherit;text-decoration:none" title="Back to the main view">The League</a>'
+    + `<a href="${ESPN_LEAGUE_URL}" target="_blank" rel="noopener" title="Open this league on ESPN"`
+    + ' style="font-size:0.62em;font-weight:600;color:var(--text-dim);text-decoration:none;margin-left:8px;vertical-align:middle">ESPN&nbsp;↗</a>';
+}
+
+function goHome() {
+  // Whatever the app considers "the thing you're here for" this time of year.
+  const tab = (typeof _smartDefaultTab === "function") ? _smartDefaultTab() : "eligible";
+  switchTab(tab);
+}
+
 // Override hardcoded careerStat with live MLB Stats API values when available.
 function applyLivePlayerStats() {
   if (typeof PLAYER_STATS === "undefined" || !PLAYER_STATS.players) return;
@@ -11198,6 +11589,22 @@ function openMessageBoard() {
 // refreshed promptly. The 15-min GitHub Action writes lastSuccessAt /
 // lastFailureAt + lastError into league_state.espn_sync_status; we read it
 // here and show / hide the banner accordingly.
+// Dismissal is remembered for the session and keyed to WHY the banner showed,
+// so it stays gone as the header re-renders (presence changes, realtime
+// refreshes, sub-tab switches all call renderHeaderUser) but comes back if the
+// underlying situation changes. Previously the Dismiss button only set
+// display:none on the node, and the very next re-render un-hid it — it didn't
+// even keep the "hide until next page load" its tooltip promised.
+const SYNC_BANNER_DISMISS_KEY = "flm_sync_banner_dismissed_v1";
+function _syncBannerDismissed(key) {
+  try { return sessionStorage.getItem(SYNC_BANNER_DISMISS_KEY) === key; } catch { return false; }
+}
+function dismissEspnSyncBanner(key) {
+  try { sessionStorage.setItem(SYNC_BANNER_DISMISS_KEY, key); } catch {}
+  const b = document.getElementById("espn-sync-banner");
+  if (b) b.style.display = "none";
+}
+
 function _renderEspnSyncBanner() {
   let banner = document.getElementById("espn-sync-banner");
   const hide = () => { if (banner) banner.style.display = "none"; };
@@ -11221,8 +11628,13 @@ function _renderEspnSyncBanner() {
     const snapMs = snap && snap.syncedAt ? new Date(snap.syncedAt).getTime() : 0;
     const ageMs = snapMs ? (Date.now() - snapMs) : 0;
     if (!snapMs || ageMs <= 3 * 60 * 60 * 1000) return hide();
+    // Keyed on the snapshot itself: dismissing sticks until a NEW (still stale)
+    // snapshot lands, rather than nagging again on every header re-render.
+    const key = `snapshot:${snapMs}`;
+    if (_syncBannerDismissed(key)) return hide();
     const hours = Math.round(ageMs / 36e5);
-    ensure().innerHTML = `<b>Heads up:</b>&nbsp;ESPN data was last refreshed ~${hours} hours ago — rosters, salaries, and stats may be out of date.`;
+    ensure().innerHTML = `<b>Heads up:</b>&nbsp;ESPN data was last refreshed ~${hours} hours ago — rosters, salaries, and stats may be out of date.`
+      + `<button onclick="dismissEspnSyncBanner('${key}')" title="Hide until the data changes" style="background:rgba(0,0,0,0.25);border:1px solid rgba(255,255,255,0.2);color:#fff;padding:3px 8px;border-radius:5px;font-size:0.74rem;cursor:pointer;margin-left:auto">Dismiss</button>`;
     return;
   }
   if (typeof dbGetEspnSyncStatus !== "function") return hide();
@@ -11240,6 +11652,9 @@ function _renderEspnSyncBanner() {
   const pgCronStale = lastHbMs === 0 || (Date.now() - lastHbMs) > 30 * 60 * 1000;
   const bothLayersStale = stale && !failing && pgCronStale;
   if (!failing && !stale) return hide();
+  // Keyed on the failure/success pair, so a NEW failure re-raises the banner.
+  const dismissKey = `sync:${lastFailureMs}:${lastSuccessMs}`;
+  if (_syncBannerDismissed(dismissKey)) return hide();
   if (!banner) {
     banner = document.createElement("div");
     banner.id = "espn-sync-banner";
@@ -11274,7 +11689,7 @@ function _renderEspnSyncBanner() {
       <strong>${headline}</strong> ${detail}
       ${failing && lastErr ? `<span style="display:block;color:var(--text-dim);margin-top:2px;font-size:0.74rem">${escapeHtml(lastErr)}</span>` : ""}
     </span>
-    <button onclick="this.parentElement.style.display='none'" title="Hide until next page load" style="background:rgba(0,0,0,0.25);border:1px solid rgba(255,255,255,0.2);color:#fff;padding:3px 8px;border-radius:5px;font-size:0.74rem;cursor:pointer">Dismiss</button>
+    <button onclick="dismissEspnSyncBanner('${dismissKey}')" title="Hide until the sync status changes" style="background:rgba(0,0,0,0.25);border:1px solid rgba(255,255,255,0.2);color:#fff;padding:3px 8px;border-radius:5px;font-size:0.74rem;cursor:pointer">Dismiss</button>
   `;
 }
 

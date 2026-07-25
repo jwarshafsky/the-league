@@ -12,3 +12,4 @@ scripts/.env*
 .vscode/
 .idea/
 scripts/cron-backup-*.txt
+__pycache__/

@@ -56,8 +56,16 @@ CATEGORY_META = {
 }
 
 
+# Categories whose payloads describe a PENDING private negotiation. These must
+# never fan out past the two parties (plus the head commissioner, who is the one
+# role entitled to see every negotiation — see the co-commissioner role split).
+# receive_all does NOT widen this: "every league event" means every event you're
+# entitled to see.
+PRIVATE_CATEGORIES = {"trade_proposal", "trade_update", "trade_message"}
+
+
 def recipients_for_activity(activity, all_prefs, channel, commish_team_ids=None,
-                            all_team_ids=None):
+                            all_team_ids=None, head_commish_team_ids=None):
     """Return list of team_ids that should be notified for this event on
     the given channel ('email' or 'push'). Builds a small set keyed by team_id
     so each recipient gets at most one notification per event.
@@ -119,10 +127,15 @@ def recipients_for_activity(activity, all_prefs, channel, commish_team_ids=None,
         # spec — but we ALSO leak them as digest events.
         pass
 
-    # Always add receive_all teams.
+    # Always add receive_all teams — except for private negotiations, where
+    # only the parties (already added above) and the head commissioner qualify.
+    head_commish_team_ids = head_commish_team_ids or set()
     for tid, row in (all_prefs or {}).items():
-        if row.get("receive_all"):
-            candidates.add(tid)
+        if not row.get("receive_all"):
+            continue
+        if cat in PRIVATE_CATEGORIES and tid not in (actor, target) and tid not in head_commish_team_ids:
+            continue
+        candidates.add(tid)
 
     # Filter by pref + channel.
     out = []
@@ -206,6 +219,10 @@ def main():
     all_prefs = fetch_notify_prefs(key)
     # Set of team_ids whose owners are commissioners (used for vote events).
     commish_team_ids = {o["team_id"] for o in owners if o.get("is_commissioner") and o.get("team_id")}
+    # Head commissioner(s): the only role allowed to see every team's pending
+    # private trade negotiations. Falls back to empty if the column isn't
+    # deployed yet, which fails CLOSED (nobody gets other teams' proposals).
+    head_commish_team_ids = {o["team_id"] for o in owners if o.get("is_head_commissioner") and o.get("team_id")}
     # Every team in the league — league-wide fan-outs must include teams that
     # never saved notification settings (they get the app.js defaults).
     all_team_ids = {o["team_id"] for o in owners if o.get("team_id")}
@@ -239,7 +256,7 @@ def main():
         headline = describe_activity(a)
         event_failed = False  # any transient send failure holds the marker for retry
         # Email — fan out to every manager on the team.
-        targets = recipients_for_activity(a, all_prefs, "email", commish_team_ids, all_team_ids)
+        targets = recipients_for_activity(a, all_prefs, "email", commish_team_ids, all_team_ids, head_commish_team_ids)
         for tid in targets:
             addrs = emails_by_team.get(tid) or set()
             if not addrs: continue
@@ -257,7 +274,7 @@ def main():
                     print(f"[preview email] {tid} <{addr}> — {subject}")
         # Push
         if vapid_priv:
-            targets = recipients_for_activity(a, all_prefs, "push", commish_team_ids, all_team_ids)
+            targets = recipients_for_activity(a, all_prefs, "push", commish_team_ids, all_team_ids, head_commish_team_ids)
             payload = {
                 "title": f"{meta['tag'].title()}: {team_name(a.get('actor_team_id') or '?')}",
                 "body": headline.replace("<strong>", "").replace("</strong>", ""),

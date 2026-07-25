@@ -314,7 +314,7 @@ app name above the title).
 ### VAPID keys
 
 Generated once via `scripts/generate_vapid.py` (requires
-`pip3 install --user py_vapid cryptography pywebpush`). Stored:
+`pip3 install --user py_vapid cryptography 'pywebpush<2'`). Stored:
 - Private key (PEM, `\n`-escaped on one line) in `scripts/.env` as
   `VAPID_PRIVATE_KEY`. Also `VAPID_SUBJECT="mailto:jwarshafsky@gmail.com"`.
 - Public key (URL-safe base64) hardcoded into `js/app.js` as the

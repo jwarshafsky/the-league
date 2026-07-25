@@ -12,6 +12,10 @@ create table if not exists public.owners (
   -- constraint; new projects pick this up directly.
   team_id         text not null,
   is_commissioner boolean not null default false,
+  -- The head commissioner (Jeff) is the ONLY role that may see other teams'
+  -- pending private trade negotiations. Co-commissioners keep every other
+  -- admin power — see 2026-07-25-co-commissioner-role-split.sql.
+  is_head_commissioner boolean not null default false,
   created_at      timestamptz not null default now()
 );
 create index if not exists owners_team_id_idx on public.owners(team_id);
@@ -29,6 +33,53 @@ as $$
     false
   );
 $$;
+
+-- Helper: is the current user the HEAD commissioner? Gates only the
+-- trade-proposal privacy boundary; every other admin check uses
+-- is_commissioner() so co-commissioners keep full admin.
+create or replace function public.is_head_commissioner()
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select coalesce(
+    (select is_head_commissioner from public.owners where id = auth.uid()),
+    false
+  );
+$$;
+
+-- ---------------------------------------------------------------------------
+-- Protect the flag itself. owners_update_admin is `using (is_commissioner())`
+-- with no column restriction, so without this a CO-commissioner could simply
+-- PATCH their own owners row with {"is_head_commissioner": true} and re-grant
+-- themselves every private negotiation this migration just hid — defeating the
+-- whole split. Only an existing head commissioner (or a backend/service-role
+-- context, which has no auth.uid()) may change the flag, in either direction:
+-- demoting the head commissioner is an attack too.
+-- ---------------------------------------------------------------------------
+create or replace function public.guard_head_commissioner_flag()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if new.is_head_commissioner is distinct from old.is_head_commissioner
+     and auth.uid() is not null
+     and not public.is_head_commissioner() then
+    raise exception 'Only the head commissioner can change is_head_commissioner'
+      using errcode = 'insufficient_privilege';
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists owners_guard_head_flag on public.owners;
+create trigger owners_guard_head_flag
+  before update on public.owners
+  for each row execute function public.guard_head_commissioner_flag();
 
 -- Helper: what team_id does the current user own?
 create or replace function public.my_team_id()
@@ -361,7 +412,18 @@ drop policy if exists "al_delete_admin" on public.activity_log;
 
 create policy "al_select_all"
   on public.activity_log for select
-  using (auth.role() = 'authenticated');
+  using (
+    auth.role() = 'authenticated'
+    -- proposal_* payloads carry the deal contents of PENDING private
+    -- negotiations; restrict them to the two parties + head commissioner.
+    -- Every other event type stays league-wide visible.
+    and (
+      type not like 'proposal\_%'
+      or public.is_head_commissioner()
+      or actor_team_id  = public.my_team_id()
+      or target_team_id = public.my_team_id()
+    )
+  );
 
 create policy "al_insert_self"
   on public.activity_log for insert
@@ -505,7 +567,7 @@ drop policy if exists "tp_delete_admin"  on public.trade_proposals;
 create policy "tp_select_party"
   on public.trade_proposals for select
   using (
-    public.is_commissioner()
+    public.is_head_commissioner()
     or from_team_id = public.my_team_id()
     or to_team_id   = public.my_team_id()
   );
@@ -528,16 +590,20 @@ create policy "tp_insert_self"
 create policy "tp_update_party"
   on public.trade_proposals for update
   using (
-    public.is_commissioner()
+    public.is_head_commissioner()
     or from_team_id = public.my_team_id()
     or to_team_id   = public.my_team_id()
   )
   with check (
-    public.is_commissioner()
+    public.is_head_commissioner()
     or from_team_id = public.my_team_id()
     or to_team_id   = public.my_team_id()
   );
 
+-- DELETE stays with ALL commissioners: removing a stuck/abusive row is
+-- moderation, not visibility, and the spec keeps every other admin power with
+-- the co-commissioner. (They still can't SELECT third-party rows, so this is
+-- only reachable for a proposal they already know about.)
 create policy "tp_delete_admin"
   on public.trade_proposals for delete
   using (public.is_commissioner());
@@ -570,7 +636,7 @@ drop policy if exists "tpm_delete_admin" on public.trade_proposal_messages;
 create policy "tpm_select_party"
   on public.trade_proposal_messages for select
   using (
-    public.is_commissioner()
+    public.is_head_commissioner()
     or exists (
       select 1 from public.trade_proposals tp
       where tp.thread_id = trade_proposal_messages.thread_id
@@ -840,16 +906,216 @@ end $$;
 
 
 -- ============================================================================
+-- Server-side activity events + keeper-lock enforcement
+--   see migrations/2026-07-25-proposal-activity-events.sql
+--       migrations/2026-07-25-keeper-lock-enforcement.sql
+--
+-- The trade-proposal alert pipeline had no producer: nothing ever wrote a
+-- proposal_* row to activity_log, so instant trade alerts could never fire.
+-- These triggers write the events server-side (SECURITY DEFINER), so the
+-- client is never trusted with a cross-team activity insert and al_insert_self
+-- does not have to be loosened.
+-- ============================================================================
+
+create or replace function public.activity_asset_values(assets jsonb)
+returns jsonb
+language sql
+immutable
+as $$
+  select coalesce(
+    (select jsonb_agg(x->>'value') from jsonb_array_elements(coalesce(assets, '[]'::jsonb)) x),
+    '[]'::jsonb
+  );
+$$;
+
+create or replace function public.activity_truncate(txt text, lim int default 500)
+returns text
+language sql
+immutable
+as $$
+  select case
+    when txt is null then ''
+    when length(txt) > lim then left(txt, lim) || '…'
+    else txt
+  end;
+$$;
+
+create or replace function public.log_proposal_activity()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if tg_op = 'INSERT' then
+    insert into public.activity_log (type, actor_team_id, target_team_id, payload)
+    values (
+      case when new.parent_proposal_id is null then 'proposal_created'
+           else 'proposal_countered' end,
+      new.from_team_id,
+      new.to_team_id,
+      jsonb_build_object(
+        'proposal_id',    new.id,
+        'thread_id',      new.thread_id,
+        'notes',          public.activity_truncate(new.notes),
+        'team1',          new.from_team_id,
+        'team2',          new.to_team_id,
+        'team1_receives', public.activity_asset_values(new.team1_receives),
+        'team2_receives', public.activity_asset_values(new.team2_receives)
+      )
+    );
+  -- NOTE: 'accepted' is deliberately NOT here. acceptThreadProposal() already
+  -- logs a league-wide trade_recorded event carrying the same deal, so emitting
+  -- proposal_accepted too would double-notify the proposer (two emails + two
+  -- pushes for one click). It would also strand a phantom event when
+  -- acceptProposalAsync rolls the status back to 'pending' after a failed
+  -- trades insert — the revert writes no compensating row.
+  elsif tg_op = 'UPDATE'
+        and new.status is distinct from old.status
+        and new.status in ('rejected', 'withdrawn') then
+    insert into public.activity_log (type, actor_team_id, target_team_id, payload)
+    values (
+      'proposal_' || new.status,
+      case when new.status = 'withdrawn' then new.from_team_id else new.to_team_id end,
+      case when new.status = 'withdrawn' then new.to_team_id   else new.from_team_id end,
+      jsonb_build_object(
+        'proposal_id',    new.id,
+        'thread_id',      new.thread_id,
+        'team1',          new.from_team_id,
+        'team2',          new.to_team_id,
+        'team1_receives', public.activity_asset_values(new.team1_receives),
+        'team2_receives', public.activity_asset_values(new.team2_receives)
+      )
+    );
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists tp_log_activity on public.trade_proposals;
+create trigger tp_log_activity
+  after insert or update on public.trade_proposals
+  for each row execute function public.log_proposal_activity();
+
+create or replace function public.log_proposal_message_activity()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  other_team text;
+begin
+  select case when p.from_team_id = new.from_team_id then p.to_team_id
+              else p.from_team_id end
+    into other_team
+    from public.trade_proposals p
+   where p.thread_id = new.thread_id
+   order by p.created_at desc
+   limit 1;
+
+  insert into public.activity_log (type, actor_team_id, target_team_id, payload)
+  values ('proposal_message_sent', new.from_team_id, other_team,
+          jsonb_build_object('thread_id', new.thread_id,
+                             'preview', public.activity_truncate(new.body, 200)));
+  return new;
+end;
+$$;
+
+drop trigger if exists tpm_log_activity on public.trade_proposal_messages;
+create trigger tpm_log_activity
+  after insert on public.trade_proposal_messages
+  for each row execute function public.log_proposal_message_activity();
+
+-- Board posts were structurally unalertable (own table, never touched
+-- activity_log). target_team_id stays NULL — league-wide, not directed.
+create or replace function public.log_board_message_activity()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  insert into public.activity_log (type, actor_team_id, target_team_id, payload)
+  values ('message_posted', new.team_id, null,
+          jsonb_build_object('message_id', new.id,
+                             'preview', public.activity_truncate(new.body, 200)));
+  return new;
+end;
+$$;
+
+drop trigger if exists lm_log_activity on public.league_messages;
+create trigger lm_log_activity
+  after insert on public.league_messages
+  for each row execute function public.log_board_message_activity();
+
+-- Keeper lock: previously enforced only in the browser (disabled checkboxes),
+-- so an owner with the anon key could still write past the deadline.
+create or replace function public.keepers_locked()
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select coalesce(
+    (select (state->>'locked')::boolean
+       from public.league_state where key = 'keeper_deadline'),
+    false
+  );
+$$;
+
+create or replace function public.enforce_keeper_lock()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  row_out public.keeper_selections;
+begin
+  row_out := case when tg_op = 'DELETE' then old else new end;
+  -- Backend contexts (service_role jobs, the RLS negative test's cleanup) have
+  -- no auth.uid(). The keeper lock is a rule for MANAGERS; authorization for
+  -- these writes is already handled by ks_write_owner, which denies an
+  -- unauthenticated client outright. Don't let the lock break maintenance.
+  if auth.uid() is null then
+    return row_out;
+  end if;
+  if public.is_commissioner() then
+    return row_out;
+  end if;
+  if public.keepers_locked() then
+    raise exception 'Keeper selections are locked by the commissioner'
+      using errcode = 'check_violation';
+  end if;
+  return row_out;
+end;
+$$;
+
+drop trigger if exists ks_enforce_lock on public.keeper_selections;
+create trigger ks_enforce_lock
+  before insert or update or delete on public.keeper_selections
+  for each row execute function public.enforce_keeper_lock();
+
+grant execute on function public.is_head_commissioner() to authenticated;
+grant execute on function public.keepers_locked() to authenticated;
+
+
+-- ============================================================================
 -- BOOTSTRAP — run AFTER Jeff has logged in once via magic link.
 -- This claims 'jeff' as Jeff's team and makes him a commissioner.
 -- ============================================================================
 --
--- insert into public.owners (id, team_id, is_commissioner)
--- select id, 'jeff', true from auth.users where email = 'jwarshafsky@gmail.com'
+-- insert into public.owners (id, team_id, is_commissioner, is_head_commissioner)
+-- select id, 'jeff', true, true from auth.users where email = 'jwarshafsky@gmail.com'
 -- on conflict (id) do update
---   set team_id = excluded.team_id, is_commissioner = excluded.is_commissioner;
+--   set team_id = excluded.team_id, is_commissioner = excluded.is_commissioner,
+--       is_head_commissioner = excluded.is_head_commissioner;
 --
--- Repeat for Dave once you have his email + first login:
+-- Repeat for Dave once you have his email + first login. Note he is a
+-- CO-commissioner: is_head_commissioner stays false, which is the only thing
+-- keeping other teams' pending trade negotiations out of his view.
 --
 -- insert into public.owners (id, team_id, is_commissioner)
 -- select id, 'dave', true from auth.users where email = 'DAVE_EMAIL_HERE'

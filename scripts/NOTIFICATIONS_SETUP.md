@@ -27,7 +27,7 @@ existing `daily_report.py`), nothing else to do. Otherwise:
 ## 3. Generate VAPID keys for Web Push (one time only)
 
 ```bash
-/usr/bin/python3 -m pip install --user py_vapid cryptography pywebpush
+/usr/bin/python3 -m pip install --user py_vapid cryptography 'pywebpush<2'
 python3 scripts/generate_vapid.py
 ```
 
@@ -95,7 +95,7 @@ Now Jeff's daily digest contains every league event regardless of category prefs
 
 ## Troubleshooting
 
-- `pywebpush not installed`: `pip3 install --user pywebpush`
+- `pywebpush not installed`: `pip3 install --user 'pywebpush<2'` (the pin matters — 2.x breaks `_push.py`)
 - `VAPID_PRIVATE_KEY not set`: re-run step 3 and append to `scripts/.env`.
 - Notifications work locally but not from cron: check `/tmp/league-instant.log`.
 - `permission denied` from Notification API on iOS: PWAs on iOS require the

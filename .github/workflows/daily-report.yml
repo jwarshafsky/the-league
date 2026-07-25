@@ -25,7 +25,7 @@ jobs:
           python-version: '3.12'
 
       - name: Install Python dependencies
-        run: pip install --quiet pywebpush cryptography py_vapid
+        run: pip install --quiet "pywebpush<2" cryptography py_vapid   # pywebpush 2.x rejects the Vapid01 instance _push.py passes
 
       - name: Send daily report
         env:

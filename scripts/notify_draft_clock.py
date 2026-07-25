@@ -14,6 +14,7 @@ import json
 import os
 import re
 import sys
+import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
 
@@ -564,9 +565,12 @@ def main():
             continue
         marker.setdefault(team_id, {})[state_key] = pick["key"]
 
-    # Prune dead push subs.
+    # Prune dead push subs. (urllib.parse is imported at module scope — a
+    # function-local `import urllib.parse` here used to make `urllib` a LOCAL
+    # name for the whole of main(), so every EARLIER urllib.request call in
+    # this function raised UnboundLocalError. That silently killed the
+    # minors_pick_auto_skipped activity_log insert on every auto-skip.)
     if push_failed_endpoints:
-        import urllib.parse
         for endpoint in set(push_failed_endpoints):
             try:
                 url = f"{SUPABASE_URL}/rest/v1/push_subscriptions?endpoint=eq.{urllib.parse.quote(endpoint, safe='')}"

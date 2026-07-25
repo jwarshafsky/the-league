@@ -3,7 +3,8 @@
 # caller's responsibility — we surface failures so they can decide.
 #
 # Install (one-time, runs in user-site so no sudo needed):
-#   /usr/bin/python3 -m pip install --user pywebpush
+#   /usr/bin/python3 -m pip install --user 'pywebpush<2'
+#   (2.x removed support for passing a Vapid01 instance to webpush(); see below.)
 
 import json
 import sys
@@ -46,7 +47,7 @@ def send_push(subscription, payload, vapid_private_key, vapid_subject):
        vapid_private_key: PEM string of the VAPID EC private key.
        vapid_subject: 'mailto:you@example.com' identifying the sender."""
     if webpush is None:
-        raise RuntimeError("pywebpush not installed — run: pip3 install --user pywebpush")
+        raise RuntimeError("pywebpush not installed — run: pip3 install --user 'pywebpush<2'")
     return webpush(
         subscription_info=subscription,
         data=json.dumps(payload),

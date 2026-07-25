@@ -91,6 +91,11 @@ def main():
     emails_by_uid = fetch_emails_by_user_id(key)
     all_prefs = fetch_notify_prefs(key)
     emails_by_team = build_team_addresses(owners, all_prefs, emails_by_uid)
+    # Only the head commissioner may see every team's private negotiations
+    # (mirrors tp_select_party / al_select_all). Empty set if the column isn't
+    # deployed, which fails closed.
+    head_commish_team_ids = {o["team_id"] for o in owners
+                             if o.get("is_head_commissioner") and o.get("team_id")}
 
     # ET label so "week ending" matches recipients' calendars (cron fires at
     # 01:07 UTC Monday = 9:07 PM ET Sunday).
@@ -104,7 +109,9 @@ def main():
         # Weekly digest pulls in only "weekly" (and "instant"/"daily" recap
         # for receive_all). For non-receive_all teams, target_frequency=weekly
         # narrows the section list precisely.
-        sections = build_sections(grouped, prefs, receive_all=receive_all, target_frequency="weekly")
+        sections = build_sections(grouped, prefs, receive_all=receive_all, target_frequency="weekly",
+                                  team_id=team_id,
+                                  is_head_commissioner=team_id in head_commish_team_ids)
         if not sections:
             continue
         title = "The League — weekly digest"

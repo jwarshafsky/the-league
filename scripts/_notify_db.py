@@ -35,7 +35,16 @@ def load_env():
                 if not line or line.startswith("#") or "=" not in line:
                     continue
                 k, v = line.split("=", 1)
-                env[k.strip()] = v.strip()
+                # Strip one layer of matching quotes. NOTIFICATIONS_SETUP.md step 3 —
+                # and generate_vapid.py's own printed output — tell you to store
+                # VAPID_PRIVATE_KEY / VAPID_SUBJECT quoted. The quotes used to survive
+                # into the value, so Vapid01.from_pem() died with an ASN.1 parse error
+                # and py_vapid rejected the mailto: subject. GitHub Actions injects
+                # secrets unquoted, so only cron / local runs ever hit this.
+                _v = v.strip()
+                if len(_v) >= 2 and _v[0] == _v[-1] and _v[0] in ("'", '"'):
+                    _v = _v[1:-1]
+                env[k.strip()] = _v
     for k, v in os.environ.items():
         env.setdefault(k, v)
     if not env.get("SUPABASE_SERVICE_ROLE_KEY"):
@@ -87,7 +96,15 @@ def fetch_activity_since(key, since_iso=None, since_id=None, limit=500):
 
 
 def fetch_all_owners(key):
-    return http_get(f"{SUPABASE_URL}/rest/v1/owners?select=id,team_id,is_commissioner", key)
+    # is_head_commissioner gates who may receive other teams' private trade
+    # negotiations. Fall back to the narrower select if the column isn't
+    # deployed yet — callers treat a missing flag as "not head commissioner",
+    # which fails closed.
+    cols = "id,team_id,is_commissioner,is_head_commissioner"
+    try:
+        return http_get(f"{SUPABASE_URL}/rest/v1/owners?select={cols}", key)
+    except Exception:
+        return http_get(f"{SUPABASE_URL}/rest/v1/owners?select=id,team_id,is_commissioner", key)
 
 
 def fetch_emails_by_user_id(key):
@@ -214,11 +231,27 @@ def event_category(activity_type):
     if t in ("player_sent_down",): return "send_down"
     if t in ("minors_pick_made", "minors_pick_passed", "minors_pick_auto_skipped", "rule5_pick_made", "rule5_pick_auto_skipped"):
         return "draft_picks"
+    if t in ("message_posted",): return "board_post"
     if t in ("vote_initiated", "vote_ended"):
         return "league_vote"
     if t == "vote_result_broadcast":
         return "vote_result"
     return None
+
+
+def _deal_text(p):
+    """" — Jeff gets Sale; Saxton gets Reynolds, Yelich" for a proposal payload.
+
+    Proposal payloads (written by the trade_proposals trigger) carry asset
+    VALUES as plain strings, unlike trade_recorded whose payload holds full
+    asset objects. Returns "" for payloads with no asset lists.
+    """
+    r1 = ", ".join(str(x) for x in (p.get("team1_receives") or []))
+    r2 = ", ".join(str(x) for x in (p.get("team2_receives") or []))
+    if not r1 and not r2:
+        return ""
+    t1, t2 = team_name(p.get("team1")), team_name(p.get("team2"))
+    return f" — <strong>{t1}</strong> gets {r1 or '\u2014'}; <strong>{t2}</strong> gets {r2 or '\u2014'}"
 
 
 def describe_activity(a):
@@ -249,11 +282,23 @@ def describe_activity(a):
     if t == "minors_pick_auto_skipped": return f"{target}'s pick auto-skipped at R{p.get('round')}.{p.get('pick_in_round')}"
     if t == "rule5_pick_made":      return f"{target} Rule 5–picked {name}"
     if t == "rule5_pick_auto_skipped": return f"{target}'s Rule 5 pick auto-skipped"
-    if t == "proposal_created":     return f"{actor} sent a trade proposal to {target}"
-    if t == "proposal_accepted":    return f"{actor} accepted {target}'s proposal"
-    if t == "proposal_rejected":    return f"{actor} rejected a proposal from {target}"
-    if t == "proposal_withdrawn":   return f"{actor} withdrew a proposal"
-    if t == "proposal_countered":   return f"{actor} countered a proposal"
+    if t.startswith("proposal_") and t != "proposal_message_sent":
+        # The trade_proposals trigger flattens the asset arrays to plain player
+        # names, so these render the actual deal. Previously every proposal
+        # alert was a bare "X sent a trade proposal to Y" with no contents,
+        # which forced a trip into the app just to find out if you cared.
+        deal = _deal_text(p)
+        if t == "proposal_created":   return f"{actor} sent a trade proposal to {target}{deal}"
+        if t == "proposal_countered": return f"{actor} countered {target}'s proposal{deal}"
+        if t == "proposal_accepted":  return f"{actor} accepted {target}'s proposal{deal}"
+        if t == "proposal_rejected":  return f"{actor} rejected a proposal from {target}"
+        if t == "proposal_withdrawn": return f"{actor} withdrew a proposal to {target}"
+    if t == "proposal_message_sent":
+        preview = p.get("preview") or ""
+        return f"{actor} sent a message about a trade" + (f": \u201c{preview}\u201d" if preview else "")
+    if t == "message_posted":
+        preview = p.get("preview") or ""
+        return f"{actor} posted to the message board" + (f": \u201c{preview}\u201d" if preview else "")
     if t == "vote_initiated":       return f"League vote initiated: {p.get('title') or '?'}"
     if t == "vote_ended":
         title = p.get("title") or "vote"

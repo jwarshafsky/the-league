@@ -52,7 +52,16 @@ def load_env():
             if not line or line.startswith("#") or "=" not in line:
                 continue
             k, v = line.split("=", 1)
-            env[k.strip()] = v.strip()
+            # Strip one layer of matching quotes. NOTIFICATIONS_SETUP.md step 3 —
+            # and generate_vapid.py's own printed output — tell you to store
+            # VAPID_PRIVATE_KEY / VAPID_SUBJECT quoted. The quotes used to survive
+            # into the value, so Vapid01.from_pem() died with an ASN.1 parse error
+            # and py_vapid rejected the mailto: subject. GitHub Actions injects
+            # secrets unquoted, so only cron / local runs ever hit this.
+            _v = v.strip()
+            if len(_v) >= 2 and _v[0] == _v[-1] and _v[0] in ("'", '"'):
+                _v = _v[1:-1]
+            env[k.strip()] = _v
     return env
 
 

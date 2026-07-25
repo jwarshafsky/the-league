@@ -69,6 +69,7 @@ SECTION_ORDER = [
     ("callup",         "Call-ups",             "?tab=rosters",          "callup"),
     ("send_down",      "Send-downs",           "?tab=rosters",          "send-down"),
     ("draft_picks",    "Draft Picks",          "?tab=draft",            "draft"),
+    ("board_post",     "Message Board",        "?tab=activity",         "message"),
 ]
 
 
@@ -81,17 +82,38 @@ def group_by_category(activity):
     return out
 
 
-def build_sections(grouped, prefs, *, receive_all, target_frequency="daily"):
+# Categories whose payloads describe a PENDING private negotiation between two
+# teams. `grouped` is built once from all activity and reused for every
+# recipient, so these must be filtered to the parties or a digest would hand the
+# whole league the contents of everyone else's trade talks. (trade_completed is
+# deliberately absent — recorded trades are public league news.)
+PRIVATE_CATEGORIES = {"trade_proposal", "trade_update", "trade_message"}
+
+
+def _visible_to(a, team_id):
+    return a.get("actor_team_id") == team_id or a.get("target_team_id") == team_id
+
+
+def build_sections(grouped, prefs, *, receive_all, target_frequency="daily", team_id=None,
+                   is_head_commissioner=False):
     """For each category in SECTION_ORDER, include events if:
         - receive_all is True, OR
         - the team's prefs[cat].email == target_frequency
     The 'daily' digest also folds in 'instant' events from the same window so
     you get a recap of what already pinged you.
+
+    team_id scopes the private trade categories to that team; pass it always.
+    receive_all does NOT widen this — "every league event" means every event
+    you're entitled to see, not other people's private negotiations. The head
+    commissioner is the one role entitled to all of them (matching
+    tp_select_party / al_select_all), so they are not scoped.
     """
     sections = []
     folded = {"instant", target_frequency}  # daily digest also recaps instant
     for cat_key, title, url_suffix, _tag in SECTION_ORDER:
         items = grouped.get(cat_key) or []
+        if cat_key in PRIVATE_CATEGORIES and not is_head_commissioner:
+            items = [a for a in items if team_id and _visible_to(a, team_id)]
         if not items:
             continue
         if not receive_all:
@@ -168,6 +190,11 @@ def main():
     emails_by_uid = fetch_emails_by_user_id(key)
     all_prefs = fetch_notify_prefs(key)
     emails_by_team = build_team_addresses(owners, all_prefs, emails_by_uid)
+    # Only the head commissioner may see every team's private negotiations
+    # (mirrors tp_select_party / al_select_all). Empty set if the column isn't
+    # deployed, which fails closed.
+    head_commish_team_ids = {o["team_id"] for o in owners
+                             if o.get("is_head_commissioner") and o.get("team_id")}
 
     # ET label so the digest matches recipients' calendars (cron fires at 01:07
     # UTC = 9:07 PM ET the prior day; using runner-local TZ would show the next
@@ -180,7 +207,9 @@ def main():
     for team_id in sorted(emails_by_team):
         receive_all = bool((all_prefs.get(team_id) or {}).get("receive_all"))
         prefs = (all_prefs.get(team_id) or {}).get("prefs") or {}
-        sections = build_sections(grouped, prefs, receive_all=receive_all, target_frequency="daily")
+        sections = build_sections(grouped, prefs, receive_all=receive_all, target_frequency="daily",
+                                  team_id=team_id,
+                                  is_head_commissioner=team_id in head_commish_team_ids)
         if not sections:
             continue  # nothing to send this team today
         title = f"The League — daily digest"

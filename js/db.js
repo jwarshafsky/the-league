@@ -170,8 +170,14 @@ function dbThreadHasUnread(thread) {
   for (const p of thread.proposals) {
     if (p.status === "pending" && p.to_team_id === myTeam && new Date(p.created_at).getTime() > lastRead) return true;
   }
-  for (const m of thread.messages) {
-    if (m.from_team_id !== myTeam && new Date(m.created_at).getTime() > lastRead) return true;
+  // Same rule as dbGetUnreadCounts: only chatter on a LIVE negotiation counts,
+  // so the thread's "new" dot can never contradict the nav badge.
+  const latest = thread.latestProposal
+    || (thread.proposals.length ? thread.proposals[thread.proposals.length - 1] : null);
+  if (latest && latest.status === "pending") {
+    for (const m of thread.messages) {
+      if (m.from_team_id !== myTeam && new Date(m.created_at).getTime() > lastRead) return true;
+    }
   }
   return false;
 }
@@ -191,7 +197,13 @@ async function _fetchAll() {
     supabaseClient.from("keeper_selections").select("*"),
     supabaseClient.from("league_state").select("*"),
     supabaseClient.from("callup_overrides").select("*"),
-    supabaseClient.from("activity_log").select("*").order("created_at", { ascending: false }).limit(200),
+    // Chat + board events are excluded: they exist for the email digests (which
+    // read activity_log server-side), but at conversational volume they would
+    // flush real, undoable events out of this 200-row window — the Activity
+    // feed and the commissioner's undo both only see what's cached here.
+    supabaseClient.from("activity_log").select("*")
+      .not("type", "in", '("proposal_message_sent","message_posted")')
+      .order("created_at", { ascending: false }).limit(200),
     supabaseClient.from("trade_proposals").select("*").order("created_at", { ascending: false }),
     supabaseClient.from("trade_proposal_messages").select("*").order("created_at", { ascending: true }),
     supabaseClient.from("roster_moves").select("*").order("at", { ascending: true }),
@@ -849,8 +861,14 @@ function dbGetUnreadCounts() {
     for (const p of t.proposals) {
       if (p.status === "pending" && p.to_team_id === myTeam && new Date(p.created_at).getTime() > lastRead) proposals += 1;
     }
-    for (const m of t.messages) {
-      if (m.from_team_id !== myTeam && new Date(m.created_at).getTime() > lastRead) messages += 1;
+    // Only chatter on a LIVE negotiation is actionable. Counting messages from
+    // settled threads (accepted / rejected / withdrawn) made the badge disagree
+    // with what the inbox actually showed — you'd see "3" and open it to find
+    // nothing to do.
+    if (t.latestProposal && t.latestProposal.status === "pending") {
+      for (const m of t.messages) {
+        if (m.from_team_id !== myTeam && new Date(m.created_at).getTime() > lastRead) messages += 1;
+      }
     }
   }
   return { proposals, messages, total: proposals + messages };
@@ -886,7 +904,10 @@ async function logActivityAsync(type, payload, opts) {
 
 async function addTradeAsync(trade) {
   const tempId = "temp-" + Math.random().toString(36).slice(2);
-  _cache.trades.push({ ...trade, _id: tempId });
+  // createdAt matters: getMajorTradeOverlay() sorts the trade log chronologically
+  // and lets the last trade win, so an unstamped optimistic row would sort to
+  // the epoch and let an OLD trade override this one for a twice-traded player.
+  _cache.trades.push({ createdAt: new Date().toISOString(), ...trade, _id: tempId });
   try {
     const { data, error } = await supabaseClient.from("trades").insert({
       date: trade.date,
