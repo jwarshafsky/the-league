@@ -30,7 +30,7 @@ ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 ENV_FILE = os.path.join(ROOT, "scripts", ".env")
 SUPABASE_URL = "https://fbllfkrtjsihrkwnbmlw.supabase.co"
 SUPABASE_ANON_KEY = "sb_publishable_aRh0MmQKrMCr8YnTwv9xIg_1F08WXf2"
-APP_URL = "https://jwarshafsky.github.io/the-league/"
+APP_URL = "https://league.jwarshafsky.com/"
 
 # Canonical 12-team list (matches LEAGUE_DATA.teams in js/data.js and
 # claim_invited_team's known_teams in supabase/schema.sql). Validating here

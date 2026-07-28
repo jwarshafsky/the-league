@@ -93,9 +93,9 @@ def auth_magic_link_sample():
     with open(html_path) as f:
         tmpl = f.read()
     sample = (tmpl
-        .replace("{{ .ConfirmationURL }}", "https://jwarshafsky.github.io/the-league/?token=sample-12345")
+        .replace("{{ .ConfirmationURL }}", "https://league.jwarshafsky.com/?token=sample-12345")
         .replace("{{ .Token }}", "12345678")
-        .replace("{{ .SiteURL }}", "https://jwarshafsky.github.io/the-league/")
+        .replace("{{ .SiteURL }}", "https://league.jwarshafsky.com/")
     )
     return sample, "Sample magic-link email — sign-in to The League — code 12345678"
 
@@ -105,9 +105,9 @@ def auth_invite_sample():
     with open(html_path) as f:
         tmpl = f.read()
     sample = (tmpl
-        .replace("{{ .ConfirmationURL }}", "https://jwarshafsky.github.io/the-league/?invite=sample")
+        .replace("{{ .ConfirmationURL }}", "https://league.jwarshafsky.com/?invite=sample")
         .replace("{{ .Email }}", "newteam@example.com")
-        .replace("{{ .SiteURL }}", "https://jwarshafsky.github.io/the-league/")
+        .replace("{{ .SiteURL }}", "https://league.jwarshafsky.com/")
     )
     return sample, "Sample invite email — welcome to The League"
 

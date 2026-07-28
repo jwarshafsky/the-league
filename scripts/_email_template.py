@@ -13,8 +13,8 @@
 from html import escape
 
 
-APP_URL = "https://jwarshafsky.github.io/the-league/"
-LOGO_URL = "https://jwarshafsky.github.io/the-league/icons/icon-192.png"
+APP_URL = "https://league.jwarshafsky.com/"
+LOGO_URL = "https://league.jwarshafsky.com/icons/icon-192.png"
 
 ACCENT_DARK = "#1e40af"
 ACCENT_DEEP = "#1e3a5f"

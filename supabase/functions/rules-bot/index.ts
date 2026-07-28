@@ -17,7 +17,10 @@
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.74.0";
 
+// First entry doubles as the fallback for an unrecognised origin (see below),
+// so the canonical domain leads.
 const ALLOWED_ORIGINS = [
+  "https://league.jwarshafsky.com",
   "https://jwarshafsky.github.io",
   "http://localhost:8090",
   "http://127.0.0.1:8090",

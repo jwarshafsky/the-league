@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 ENV_FILE = os.path.join(ROOT, "scripts", ".env")
 SUPABASE_URL = "https://fbllfkrtjsihrkwnbmlw.supabase.co"
-APP_URL = "https://jwarshafsky.github.io/the-league/"
+APP_URL = "https://league.jwarshafsky.com/"
 
 TEAM_NAMES = {
     "jeff": "Jeff", "matt": "Matt", "jesse": "Jesse", "sam": "Sam",

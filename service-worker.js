@@ -11,7 +11,14 @@
 // Bump CACHE_VERSION when changing the SW logic itself (not for app code —
 // that's handled by ?v=N at the script tags).
 
-const CACHE_VERSION = "the-league-v8";
+const CACHE_VERSION = "the-league-v9";
+
+// Resolve against the service worker's own location rather than hardcoding
+// "/the-league/", so the app works both at a Pages subpath and at the root of
+// its own domain. The hardcoded form silently broke notification icons and
+// click targets the moment the app moved to league.jwarshafsky.com.
+const BASE_URL = new URL("./", self.location).href;      // e.g. https://league.jwarshafsky.com/
+const BASE_PATH = new URL("./", self.location).pathname; // e.g. "/" or "/the-league/"
 
 // Data snapshots (ESPN rosters, player stats) are regenerated out-of-band by
 // the sync cron every ~15 min but keep a STATIC ?v=N in index.html, so the
@@ -77,7 +84,9 @@ self.addEventListener("activate", (event) => {
 // --- Web Push ---
 //
 // Server (scripts/notify_*.py) sends JSON payloads with shape:
-//   { title: "...", body: "...", url: "/the-league/?tab=trades&sub=inbox", tag: "..." }
+//   { title: "...", body: "...", url: "https://league.jwarshafsky.com/?tab=trades&sub=inbox", tag: "..." }
+// The url is absolute (built from APP_URL in scripts/_notify_db.py); an
+// off-origin one is dropped to the app root by _safeTargetUrl below.
 // `tag` lets a newer notification of the same kind replace an older one.
 
 self.addEventListener("push", (event) => {
@@ -86,9 +95,9 @@ self.addEventListener("push", (event) => {
   const title = data.title || "The League";
   const options = {
     body: data.body || "",
-    icon: "/the-league/icons/icon-192.png",
-    badge: "/the-league/icons/icon-64.png",
-    data: { url: data.url || "/the-league/" },
+    icon: BASE_URL + "icons/icon-192.png",
+    badge: BASE_URL + "icons/icon-64.png",
+    data: { url: data.url || BASE_URL },
     tag: data.tag,
     renotify: !!data.tag,
   };
@@ -98,13 +107,14 @@ self.addEventListener("push", (event) => {
 // Only follow URLs that stay on this origin (defense-in-depth against a
 // malformed/spoofed push payload pointing at an off-site URL).
 function _safeTargetUrl(raw) {
-  const fallback = "/the-league/";
-  if (!raw || typeof raw !== "string") return fallback;
+  // An off-origin URL also covers a payload still addressed to the old Pages
+  // domain: rather than 404 on a stale path, fall back to the app root.
+  if (!raw || typeof raw !== "string") return BASE_PATH;
   try {
     const u = new URL(raw, self.location.origin);
-    return u.origin === self.location.origin ? u.pathname + u.search + u.hash : fallback;
+    return u.origin === self.location.origin ? u.pathname + u.search + u.hash : BASE_PATH;
   } catch {
-    return fallback;
+    return BASE_PATH;
   }
 }
 
@@ -115,7 +125,7 @@ self.addEventListener("notificationclick", (event) => {
     const allClients = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
     // Re-use an open The League tab if one exists.
     for (const c of allClients) {
-      if (c.url.includes("/the-league") && "focus" in c) {
+      if (c.url.startsWith(BASE_URL) && "focus" in c) {
         await c.focus();
         if ("navigate" in c) c.navigate(targetUrl).catch(() => {});
         return;
