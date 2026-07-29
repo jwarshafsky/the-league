@@ -207,13 +207,22 @@ def teardown(*user_ids):
     as_admin("DELETE", f"/rest/v1/roster_moves?player_name=eq.{SENTINEL}")
     as_admin("DELETE", f"/rest/v1/league_votes?vote_id=eq.{SENTINEL_VOTE_ID}")
     as_admin("DELETE", f"/rest/v1/league_messages?body=eq.{SENTINEL}")
-    as_admin("DELETE", f"/rest/v1/activity_log?target_team_id=eq.{SENTINEL}")
     as_admin("DELETE", f"/rest/v1/notification_prefs?team_id=eq.{OTHER_TEAM}")
     as_admin("DELETE", f"/rest/v1/push_subscriptions?endpoint=eq.https://example.com/{SENTINEL}")
     as_admin("DELETE", f"/rest/v1/draft_events?type=eq.{SENTINEL}")
     # trade_proposal_messages first (FK to trade_proposals), then the proposals.
     as_admin("DELETE", f"/rest/v1/trade_proposal_messages?body=eq.{SENTINEL}")
     as_admin("DELETE", f"/rest/v1/trade_proposals?notes=eq.{SENTINEL}")
+    # activity_log LAST: the fixtures above are real inserts, so the table's
+    # triggers mint activity rows for them (and may mint more on DELETE).
+    # Purge by the fake TEAM IDs, not by SENTINEL — trigger-written rows carry
+    # the team ids, never the sentinel string, so a `target_team_id=eq.SENTINEL`
+    # filter matched nothing and leaked `proposal_created` /
+    # `proposal_message_sent` rows into the nightly digest as actor_team_id=jeff.
+    # Both sides are scoped to fake teams; a real team id is never in this set.
+    _fake_teams = f"({SENTINEL},{OTHER_TEAM},{ATTACKER_TEAM})"
+    as_admin("DELETE", f"/rest/v1/activity_log?target_team_id=in.{_fake_teams}")
+    as_admin("DELETE", f"/rest/v1/activity_log?actor_team_id=in.{_fake_teams}")
     for uid in user_ids:
         if uid:
             as_admin("DELETE", f"/rest/v1/owners?id=eq.{uid}")
