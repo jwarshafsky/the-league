@@ -82,9 +82,39 @@ def http_patch(url, key, body): return http_request("PATCH", url, key, body)
 def team_name(t): return TEAM_NAMES.get(t, t or "?")
 
 
+# scripts/test_rls_negative.py plants REAL trade proposals / messages between
+# fake teams to prove RLS blocks third-party reads. Those inserts fire the
+# ordinary triggers, so they mint activity_log rows carrying a fake team id --
+# and until the teardown fix, a stale one reached the nightly digest as though
+# it were league news. teardown() now purges them, but it runs seconds after
+# the insert while notify_instant.py polls every minute, so a run can still be
+# caught mid-flight. Notifications are the only consumer that must never see a
+# fixture, so the guard lives here, on the one fetch all three notifiers share.
+TEST_TEAM_PREFIX = "__rls_negtest"
+
+# Applied SERVER-side, deliberately. Filtering the returned list in Python would
+# shrink a full page and trip fetch_activity_paged()'s `len(page) < PAGE_SIZE`
+# stop condition in weekly_report.py, silently truncating real activity. Keeping
+# it in the query means `limit` counts post-filter rows.
+#
+# Each column needs the `is.null` arm: both are nullable (schema.sql), and
+# `NULL NOT LIKE x` is NULL, not true -- a bare not.like would drop every
+# null-team row. Note `_` is a LIKE single-char wildcard, so this is marginally
+# broader than a literal prefix; no real team id can match `..rls_negtest%`.
+_NOT_TEST_FIXTURE = (
+    "and=("
+    f"or(actor_team_id.is.null,actor_team_id.not.like.{TEST_TEAM_PREFIX}*),"
+    f"or(target_team_id.is.null,target_team_id.not.like.{TEST_TEAM_PREFIX}*)"
+    ")"
+)
+
+
 def fetch_activity_since(key, since_iso=None, since_id=None, limit=500):
-    """Fetch activity_log rows newer than the given timestamp or id."""
-    parts = [f"select=*", f"order=created_at.asc", f"limit={limit}"]
+    """Fetch activity_log rows newer than the given timestamp or id.
+
+    Excludes RLS-test fixture rows — see _NOT_TEST_FIXTURE."""
+    parts = [f"select=*", f"order=created_at.asc", f"limit={limit}",
+             _NOT_TEST_FIXTURE]
     if since_iso:
         parts.append(f"created_at=gte.{urllib.parse.quote(since_iso)}")
     if since_id:
