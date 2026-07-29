@@ -14,6 +14,7 @@ ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 ENV_FILE = os.path.join(ROOT, "scripts", ".env")
 SUPABASE_URL = "https://fbllfkrtjsihrkwnbmlw.supabase.co"
 APP_URL = "https://league.jwarshafsky.com/"
+EM_DASH = "\u2014"
 
 TEAM_NAMES = {
     "jeff": "Jeff", "matt": "Matt", "jesse": "Jesse", "sam": "Sam",
@@ -281,7 +282,13 @@ def _deal_text(p):
     if not r1 and not r2:
         return ""
     t1, t2 = team_name(p.get("team1")), team_name(p.get("team2"))
-    return f" — <strong>{t1}</strong> gets {r1 or '\u2014'}; <strong>{t2}</strong> gets {r2 or '\u2014'}"
+    # EM_DASH via a name, not an inline escape: a backslash inside an f-string
+    # EXPRESSION is a syntax error before 3.12 (PEP 701 lifted it). Being a
+    # syntax error it fires at IMPORT, so every script touching this module died
+    # with an opaque parse error on an older interpreter instead of a legible
+    # "needs 3.12". Keep escapes outside the braces.
+    return (f" — <strong>{t1}</strong> gets {r1 or EM_DASH}; "
+            f"<strong>{t2}</strong> gets {r2 or EM_DASH}")
 
 
 def describe_activity(a):
