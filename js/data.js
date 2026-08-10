@@ -135,7 +135,6 @@ const LEAGUE_DATA = {
         { name: "Rece Hinds", yearAcquired: 2026, careerStat: 0, statType: "AB" },
         { name: "Jett Williams", yearAcquired: 2024, careerStat: 0, statType: "AB" },
         { name: "Charlie Condon", yearAcquired: 2024, careerStat: 0, statType: "AB" },
-        { name: "Grant Taylor", yearAcquired: 2025, careerStat: 0, statType: "IP" },
         { name: "Spencer Jones", yearAcquired: 2024, careerStat: 0, statType: "AB" },
         { name: "Jaison Chourio", yearAcquired: 2025, careerStat: 0, statType: "AB" },
         { name: "Jonah Tong", yearAcquired: 2026, careerStat: 0, statType: "IP" },
@@ -268,6 +267,7 @@ const LEAGUE_DATA = {
         { name: "Chase Dollander", yearAcquired: 2025, careerStat: 0, statType: "IP" }
       ],
       minors: [
+        { name: "Grant Taylor", yearAcquired: 2025, careerStat: 0, statType: "IP" },
         { name: "Zyhir Hope", yearAcquired: 2025, careerStat: 0, statType: "AB" },
         { name: "Aidan Miller", yearAcquired: 2025, careerStat: 0, statType: "AB" },
         { name: "Tyson Lewis", yearAcquired: 2026, careerStat: 0, statType: "IP" },
