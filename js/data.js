@@ -31,14 +31,11 @@ const LEAGUE_DATA = {
         { name: "Alan Roden", yearAcquired: 2025, careerStat: 0, statType: "AB" }
       ],
       minors: [
-        { name: "Roch Cholowsky", yearAcquired: 2026, careerStat: 0, statType: "AB" },
         { name: "Dalton Rushing", yearAcquired: 2025, careerStat: 0, statType: "AB" },
         { name: "Ryan Sloan", yearAcquired: 2026, careerStat: 0, statType: "IP" },
         { name: "Carson Williams", yearAcquired: 2024, careerStat: 0, statType: "AB" },
-        { name: "Cole Young", yearAcquired: 2025, careerStat: 0, statType: "AB" },
         { name: "Josue Briceno", yearAcquired: 2026, careerStat: 0, statType: "AB" },
         { name: "Mike Sirota", yearAcquired: 2026, careerStat: 0, statType: "AB" },
-        { name: "Alfredo Duno", yearAcquired: 2026, careerStat: 0, statType: "AB" },
         { name: "Jonny Farmelo", yearAcquired: 2026, careerStat: 0, statType: "AB" },
         { name: "Ryan Clifford", yearAcquired: 2026, careerStat: 0, statType: "AB" },
         { name: "Jacob Reimer", yearAcquired: 2026, careerStat: 0, statType: "AB" }
@@ -106,7 +103,10 @@ const LEAGUE_DATA = {
         { name: "Hunter Barco", yearAcquired: 2026, careerStat: 0, statType: "IP" },
         { name: "Juan Sanchez", yearAcquired: 2026, careerStat: 0, statType: "IP" },
         { name: "Carlos Lagrange", yearAcquired: 2026, careerStat: 0, statType: "AB" },
-        { name: "River Ryan", yearAcquired: 2026, careerStat: 0, statType: "IP" }
+        { name: "River Ryan", yearAcquired: 2026, careerStat: 0, statType: "IP" },
+        { name: "Roch Cholowsky", yearAcquired: 2026, careerStat: 0, statType: "AB" },
+        { name: "Owen Caissie", yearAcquired: 2024, careerStat: 0, statType: "AB" },
+        { name: "Franklin Arias", yearAcquired: 2026, careerStat: 0, statType: "AB" }
       ]
     },
     {
@@ -168,10 +168,8 @@ const LEAGUE_DATA = {
         { name: "Endy Rodr\u00edguez", yearAcquired: 2023, careerStat: 0, statType: "AB" },
         { name: "Luis Morales", yearAcquired: 2026, careerStat: 0, statType: "IP" },
         { name: "DL Hall", yearAcquired: 2023, careerStat: 0, statType: "IP" },
-        { name: "TJ Rumfield", yearAcquired: 2026, careerStat: 0, statType: "AB" },
         { name: "AJ Smith-Shawver", yearAcquired: 2025, careerStat: 0, statType: "IP" },
         { name: "Sean Burke", yearAcquired: 2025, careerStat: 0, statType: "IP" },
-        { name: "Logan Henderson", yearAcquired: 2026, careerStat: 0, statType: "IP" },
         { name: "Ben Joyce", yearAcquired: 2026, careerStat: 0, statType: "IP" },
         { name: "Tyler Locklear", yearAcquired: 2026, careerStat: 0, statType: "AB" },
         { name: "CJ Kayfus", yearAcquired: 2026, careerStat: 0, statType: "AB" }
@@ -197,15 +195,12 @@ const LEAGUE_DATA = {
       callups: [],
       minors: [
         { name: "Luisangel Acu\u00f1a", yearAcquired: 2023, careerStat: 0, statType: "AB" },
-        { name: "Bryce Eldridge", yearAcquired: 2025, careerStat: 0, statType: "AB" },
         { name: "Termarr Johnson", yearAcquired: 2024, careerStat: 0, statType: "AB" },
         { name: "Deyvison De Los Santos", yearAcquired: 2024, careerStat: 0, statType: "AB" },
         { name: "Cam Collier", yearAcquired: 2025, careerStat: 0, statType: "AB" },
         { name: "Jace Laviolette", yearAcquired: 2025, careerStat: 0, statType: "AB" },
         { name: "Felnin Celesten", yearAcquired: 2025, careerStat: 0, statType: "AB" },
-        { name: "Ryan Waldschmidt", yearAcquired: 2026, careerStat: 0, statType: "AB" },
-        { name: "Khal Stephen", yearAcquired: 2026, careerStat: 0, statType: "AB" },
-        { name: "Gage Jump", yearAcquired: 2026, careerStat: 0, statType: "IP" }
+        { name: "Khal Stephen", yearAcquired: 2026, careerStat: 0, statType: "AB" }
       ]
     },
     {
@@ -241,7 +236,9 @@ const LEAGUE_DATA = {
         { name: "Kaelen Culpepper", yearAcquired: 2026, careerStat: 0, statType: "AB" },
         { name: "Travis Bazzana", yearAcquired: 2024, careerStat: 0, statType: "AB" },
         { name: "Jarlin Susana", yearAcquired: 2026, careerStat: 0, statType: "IP" },
-        { name: "Roki Sasaki", yearAcquired: 2024, careerStat: 0, statType: "IP" }
+        { name: "Roki Sasaki", yearAcquired: 2024, careerStat: 0, statType: "IP" },
+        { name: "Gage Jump", yearAcquired: 2026, careerStat: 0, statType: "IP" },
+        { name: "Bryce Eldridge", yearAcquired: 2025, careerStat: 0, statType: "AB" }
       ]
     },
     {
@@ -281,7 +278,9 @@ const LEAGUE_DATA = {
         { name: "Caleb Bonemer", yearAcquired: 2026, careerStat: 0, statType: "AB" },
         { name: "Teruaki Sato", yearAcquired: 2026, careerStat: 0, statType: "AB" },
         { name: "Hiromi Itoh", yearAcquired: 2026, careerStat: 0, statType: "AB" },
-        { name: "Jordan Lawlar", yearAcquired: 2026, careerStat: 0, statType: "AB" }
+        { name: "Jordan Lawlar", yearAcquired: 2026, careerStat: 0, statType: "AB" },
+        { name: "Ryan Waldschmidt", yearAcquired: 2026, careerStat: 0, statType: "AB" },
+        { name: "TJ Rumfield", yearAcquired: 2026, careerStat: 0, statType: "AB" }
       ]
     },
     {
@@ -337,7 +336,6 @@ const LEAGUE_DATA = {
         { name: "Agustin Ramirez", price: 3, yearAcquired: 2025, fromMinors: true }
       ],
       callups: [
-        { name: "Mois\u00e9s Ballesteros", yearAcquired: 2025, careerStat: 0, statType: "AB" },
         { name: "Brady House", yearAcquired: 2024, careerStat: 0, statType: "AB" }
       ],
       minors: [
@@ -350,7 +348,11 @@ const LEAGUE_DATA = {
         { name: "Jefferson Rojas", yearAcquired: 2026, careerStat: 0, statType: "AB" },
         { name: "Elmer Rodriguez", yearAcquired: 2026, careerStat: 0, statType: "IP" },
         { name: "Jackson Flora", yearAcquired: 2026, careerStat: 0, statType: "AB" },
-        { name: "Ace Reese", yearAcquired: 2026, careerStat: 0, statType: "AB" }
+        { name: "Ace Reese", yearAcquired: 2026, careerStat: 0, statType: "AB" },
+        { name: "Mois\u00e9s Ballesteros", yearAcquired: 2025, careerStat: 0, statType: "AB" },
+        { name: "Lazaro Montes", yearAcquired: 2024, careerStat: 0, statType: "AB" },
+        { name: "Alfredo Duno", yearAcquired: 2026, careerStat: 0, statType: "AB" },
+        { name: "Cole Young", yearAcquired: 2025, careerStat: 0, statType: "AB" }
       ]
     },
     {
@@ -413,20 +415,17 @@ const LEAGUE_DATA = {
         { name: "Luke Keaschall", yearAcquired: 2025, careerStat: 0, statType: "AB" },
         { name: "Jordan Beck", yearAcquired: 2025, careerStat: 0, statType: "AB" },
         { name: "Jack Leiter", yearAcquired: 2025, careerStat: 0, statType: "IP" },
-        { name: "Bubba Chandler", yearAcquired: 2025, careerStat: 0, statType: "IP" }
+        { name: "Bubba Chandler", yearAcquired: 2025, careerStat: 0, statType: "IP" },
+        { name: "Jac Caglianone", yearAcquired: 2024, careerStat: 0, statType: "AB" },
+        { name: "Cooper Pratt", yearAcquired: 2025, careerStat: 0, statType: "AB" }
       ],
       minors: [
         { name: "George Lombard Jr.", yearAcquired: 2026, careerStat: 0, statType: "AB" },
-        { name: "Owen Caissie", yearAcquired: 2024, careerStat: 0, statType: "AB" },
-        { name: "Cooper Pratt", yearAcquired: 2025, careerStat: 0, statType: "AB" },
         { name: "Robert Gasser", yearAcquired: 2025, careerStat: 0, statType: "IP" },
         { name: "Liam Doyle", yearAcquired: 2026, careerStat: 0, statType: "AB" },
         { name: "Andrew Fischer", yearAcquired: 2026, careerStat: 0, statType: "IP" },
-        { name: "Jac Caglianone", yearAcquired: 2024, careerStat: 0, statType: "AB" },
-        { name: "Lazaro Montes", yearAcquired: 2024, careerStat: 0, statType: "AB" },
-        { name: "Franklin Arias", yearAcquired: 2026, careerStat: 0, statType: "AB" },
-        { name: "Brandon Sproat", yearAcquired: 2026, careerStat: 0, statType: "IP" },
-        { name: "Bishop Letson", yearAcquired: 2026, careerStat: 0, statType: "AB" }
+        { name: "Bishop Letson", yearAcquired: 2026, careerStat: 0, statType: "AB" },
+        { name: "Brandon Sproat", yearAcquired: 2026, careerStat: 0, statType: "IP" }
       ]
     }
   ]
