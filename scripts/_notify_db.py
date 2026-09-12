@@ -62,6 +62,46 @@ def parse_ts(s):
     except Exception: return None
 
 
+# Supabase's gateway sporadically answers 504 (and occasionally 502/503) for a
+# single request while the very next one succeeds. Every notifier runs on a
+# cadence with hours of slack, so one bad tick is harmless -- but before this
+# existed each blip surfaced as an "exit code 1" run and a GitHub failure
+# email (key-date-reminders: ~1/day, then 3 in an hour on 2026-09-11; every
+# one a 504 on the first league_state read, seconds after the :00/:30
+# pg_cron dispatch).
+#
+# Retry policy: sleeps total ~17s, well inside the workflows' 5-min timeout.
+#   * Idempotent methods (GET) retry on 502/503/504 and on connection-level
+#     failures (URLError, socket timeout).
+#   * Writes retry only on 502/503 and connection failures -- responses that
+#     mean Postgres never saw the request. A 504 on a write is ambiguous (the
+#     gateway gave up, the statement may still have run), so it is raised
+#     as before rather than replayed.
+_RETRY_DELAYS = (2, 5, 10)
+_RETRY_CODES_READ = {502, 503, 504}
+_RETRY_CODES_WRITE = {502, 503}
+
+
+def _urlopen_retry(req, timeout, *, retry_codes, log=None):
+    import socket
+    import time
+    log = log or (lambda m: print(m, file=sys.stderr))
+    for attempt, delay in enumerate((*_RETRY_DELAYS, None), start=1):
+        try:
+            return urllib.request.urlopen(req, timeout=timeout)
+        except urllib.error.HTTPError as e:
+            if delay is None or e.code not in retry_codes:
+                raise
+            reason = f"HTTP {e.code}"
+        except (urllib.error.URLError, socket.timeout, TimeoutError) as e:
+            if delay is None:
+                raise
+            reason = f"{type(e).__name__}: {getattr(e, 'reason', e)}"
+        log(f"  ~ transient {reason} on {req.get_method()} {req.full_url.split('?')[0]} "
+            f"(attempt {attempt}); retrying in {delay}s")
+        time.sleep(delay)
+
+
 def http_request(method, url, key, body=None):
     data = json.dumps(body).encode("utf-8") if body is not None else None
     req = urllib.request.Request(url, data=data, method=method, headers={
@@ -70,7 +110,8 @@ def http_request(method, url, key, body=None):
         "Content-Type": "application/json",
         "Prefer": "return=representation",
     })
-    with urllib.request.urlopen(req, timeout=30) as resp:
+    codes = _RETRY_CODES_READ if method == "GET" else _RETRY_CODES_WRITE
+    with _urlopen_retry(req, 30, retry_codes=codes) as resp:
         text = resp.read().decode("utf-8")
         return json.loads(text) if text else None
 
@@ -241,7 +282,10 @@ def upsert_league_state_row(key, state_key, state):
         "Content-Type": "application/json",
         "Prefer": "resolution=merge-duplicates",
     })
-    with urllib.request.urlopen(req, timeout=15) as resp:
+    # merge-duplicates upsert is idempotent, but a 504 still means "unknown
+    # whether it landed" -- callers hold their marker on failure and the next
+    # tick re-derives it, so the conservative write policy is enough here.
+    with _urlopen_retry(req, 15, retry_codes=_RETRY_CODES_WRITE) as resp:
         return resp.read()
 
 
