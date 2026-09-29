@@ -243,7 +243,9 @@ def main():
     # everyone who already got theirs). Preview mode never advances.
     if attempted and not sent:
         print("  ! all sends failed; holding digest marker for retry.", file=sys.stderr)
-        return
+        # Exit non-zero so the Actions run goes red — a green run that sent
+        # nothing (SMTP auth revoked, app password rotated) went unnoticed.
+        sys.exit(1)
     if smtp_user and smtp_pass:
         upsert_league_state_row(key, MARKER_KEY, {"lastSentThrough": now_iso})
 

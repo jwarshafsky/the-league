@@ -126,7 +126,7 @@ def main():
         try:
             _push_commissioners(
                 env,
-                "Your ESPN cookies probably need refreshing. The 15-min sync just failed.",
+                "The 15-min ESPN sync just failed (often expired cookies; see the Actions log for the error).",
             )
             state["pushedAt"] = now
         except Exception as e:

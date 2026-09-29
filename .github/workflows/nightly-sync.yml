@@ -34,7 +34,9 @@ jobs:
           ESPN_SWID: ${{ secrets.ESPN_SWID }}
           ESPN_S2: ${{ secrets.ESPN_S2 }}
           ESPN_LEAGUE_ID: '1200'
-          ESPN_SEASON: '2026'
+          # Flip seasons with a repo variable (Settings → Variables → ESPN_SEASON)
+          # instead of a code edit; see sync_espn.sh for rollover behavior.
+          ESPN_SEASON: ${{ vars.ESPN_SEASON || '2026' }}
         run: bash scripts/sync_espn.sh
 
       - name: Refresh MLB career stats

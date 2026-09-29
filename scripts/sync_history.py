@@ -23,7 +23,10 @@ TMP_DIR = "/tmp/fantasy-league/js"
 # Years to fetch. 2020 is excluded (COVID-shortened, doesn't count).
 # Earlier years (2017-2018) typically return 401/404 from the modern ESPN
 # API — fall back to MANUAL_HISTORY below for those years.
-YEARS = [2017, 2018, 2019, 2021, 2022, 2023, 2024, 2025, 2026]
+# Through the current calendar year, so a finished 2027+ season is picked up
+# without a code edit (an in-progress season has no rankCalculatedFinal yet
+# and a not-yet-renewed one 404s — both are skipped, not written as empty).
+YEARS = [y for y in range(2017, datetime.now(timezone.utc).year + 1) if y != 2020]
 LEAGUE_ID = "1200"
 BASE_URL = "https://lm-api-reads.fantasy.espn.com/apis/v3/games/flb"
 
@@ -120,6 +123,22 @@ def extract_standings(data):
     return out
 
 
+def load_prev_seasons():
+    """Standings from the current history-snapshot.js, keyed by year. Used to
+    keep a season when its fetch fails — previously a single failed request
+    (expired cookie, ESPN blip) silently deleted that year's champions from
+    the Trophy Room on the next write."""
+    if not os.path.exists(OUT_FILE):
+        return {}
+    try:
+        text = open(OUT_FILE).read()
+        body = text[text.index("{"):text.rindex("}") + 1]
+        return {s["year"]: s["standings"] for s in json.loads(body).get("seasons", [])}
+    except Exception as e:
+        print(f"  could not parse previous {OUT_FILE}: {e}", file=sys.stderr)
+        return {}
+
+
 def main():
     env = load_env()
     swid = env.get("ESPN_SWID")
@@ -128,11 +147,15 @@ def main():
         print("ESPN_SWID and ESPN_S2 must be set in scripts/.env", file=sys.stderr)
         sys.exit(1)
 
+    prev = load_prev_seasons()
     seasons = []
     for year in YEARS:
         print(f"Fetching {year}...")
         data = fetch_year(year, swid, s2)
         standings = extract_standings(data)
+        if not standings and year in prev:
+            standings = prev[year]
+            print(f"  {year}: no fresh standings — keeping previous snapshot's entry")
         if not standings and year in MANUAL_HISTORY:
             standings = MANUAL_HISTORY[year]
             print(f"  {year}: using MANUAL_HISTORY entry")
