@@ -9499,7 +9499,10 @@ function renderTrophyRow(season, idx) {
     <div style="margin-bottom:22px">
       <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px">
         <div style="font-size:1.5rem;font-weight:800;color:var(--text-bright);letter-spacing:0.02em">${season.year}</div>
-        <button onclick="openTrophyDetail(${idx})" style="background:none;border:1px solid var(--border);color:var(--accent);font-size:0.78rem;padding:5px 12px;border-radius:6px;cursor:pointer">Full standings</button>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">
+          ${hasRecordBook(season.year) ? `<button onclick="openRecordBook(${season.year})" style="background:none;border:1px solid var(--border);color:var(--accent);font-size:0.78rem;padding:5px 12px;border-radius:6px;cursor:pointer">📖 Record book</button>` : ""}
+          <button onclick="openTrophyDetail(${idx})" style="background:none;border:1px solid var(--border);color:var(--accent);font-size:0.78rem;padding:5px 12px;border-radius:6px;cursor:pointer">Full standings</button>
+        </div>
       </div>
       <div style="display:flex;gap:10px;flex-wrap:wrap">
         ${slot(1, '#FFD700', '#D4AF37', 'Champion', '🥇')}
@@ -9541,6 +9544,77 @@ function openTrophyDetail(seasonIdx) {
           }).join("")}
         </tbody>
       </table>
+    </div>
+  `;
+  document.body.appendChild(modal);
+}
+
+// Season Record Book — single-day highs, bench blunders, the race, FAAB
+// records. Data is js/record-book-snapshot.js (scripts/build_record_book.py,
+// built from the full-season ESPN archive). Each record is a small
+// leaderboard; ties with the last place shown are kept.
+function hasRecordBook(year) {
+  return typeof RECORD_BOOK !== "undefined" && !!RECORD_BOOK?.seasons?.[String(year)];
+}
+
+function openRecordBook(year) {
+  if (!hasRecordBook(year)) return;
+  const book = RECORD_BOOK.seasons[String(year)];
+  const existing = document.getElementById("record-book-modal");
+  if (existing) existing.remove();
+  const modal = document.createElement("div");
+  modal.id = "record-book-modal";
+  modal.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:1000;display:flex;align-items:flex-start;justify-content:center;padding:24px 12px;overflow-y:auto";
+  modal.onclick = e => { if (e.target === modal) modal.remove(); };
+
+  const medal = i => ["🥇", "🥈", "🥉"][i] || `<span style="color:var(--text-dim);font-size:0.75rem">${i + 1}</span>`;
+  const row = (e, i, prevValue) => {
+    const tied = i > 0 && e.value === prevValue;
+    const bits = [e.when, e.detail].filter(Boolean).map(escapeHtml).join(" · ");
+    return `
+      <div style="display:flex;gap:8px;align-items:flex-start;padding:6px 0;${i ? "border-top:1px solid rgba(255,255,255,0.06)" : ""}">
+        <div style="width:22px;flex-shrink:0;text-align:center;line-height:1.3">${tied ? '<span style="color:var(--text-dim);font-size:0.7rem">T</span>' : medal(i)}</div>
+        <div style="flex:1;min-width:0">
+          <div style="color:var(--text-bright);font-weight:${i ? 600 : 700};font-size:${i ? "0.85rem" : "0.92rem"};overflow-wrap:anywhere">
+            ${e.got ? e.got.map(g => trophyTeamClickableLabel({ abbrev: g.abbrev })).join(' <span style="color:var(--text-dim)">⇄</span> ')
+              : `${e.who ? `${escapeHtml(e.who)} <span style="color:var(--text-dim);font-weight:500">·</span> ` : ""}${trophyTeamClickableLabel({ abbrev: e.abbrev })}`}
+          </div>
+          <div style="color:var(--accent);font-size:0.8rem;font-weight:600;margin-top:2px">${escapeHtml(e.text)}</div>
+          ${bits ? `<div style="color:var(--text-dim);font-size:0.72rem;overflow-wrap:anywhere">${bits}</div>` : ""}
+          ${e.got ? e.got.map(g => `<div style="color:var(--text-dim);font-size:0.72rem;overflow-wrap:anywhere"><span style="color:var(--text)">${escapeHtml(trophyTeamLabel({ abbrev: g.abbrev }))}</span> got ${escapeHtml(g.players.join(", "))}</div>`).join("") : ""}
+        </div>
+      </div>`;
+  };
+  const card = r => `
+    <div style="background:rgba(255,255,255,0.03);border:1px solid var(--border);border-radius:10px;padding:12px 12px 8px">
+      <div style="display:flex;gap:8px;align-items:center">
+        <span style="font-size:1.35rem;line-height:1">${escapeHtml(r.icon)}</span>
+        <span style="font-weight:800;color:var(--text-bright);font-size:0.95rem">${escapeHtml(r.title)}</span>
+      </div>
+      <div style="color:var(--text-dim);font-size:0.75rem;margin:4px 0 6px">${escapeHtml(r.blurb)}</div>
+      ${r.entries.map((e, i) => row(e, i, i ? r.entries[i - 1].value : null)).join("")}
+    </div>`;
+  const sections = book.sections || [];
+  modal.innerHTML = `
+    <div style="max-width:960px;width:100%;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:18px;margin-top:10px">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px">
+        <div>
+          <h3 style="margin:0;color:var(--text-bright)">📖 ${escapeHtml(String(year))} Record Book</h3>
+          <div style="color:var(--text-dim);font-size:0.78rem;margin-top:4px">${book.days ? `${book.days} days of lineups` : ""}${book.firstDay ? ` · ${escapeHtml(book.firstDay)} → ${escapeHtml(book.lastDay)}` : ""} · only active-lineup stats count unless noted</div>
+        </div>
+        <button onclick="document.getElementById('record-book-modal').remove()" style="background:none;border:none;color:var(--text-dim);font-size:1.4rem;cursor:pointer;padding:0 4px;line-height:1">×</button>
+      </div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin:14px 0 4px">
+        ${sections.map((s, i) => `<button onclick="document.getElementById('rb-sec-${i}').scrollIntoView({behavior:'smooth',block:'start'})" style="background:none;border:1px solid var(--border);color:var(--accent);font-size:0.75rem;padding:4px 10px;border-radius:999px;cursor:pointer">${escapeHtml(s.title)}</button>`).join("")}
+      </div>
+      ${sections.map((s, i) => `
+        <div id="rb-sec-${i}" style="margin-top:18px;scroll-margin-top:12px">
+          <div style="font-size:1.1rem;font-weight:800;color:var(--text-bright)">${escapeHtml(s.title)}</div>
+          ${s.subtitle ? `<div style="color:var(--text-dim);font-size:0.78rem;margin-bottom:8px">${escapeHtml(s.subtitle)}</div>` : ""}
+          <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px">
+            ${(s.records || []).map(card).join("")}
+          </div>
+        </div>`).join("")}
     </div>
   `;
   document.body.appendChild(modal);

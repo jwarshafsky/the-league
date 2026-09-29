@@ -11,7 +11,7 @@
 // Bump CACHE_VERSION when changing the SW logic itself (not for app code —
 // that's handled by ?v=N at the script tags).
 
-const CACHE_VERSION = "the-league-v9";
+const CACHE_VERSION = "the-league-v10";
 
 // Resolve against the service worker's own location rather than hardcoding
 // "/the-league/", so the app works both at a Pages subpath and at the root of
@@ -28,7 +28,7 @@ const BASE_PATH = new URL("./", self.location).pathname; // e.g. "/" or "/the-le
 // data.js (minors rosters → luxury tax) and history-snapshot.js (Trophy Room)
 // are also data files; included defensively so they can't go stale if either
 // is ever refreshed without a manual ?v=N bump (e.g. put on a cron).
-const ALWAYS_REVALIDATE = /\/js\/(espn-snapshot|player-stats-snapshot|history-snapshot|data)\.js(\?|$)/;
+const ALWAYS_REVALIDATE = /\/js\/(espn-snapshot|player-stats-snapshot|history-snapshot|record-book-snapshot|data)\.js(\?|$)/;
 const STATIC_ASSETS = [
   "./",
   "./index.html",
@@ -39,6 +39,7 @@ const STATIC_ASSETS = [
   "./js/player-stats-snapshot.js",
   "./js/espn-snapshot.js",
   "./js/history-snapshot.js",
+  "./js/record-book-snapshot.js",
   "./js/prospects.js",
   "./js/app.js",
   "./js/rules-bot.js",
