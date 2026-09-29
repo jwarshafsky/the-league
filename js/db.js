@@ -209,7 +209,10 @@ async function _fetchAll() {
     supabaseClient.from("roster_moves").select("*").order("at", { ascending: true }),
     supabaseClient.from("notification_prefs").select("*"),
     supabaseClient.from("push_subscriptions").select("*"),
-    supabaseClient.from("league_messages").select("*").order("created_at", { ascending: true }).limit(500),
+    // Newest 500 (descending + limit), flipped back to chronological below.
+    // Ascending + limit returned the OLDEST 500, so once the board passed 500
+    // messages every new post vanished from the board and the unread badge.
+    supabaseClient.from("league_messages").select("*").order("created_at", { ascending: false }).limit(500),
   ]);
   // Surface query errors so a transient network/RLS issue doesn't silently
   // wipe the UI to empty caches. Each table is independent — we still load
@@ -242,7 +245,7 @@ async function _fetchAll() {
   _surfaceQuiet("notification_prefs", np);
   _surfaceQuiet("push_subscriptions", ps);
   _surfaceQuiet("league_messages", lm);
-  _cache.leagueMessages = lm.data || [];
+  _cache.leagueMessages = (lm.data || []).slice().reverse();
   _cache.notifyPrefs = {};
   for (const r of (np.data || [])) {
     _cache.notifyPrefs[r.team_id] = {
@@ -1396,7 +1399,18 @@ async function counterProposalAsync(parentProposal, { team1_receives, team2_rece
     parent_proposal_id: parentProposal.id,
     created_by: currentUser.id,
   }).select().single();
-  if (error) throw error;
+  if (error) {
+    // Insert failed AFTER the parent was marked countered — without this the
+    // thread is left with no pending proposal and nobody can act on it.
+    // Best-effort revert, same pattern as acceptProposalAsync.
+    try {
+      await supabaseClient.from("trade_proposals")
+        .update({ status: "pending" })
+        .eq("id", parentProposal.id)
+        .eq("status", "countered");
+    } catch (_) {}
+    throw error;
+  }
   return data;
 }
 

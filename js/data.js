@@ -90,8 +90,7 @@ const LEAGUE_DATA = {
       ],
       callups: [
         { name: "Jackson Holliday", yearAcquired: 2023, careerStat: 0, statType: "AB" },
-        { name: "Chase Meidroth", yearAcquired: 2025, careerStat: 0, statType: "AB" },
-        { name: "Colson Montgomery", yearAcquired: 2023, careerStat: 0, statType: "AB" }
+        { name: "Chase Meidroth", yearAcquired: 2025, careerStat: 0, statType: "AB" }
       ],
       minors: [
         { name: "Ethan Conrad", yearAcquired: 2026, careerStat: 0, statType: "AB" },
@@ -258,7 +257,7 @@ const LEAGUE_DATA = {
         { name: "Brent Rooker", price: 10, yearAcquired: 2023, fromMinors: false }
       ],
       callups: [
-        { name: "Hurston Waldrep", yearAcquired: 2024, careerStat: 0, statType: "IP" },
+        { name: "Kyle Manzardo", yearAcquired: 2023, careerStat: 0, statType: "AB" },
         { name: "Jace Jung", yearAcquired: 2024, careerStat: 0, statType: "AB" },
         { name: "Mick Abel", yearAcquired: 2024, careerStat: 0, statType: "IP" },
         { name: "Doug Nikhazy", yearAcquired: 2025, careerStat: 0, statType: "IP" },
@@ -278,7 +277,7 @@ const LEAGUE_DATA = {
         { name: "Caleb Bonemer", yearAcquired: 2026, careerStat: 0, statType: "AB" },
         { name: "Teruaki Sato", yearAcquired: 2026, careerStat: 0, statType: "AB" },
         { name: "Hiromi Itoh", yearAcquired: 2026, careerStat: 0, statType: "AB" },
-        { name: "Jordan Lawlar", yearAcquired: 2026, careerStat: 0, statType: "AB" },
+        { name: "Jordan Lawlar", yearAcquired: 2026, careerStat: 0, statType: "AB", sentDown: true, sendDownCount: 1 },
         { name: "Ryan Waldschmidt", yearAcquired: 2026, careerStat: 0, statType: "AB" },
         { name: "TJ Rumfield", yearAcquired: 2026, careerStat: 0, statType: "AB" }
       ]
@@ -336,10 +335,12 @@ const LEAGUE_DATA = {
         { name: "Agustin Ramirez", price: 3, yearAcquired: 2025, fromMinors: true }
       ],
       callups: [
-        { name: "Brady House", yearAcquired: 2024, careerStat: 0, statType: "AB" }
+        { name: "Brady House", yearAcquired: 2024, careerStat: 0, statType: "AB" },
+        { name: "Colson Montgomery", yearAcquired: 2023, careerStat: 0, statType: "AB" },
+        { name: "Hurston Waldrep", yearAcquired: 2024, careerStat: 0, statType: "IP" }
       ],
       minors: [
-        { name: "Connelly Early", yearAcquired: 2026, careerStat: 0, statType: "IP" },
+        { name: "Connelly Early", yearAcquired: 2026, careerStat: 0, statType: "IP", sentDown: true, sendDownCount: 1 },
         { name: "Kevin Alcantara", yearAcquired: 2023, careerStat: 0, statType: "AB" },
         { name: "James Triantos", yearAcquired: 2024, careerStat: 0, statType: "AB" },
         { name: "Jonathan Long", yearAcquired: 2026, careerStat: 0, statType: "AB" },
@@ -349,7 +350,7 @@ const LEAGUE_DATA = {
         { name: "Elmer Rodriguez", yearAcquired: 2026, careerStat: 0, statType: "IP" },
         { name: "Jackson Flora", yearAcquired: 2026, careerStat: 0, statType: "AB" },
         { name: "Ace Reese", yearAcquired: 2026, careerStat: 0, statType: "AB" },
-        { name: "Mois\u00e9s Ballesteros", yearAcquired: 2025, careerStat: 0, statType: "AB" },
+        { name: "Mois\u00e9s Ballesteros", yearAcquired: 2025, careerStat: 0, statType: "AB", sentDown: true, sendDownCount: 1 },
         { name: "Lazaro Montes", yearAcquired: 2024, careerStat: 0, statType: "AB" },
         { name: "Alfredo Duno", yearAcquired: 2026, careerStat: 0, statType: "AB" },
         { name: "Cole Young", yearAcquired: 2025, careerStat: 0, statType: "AB" }
@@ -373,9 +374,8 @@ const LEAGUE_DATA = {
         { name: "Kyle Stowers", price: 6, yearAcquired: 2025, fromMinors: false }
       ],
       callups: [
-        { name: "Kyle Manzardo", yearAcquired: 2023, careerStat: 0, statType: "AB" },
         { name: "Chase Burns", yearAcquired: 2025, careerStat: 0, statType: "IP" },
-        { name: "Chase Delauter", yearAcquired: 2024, careerStat: 0, statType: "AB" },
+        { name: "Chase DeLauter", yearAcquired: 2024, careerStat: 0, statType: "AB" },
         { name: "JJ Wetherholt", yearAcquired: 2025, careerStat: 0, statType: "AB" }
       ],
       minors: [

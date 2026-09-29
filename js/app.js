@@ -550,6 +550,36 @@ function applyRosterAdjustments() {
     teamMinors.set(team.id,  snap ? snap.minors.map(p => ({ ...p })) : []);
     teamCallups.set(team.id, snap ? snap.callups.map(p => ({ ...p })) : []);
   }
+  // 0. Seed in-app Minors Draft picks for players who aren't anywhere in the
+  //    data.js anchor BEFORE trades / roster_moves run. A fresh draftee only
+  //    exists via the pick, so if the pick were added last (step 4) a later
+  //    trade of him ("minor" asset) or a call-up / drop roster_move would find
+  //    nothing to move and silently no-op — he'd stay on the drafting team's
+  //    minors. Players already in the anchor are left to step 4 as before.
+  const draft = (typeof dbGetDraft === "function") ? dbGetDraft() : null;
+  const draftPicksInOrder = (draft && Array.isArray(draft.picks) && draft.year)
+    ? [...draft.picks].sort((a, b) =>
+        (a.round - b.round) || (a.pickInRound - b.pickInRound) || ((a.timestamp || 0) - (b.timestamp || 0)))
+    : [];
+  const _draftPickRecord = (pick) => {
+    const stats = (typeof PLAYER_STATS !== "undefined") ? PLAYER_STATS.players?.[pick.player] : null;
+    return {
+      name: pick.player,
+      yearAcquired: draft.year,
+      careerStat: 0,                       // applyLivePlayerStats overlays this
+      statType: stats?.statType || "AB",
+      fromDraft: true,
+    };
+  };
+  const seededPicks = new Set();
+  for (const pick of draftPicksInOrder) {
+    if (!pick.team || !pick.player || seededPicks.has(pick.player)) continue;
+    if (_findOriginalMinorRecord(pick.player)) continue;
+    const minors = teamMinors.get(pick.team) || [];
+    minors.push(_draftPickRecord(pick));
+    teamMinors.set(pick.team, minors);
+    seededPicks.add(pick.player);
+  }
   // 1. Apply trade-log moves chronologically. team1Receives = what team1
   //    GETS (came from team2), so the asset moves team2 → team1.
   const trades = (typeof getTrades === "function") ? getTrades() : [];
@@ -637,25 +667,17 @@ function applyRosterAdjustments() {
   //    duplicate). This is what makes the in-app Minors Draft the source
   //    of truth — picks flow into team.minors automatically instead of
   //    requiring sync_minors_from_sheet.py.
-  const draft = (typeof dbGetDraft === "function") ? dbGetDraft() : null;
-  if (draft && Array.isArray(draft.picks) && draft.year) {
+  //    Picks already seeded in step 0 are skipped — they've since been
+  //    traded / called up / dropped by steps 1-3 and must not be re-added.
+  if (draftPicksInOrder.length) {
     const onAnyRoster = new Set();
     for (const arr of teamMinors.values()) for (const p of arr) onAnyRoster.add(p.name);
     for (const arr of teamCallups.values()) for (const p of arr) onAnyRoster.add(p.name);
-    const picksInOrder = [...draft.picks].sort((a, b) =>
-      (a.round - b.round) || (a.pickInRound - b.pickInRound) || ((a.timestamp || 0) - (b.timestamp || 0)));
-    for (const pick of picksInOrder) {
+    for (const pick of draftPicksInOrder) {
       if (!pick.team || !pick.player) continue;
-      if (onAnyRoster.has(pick.player)) continue;
-      const stats = (typeof PLAYER_STATS !== "undefined") ? PLAYER_STATS.players?.[pick.player] : null;
+      if (seededPicks.has(pick.player) || onAnyRoster.has(pick.player)) continue;
       const minors = teamMinors.get(pick.team) || [];
-      minors.push({
-        name: pick.player,
-        yearAcquired: draft.year,
-        careerStat: 0,                       // applyLivePlayerStats overlays this
-        statType: stats?.statType || "AB",
-        fromDraft: true,
-      });
+      minors.push(_draftPickRecord(pick));
       teamMinors.set(pick.team, minors);
       onAnyRoster.add(pick.player);
     }
@@ -1102,10 +1124,18 @@ async function _reverseActivityEffect(entry) {
         pick.round === p.round && pick.idx === targetIdx0 && pick.playerName === playerName
       );
       if (!match) return;
+      // Rule 5 turn order is positional (getRule5CurrentPick uses
+      // picks.length), so pulling an entry out of the middle shifts every
+      // later pick onto the wrong slot/team. Only the latest entry can be
+      // reversed; throwing keeps the log row in place.
+      if (match !== state.picks[state.picks.length - 1]) {
+        throw new Error("Only the most recent Rule 5 pick can be undone — later picks depend on its position.");
+      }
       if (match.tradeId && typeof deleteTradeAsync === "function") {
         try { await deleteTradeAsync(match.tradeId); } catch (e) { console.warn("Rule 5 trade delete failed:", e); }
       }
       state.picks = state.picks.filter(pick => pick !== match);
+      _resetRule5Clock(state);  // reopened slot gets a fresh clock, not the stale one
       if (typeof saveRule5Async === "function") await saveRule5Async(state);
       else if (typeof saveRule5State === "function") saveRule5State(state);
       return;
@@ -1118,9 +1148,16 @@ async function _reverseActivityEffect(entry) {
       const state = (typeof getRule5State === "function") ? getRule5State() : null;
       if (!state || !state.picks) return;
       const targetIdx0 = (typeof p.idx === "number") ? p.idx - 1 : null;
-      state.picks = state.picks.filter(pick =>
-        !(pick.round === p.round && pick.idx === targetIdx0 && pick.pass)
+      const passEntry = state.picks.find(pick =>
+        pick.round === p.round && pick.idx === targetIdx0 && pick.pass
       );
+      if (!passEntry) return;
+      // Same positional constraint as rule5_pick_made above.
+      if (passEntry !== state.picks[state.picks.length - 1]) {
+        throw new Error("Only the most recent Rule 5 pick/pass can be undone — later picks depend on its position.");
+      }
+      state.picks = state.picks.filter(pick => pick !== passEntry);
+      _resetRule5Clock(state);
       if (typeof saveRule5Async === "function") await saveRule5Async(state);
       else if (typeof saveRule5State === "function") saveRule5State(state);
       return;
@@ -1139,6 +1176,7 @@ async function _reverseActivityEffect(entry) {
       } else if (Array.isArray(draft.passed)) {
         draft.passed = draft.passed.filter(pp => !(pp.round === round && pp.pickInRound === pickInRound));
       }
+      _resetDraftClock(draft);  // reopened slot gets a fresh clock, not the stale one
       if (typeof saveDraftAsync === "function") await saveDraftAsync(draft);
       else if (typeof saveDraft === "function") saveDraft(draft);
       return;
@@ -2687,6 +2725,16 @@ function renderDraftDollarsPanel() {
   `;
 }
 
+// Edit/Delete target a trade by its DB id, not its array position: a realtime
+// delete by another commissioner shifts every index, and a stale button would
+// then edit/delete a different trade. Index is only the localStorage fallback.
+function _tradeRef(trade, index) {
+  return trade._id != null ? `'${escapeJsString(String(trade._id))}'` : String(index);
+}
+function _findTradeByRef(trades, ref) {
+  return typeof ref === "string" ? trades.find(t => String(t._id) === ref) : trades[ref];
+}
+
 function renderTradeCard(trade, index) {
   const team1 = LEAGUE_DATA.teams.find(t => t.id === trade.team1);
   const team2 = LEAGUE_DATA.teams.find(t => t.id === trade.team2);
@@ -2695,18 +2743,18 @@ function renderTradeCard(trade, index) {
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
         <span style="color:var(--text-dim);font-size:0.75rem">${trade.createdAt ? timestampHTML(trade.createdAt) : escapeHtml(trade.date || "")}</span>
         ${isCommissioner() ? `<div style="display:flex;gap:10px">
-          <button onclick="editTrade(${index})" style="background:none;border:none;color:var(--accent);cursor:pointer;font-size:0.75rem">Edit</button>
-          <button onclick="deleteTrade(${index})" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:0.75rem">Delete</button>
+          <button onclick="editTrade(${_tradeRef(trade, index)})" style="background:none;border:none;color:var(--accent);cursor:pointer;font-size:0.75rem">Edit</button>
+          <button onclick="deleteTrade(${_tradeRef(trade, index)})" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:0.75rem">Delete</button>
         </div>` : ''}
       </div>
       <div style="display:grid;grid-template-columns:1fr auto 1fr;gap:10px;align-items:start">
         <div>
-          <div style="font-weight:700;color:var(--accent);margin-bottom:6px">${team1 ? team1.name : trade.team1} receives:</div>
+          <div style="font-weight:700;color:var(--accent);margin-bottom:6px">${escapeHtml(team1 ? team1.name : trade.team1)} receives:</div>
           ${renderTradeAssets(trade.team1Receives)}
         </div>
         <div style="color:var(--text-dim);font-size:1.2rem;align-self:center">&#8644;</div>
         <div>
-          <div style="font-weight:700;color:var(--accent);margin-bottom:6px">${team2 ? team2.name : trade.team2} receives:</div>
+          <div style="font-weight:700;color:var(--accent);margin-bottom:6px">${escapeHtml(team2 ? team2.name : trade.team2)} receives:</div>
           ${renderTradeAssets(trade.team2Receives)}
         </div>
       </div>
@@ -3053,7 +3101,7 @@ function cancelTrade() {
 
 function editTrade(index) {
   const trades = getTrades();
-  const target = trades[index];
+  const target = _findTradeByRef(trades, index);
   if (!target || !target._id) return;
   if (!isCommissioner()) return;
   // Open the trade form in edit mode pre-filled with the existing trade.
@@ -3112,7 +3160,7 @@ async function submitTradeEdit() {
 function deleteTrade(index) {
   if (!confirm("Delete this trade?")) return;
   const trades = getTrades();
-  const target = trades[index];
+  const target = _findTradeByRef(trades, index);
   if (!target) return;
   if (target._id && typeof deleteTradeAsync === "function") {
     deleteTradeAsync(target._id)
@@ -3126,7 +3174,7 @@ function deleteTrade(index) {
       })
       .catch(err => alert("Delete failed: " + err.message));
   } else {
-    trades.splice(index, 1);
+    trades.splice(trades.indexOf(target), 1);
     saveTrades(trades);
     goToTrades("log");
   }
@@ -3228,11 +3276,14 @@ function findInMinors(playerName, preferredTeamId) {
   return null;
 }
 
-function findDraftPick(playerName) {
+function findDraftPick(playerName, preferredTeamId) {
   const snap = getEspnSnapshot();
   if (!snap) return null;
-  const espnRoster = snap.teams.flatMap(t => t.roster.map(r => ({ ...r, espnId: t.espnId })));
-  const espnPlayer = espnRoster.find(p => p.name === playerName);
+  const espnRoster = snap.teams.flatMap(t => t.roster.map(r => ({ ...r, espnId: t.espnId, localId: ESPN_ABBREV_TO_LOCAL[t.abbrev] })));
+  // Two rostered players can share a name (e.g. Will Smith C / Will Smith P) —
+  // prefer the one on the team being priced so we don't borrow the other's bid.
+  const espnPlayer = (preferredTeamId && espnRoster.find(p => p.name === playerName && p.localId === preferredTeamId))
+    || espnRoster.find(p => p.name === playerName);
   if (!espnPlayer) return null;
   const pick = snap.draftPicks.find(d => d.playerId === espnPlayer.playerId);
   return pick || null;
@@ -3454,7 +3505,7 @@ function getOriginalCostBasis(playerName, currentTeamLocalId) {
   }
 
   // 3. Drafted in 2026 auction (non-keeper)
-  const pick = findDraftPick(playerName);
+  const pick = findDraftPick(playerName, currentTeamLocalId);
   if (pick && !pick.keeper) {
     return {
       price: pick.bidAmount,
@@ -3486,7 +3537,7 @@ function _basisFromCategory(category, playerName, teamId, original) {
         source: "callup", contractType: "callup", manualCategory: true };
     }
     case "auction": {
-      const pick = (typeof findDraftPick === "function") ? findDraftPick(playerName) : null;
+      const pick = (typeof findDraftPick === "function") ? findDraftPick(playerName, teamId) : null;
       return { price: pick?.bidAmount ?? original?.price ?? null, yearAcquired: CURRENT_SEASON,
         fromMinors: false, source: "auction", contractType: "auction", manualCategory: true };
     }
@@ -3536,8 +3587,13 @@ function resolveCostBasis(playerName, currentTeamLocalId) {
   if (!lastAdd && txRoot !== "live") {
     const logAdd = (txRoot === "fa") ? txLastAddEvent(playerId) : null;
     if (logAdd) {
+      // A commish-confirmed workaround decision must still apply when the add
+      // is rebuilt from the log (Will Smith: manual trade processed as an
+      // 18h-later waiver add, outside the 30-min manual-trade window).
+      const confirmed = String(playerId) in getWorkaroundOverrides();
       lastAdd = { date: logAdd.date, msgType: logAdd.isWaiverAdd ? 180 : 178, playerId,
-        isCommishWorkaround: false, recentDropWithin24h: false, synthetic: true, fromTxLog: true };
+        isCommishWorkaround: confirmed, recentDropWithin24h: false,
+        synthetic: true, fromTxLog: true };
     } else {
       const acq = getRosterAcquisition(playerName, currentTeamLocalId);
       if (acq && acq.type === "ADD") {
@@ -3712,7 +3768,7 @@ function _buildEligibleMajorPlayer(r, basisTeamId, priceExceptions) {
     if (milbYrsAfterThisSeason > 0 || draftYear >= 2027) {
       cs = {
         yearsKept: 0,
-        yearsRemaining: basis.yearAcquired < 2027 ? milbYrsAfterThisSeason : null,
+        yearsRemaining: draftYear < 2027 ? milbYrsAfterThisSeason : null,
         nextYearPrice: null,
         canKeepNextYear: true,
         status: "new",
@@ -5424,7 +5480,12 @@ function savePickEditor(round, pickInRound) {
   const newTeam = document.getElementById("pe-team").value;
   const originalOwner = draft.baseOrder[draft.type === "snake" && round % 2 === 0 ? draft.baseOrder.length - pickInRound : pickInRound - 1];
 
-  if (newTeam === originalOwner) {
+  // Returning the pick to its original owner: only drop the override when the
+  // trade log agrees. If a logged pick trade moved it, deleting would let
+  // getTradeLogOwner route the slot back to the traded-to team (board, alerts
+  // and cron) while pick.team says otherwise — write the override explicitly,
+  // as clearPickOverride does.
+  if (newTeam === originalOwner && getTradeLogOwner(round, draft.year, originalOwner) === originalOwner) {
     delete draft.tradedPicks[pickKey];
   } else {
     draft.tradedPicks[pickKey] = newTeam;
@@ -6594,6 +6655,7 @@ function _draftSlotKey(round, pickInRound) {
 function _draftTriplet(draft, getPickOwner_) {
   const out = { onClock: null, onDeck: null, inHole: null };
   if (!draft || !Array.isArray(draft.baseOrder) || !draft.baseOrder.length) return out;
+  if (draft.endedAt) return out; // commish-ended draft — nobody is on the clock
   const n = draft.baseOrder.length;
   const rounds = draft.rounds || 0;
   const made = new Set((draft.picks || []).map(p => `${p.round}p${p.pickInRound}`));
@@ -6616,6 +6678,7 @@ function _draftTriplet(draft, getPickOwner_) {
 function _rule5Triplet(state) {
   const out = { onClock: null, onDeck: null, inHole: null };
   if (!state || !Array.isArray(state.order) || !state.order.length) return out;
+  if (state.endedAt) return out; // commish-ended draft — nobody is on the clock
   const n = state.order.length;
   const picks = state.picks || [];
   // Walk forward from the next unmade slot.
@@ -6627,8 +6690,10 @@ function _rule5Triplet(state) {
     const idx = cursor % n;
     const teamIdx = (round % 2 === 0) ? (n - 1 - idx) : idx;
     const teamId = state.order[teamIdx];
-    // End if a full prior round was all passes
-    if (cursor >= n) {
+    // End if a full prior round was all passes — tested only at round
+    // boundaries, matching getRule5CurrentPick (a rolling window spanning two
+    // snake rounds would stop the toasts while the draft is still running).
+    if (cursor >= n && idx === 0) {
       const prev = picks.slice(cursor - n, cursor);
       if (prev.length === n && prev.every(p => p.pass)) break;
     }
@@ -10691,11 +10756,22 @@ async function resetRule5Draft() {
   // Sweep the auto-recorded $1 Rule 5 trades alongside the state. Match by
   // a structured marker we attach when the trade is inserted, falling back
   // to the legacy notes prefix for older entries.
+  // Only THIS draft's trades: the marker/notes match alone also hits every
+  // prior year's Rule 5 trades, and Reset is how next year's Rule 5 starts —
+  // wiping history, reversing old $1 draft-dollar transfers and moving
+  // players back. Keep trades linked from the current picks, or created
+  // since the current pool was loaded.
+  const _r5State = (typeof getRule5State === "function") ? getRule5State() : null;
+  const _r5TradeIds = new Set(((_r5State && _r5State.picks) || [])
+    .map(p => p.tradeId).filter(Boolean).map(String));
+  const _r5Since = (_r5State && _r5State.loadedAt) ? Number(_r5State.loadedAt) : Infinity;
   if (typeof deleteTradeAsync === "function" && typeof getTrades === "function") {
     const rule5Trades = (getTrades() || []).filter(t =>
-      t.rule5 === true
-      || t.rule5PickClientId
-      || (t.notes && /^Rule 5 pick \(Round /.test(t.notes))
+      _r5TradeIds.has(String(t._id))
+      || ((t.rule5 === true
+           || t.rule5PickClientId
+           || (t.notes && /^Rule 5 pick \(Round /.test(t.notes)))
+          && new Date(t.createdAt || 0).getTime() >= _r5Since)
     );
     for (const t of rule5Trades) {
       if (t._id) {
