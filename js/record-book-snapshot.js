@@ -4,7 +4,7 @@ const RECORD_BOOK = {
  "seasons": {
   "2026": {
    "year": 2026,
-   "generatedAt": "2026-09-29T02:57:19Z",
+   "generatedAt": "2026-09-29T03:25:50Z",
    "days": 187,
    "firstDay": "2026-03-25",
    "lastDay": "2026-09-27",
@@ -1175,12 +1175,12 @@ const RECORD_BOOK = {
     },
     {
      "title": "The Race",
-     "subtitle": "Standings reconstructed day by day from active lineups (within ~1% of ESPN's official totals)",
+     "subtitle": "Standings rebuilt day by day from active lineups (final totals match ESPN's official numbers)",
      "records": [
       {
        "icon": "👑",
        "title": "Days in First Place",
-       "blurb": "Days spent alone or tied atop the (reconstructed) standings, from the second week on.",
+       "blurb": "Days spent alone or tied atop the day-by-day standings, from the second week on.",
        "entries": [
         {
          "espnId": 5,
@@ -1194,8 +1194,8 @@ const RECORD_BOOK = {
         {
          "espnId": 3,
          "abbrev": "S+A",
-         "value": 43,
-         "text": "43 days",
+         "value": 42,
+         "text": "42 days",
          "when": "",
          "who": "",
          "detail": ""
@@ -1203,8 +1203,8 @@ const RECORD_BOOK = {
         {
          "espnId": 1,
          "abbrev": "MV3",
-         "value": 11,
-         "text": "11 days",
+         "value": 12,
+         "text": "12 days",
          "when": "",
          "who": "",
          "detail": ""
@@ -1244,15 +1244,6 @@ const RECORD_BOOK = {
          "detail": ""
         },
         {
-         "espnId": 10,
-         "abbrev": "KLIN",
-         "value": 5,
-         "text": "11th → 6th",
-         "when": "low point May 13",
-         "who": "",
-         "detail": ""
-        },
-        {
          "espnId": 4,
          "abbrev": "GLIX",
          "value": 4,
@@ -1267,6 +1258,15 @@ const RECORD_BOOK = {
          "value": 4,
          "text": "11th → 7th",
          "when": "low point May 25",
+         "who": "",
+         "detail": ""
+        },
+        {
+         "espnId": 10,
+         "abbrev": "KLIN",
+         "value": 4,
+         "text": "10th → 6th",
+         "when": "low point May 18",
          "who": "",
          "detail": ""
         }
@@ -1497,12 +1497,12 @@ const RECORD_BOOK = {
          "detail": ""
         },
         {
-         "espnId": 3,
-         "abbrev": "S+A",
-         "value": 195.0,
-         "text": "82 R · 35 HR · 77 RBI · 1 SB",
-         "when": "$0",
-         "who": "Munetaka Murakami",
+         "espnId": 5,
+         "abbrev": "Jeff",
+         "value": 190.0,
+         "text": "98 R · 19 HR · 65 RBI · 8 SB",
+         "when": "$86",
+         "who": "Ivan Herrera",
          "detail": ""
         }
        ]
@@ -1513,19 +1513,10 @@ const RECORD_BOOK = {
        "blurb": "Most strikeouts a pitcher pickup delivered for the team that added him.",
        "entries": [
         {
-         "espnId": 10,
-         "abbrev": "KLIN",
-         "value": 185.0,
-         "text": "185 K · 11 QS · 0 SV+HLD",
-         "when": "$0",
-         "who": "Chase Burns",
-         "detail": ""
-        },
-        {
          "espnId": 13,
          "abbrev": "JTL",
-         "value": 185.0,
-         "text": "185 K · 14 QS · 0 SV+HLD",
+         "value": 178.0,
+         "text": "178 K · 13 QS · 0 SV+HLD",
          "when": "$7",
          "who": "Reid Detmers",
          "detail": ""
@@ -1537,6 +1528,15 @@ const RECORD_BOOK = {
          "text": "158 K · 9 QS · 0 SV+HLD",
          "when": "$12",
          "who": "Jose Soriano",
+         "detail": ""
+        },
+        {
+         "espnId": 8,
+         "abbrev": "JD",
+         "value": 153.0,
+         "text": "153 K · 11 QS · 0 SV+HLD",
+         "when": "$353",
+         "who": "Payton Tolle",
          "detail": ""
         }
        ]
@@ -1680,13 +1680,13 @@ const RECORD_BOOK = {
       {
        "icon": "🔄",
        "title": "Churn & Burn",
-       "blurb": "Most players added (waivers + free agents).",
+       "blurb": "Most players added off waivers.",
        "entries": [
         {
          "espnId": 9,
          "abbrev": "WEIN",
-         "value": 107,
-         "text": "107 adds",
+         "value": 102,
+         "text": "102 adds",
          "when": "",
          "who": "",
          "detail": ""
@@ -1694,8 +1694,8 @@ const RECORD_BOOK = {
         {
          "espnId": 12,
          "abbrev": "Dave",
-         "value": 70,
-         "text": "70 adds",
+         "value": 67,
+         "text": "67 adds",
          "when": "",
          "who": "",
          "detail": ""
@@ -2019,6 +2019,1820 @@ const RECORD_BOOK = {
          "text": "$72",
          "when": "",
          "who": "Kyle Tucker",
+         "detail": ""
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  "2025": {
+   "year": 2025,
+   "generatedAt": "2026-09-29T03:26:00Z",
+   "days": 195,
+   "firstDay": "2025-03-18",
+   "lastDay": "2025-09-28",
+   "sections": [
+    {
+     "title": "Single-Day Team Records",
+     "subtitle": "Best (and worst) days from a team's active lineup",
+     "records": [
+      {
+       "icon": "💣",
+       "title": "Home Run Derby",
+       "blurb": "Most home runs by one lineup in a single day.",
+       "entries": [
+        {
+         "espnId": 8,
+         "abbrev": "JD",
+         "value": 8.0,
+         "text": "8 HR",
+         "when": "Jun 11",
+         "who": "",
+         "detail": ""
+        },
+        {
+         "espnId": 2,
+         "abbrev": "SHAR",
+         "value": 7.0,
+         "text": "7 HR",
+         "when": "May 2",
+         "who": "",
+         "detail": ""
+        },
+        {
+         "espnId": 2,
+         "abbrev": "SHAR",
+         "value": 7.0,
+         "text": "7 HR",
+         "when": "Jun 20",
+         "who": "",
+         "detail": ""
+        },
+        {
+         "espnId": 13,
+         "abbrev": "JTL",
+         "value": 7.0,
+         "text": "7 HR",
+         "when": "Jul 23",
+         "who": "",
+         "detail": ""
+        }
+       ]
+      },
+      {
+       "icon": "🏃",
+       "title": "Track Meet",
+       "blurb": "Most runs scored in a day.",
+       "entries": [
+        {
+         "espnId": 10,
+         "abbrev": "KLIN",
+         "value": 18.0,
+         "text": "18 runs",
+         "when": "Aug 1",
+         "who": "",
+         "detail": ""
+        },
+        {
+         "espnId": 4,
+         "abbrev": "GLIX",
+         "value": 16.0,
+         "text": "16 runs",
+         "when": "Jul 4",
+         "who": "",
+         "detail": ""
+        },
+        {
+         "espnId": 8,
+         "abbrev": "JD",
+         "value": 16.0,
+         "text": "16 runs",
+         "when": "Sep 19",
+         "who": "",
+         "detail": ""
+        }
+       ]
+      },
+      {
+       "icon": "🎯",
+       "title": "Ducks on the Pond",
+       "blurb": "Most RBI in a day.",
+       "entries": [
+        {
+         "espnId": 4,
+         "abbrev": "GLIX",
+         "value": 21.0,
+         "text": "21 RBI",
+         "when": "May 16",
+         "who": "",
+         "detail": ""
+        },
+        {
+         "espnId": 1,
+         "abbrev": "MV3",
+         "value": 21.0,
+         "text": "21 RBI",
+         "when": "Aug 5",
+         "who": "",
+         "detail": ""
+        },
+        {
+         "espnId": 3,
+         "abbrev": "S+A",
+         "value": 18.0,
+         "text": "18 RBI",
+         "when": "Apr 29",
+         "who": "",
+         "detail": ""
+        }
+       ]
+      },
+      {
+       "icon": "💨",
+       "title": "Grand Theft Base",
+       "blurb": "Most stolen bases in a day.",
+       "entries": [
+        {
+         "espnId": 13,
+         "abbrev": "JTL",
+         "value": 6.0,
+         "text": "6 steals",
+         "when": "Aug 24",
+         "who": "",
+         "detail": ""
+        },
+        {
+         "espnId": 4,
+         "abbrev": "GLIX",
+         "value": 5.0,
+         "text": "5 steals",
+         "when": "Apr 4",
+         "who": "",
+         "detail": ""
+        },
+        {
+         "espnId": 10,
+         "abbrev": "KLIN",
+         "value": 5.0,
+         "text": "5 steals",
+         "when": "Apr 8",
+         "who": "",
+         "detail": ""
+        },
+        {
+         "espnId": 5,
+         "abbrev": "Jeff",
+         "value": 5.0,
+         "text": "5 steals",
+         "when": "Apr 15",
+         "who": "",
+         "detail": ""
+        },
+        {
+         "espnId": 12,
+         "abbrev": "Dave",
+         "value": 5.0,
+         "text": "5 steals",
+         "when": "May 24",
+         "who": "",
+         "detail": ""
+        },
+        {
+         "espnId": 13,
+         "abbrev": "JTL",
+         "value": 5.0,
+         "text": "5 steals",
+         "when": "Jul 2",
+         "who": "",
+         "detail": ""
+        }
+       ]
+      },
+      {
+       "icon": "🔥",
+       "title": "Punchout Party",
+       "blurb": "Most pitcher strikeouts in a day.",
+       "entries": [
+        {
+         "espnId": 1,
+         "abbrev": "MV3",
+         "value": 42.0,
+         "text": "42 K",
+         "when": "Jun 30",
+         "who": "",
+         "detail": ""
+        },
+        {
+         "espnId": 12,
+         "abbrev": "Dave",
+         "value": 39.0,
+         "text": "39 K",
+         "when": "Sep 18",
+         "who": "",
+         "detail": ""
+        },
+        {
+         "espnId": 10,
+         "abbrev": "KLIN",
+         "value": 36.0,
+         "text": "36 K",
+         "when": "Jun 15",
+         "who": "",
+         "detail": ""
+        }
+       ]
+      },
+      {
+       "icon": "✅",
+       "title": "Quality Control",
+       "blurb": "Most quality starts in a day.",
+       "entries": [
+        {
+         "espnId": 10,
+         "abbrev": "KLIN",
+         "value": 4.0,
+         "text": "4 QS",
+         "when": "May 7",
+         "who": "",
+         "detail": ""
+        },
+        {
+         "espnId": 12,
+         "abbrev": "Dave",
+         "value": 4.0,
+         "text": "4 QS",
+         "when": "May 27",
+         "who": "",
+         "detail": ""
+        },
+        {
+         "espnId": 2,
+         "abbrev": "SHAR",
+         "value": 4.0,
+         "text": "4 QS",
+         "when": "Jun 5",
+         "who": "",
+         "detail": ""
+        },
+        {
+         "espnId": 1,
+         "abbrev": "MV3",
+         "value": 4.0,
+         "text": "4 QS",
+         "when": "Jun 30",
+         "who": "",
+         "detail": ""
+        }
+       ]
+      },
+      {
+       "icon": "🔒",
+       "title": "Lockdown",
+       "blurb": "Most saves + holds in a day.",
+       "entries": [
+        {
+         "espnId": 8,
+         "abbrev": "JD",
+         "value": 5.0,
+         "text": "5 SV+HLD",
+         "when": "Jul 5",
+         "who": "",
+         "detail": ""
+        },
+        {
+         "espnId": 6,
+         "abbrev": "AJ",
+         "value": 4.0,
+         "text": "4 SV+HLD",
+         "when": "Mar 27",
+         "who": "",
+         "detail": ""
+        },
+        {
+         "espnId": 8,
+         "abbrev": "JD",
+         "value": 4.0,
+         "text": "4 SV+HLD",
+         "when": "Apr 18",
+         "who": "",
+         "detail": ""
+        },
+        {
+         "espnId": 12,
+         "abbrev": "Dave",
+         "value": 4.0,
+         "text": "4 SV+HLD",
+         "when": "Jun 6",
+         "who": "",
+         "detail": ""
+        },
+        {
+         "espnId": 2,
+         "abbrev": "SHAR",
+         "value": 4.0,
+         "text": "4 SV+HLD",
+         "when": "Jul 6",
+         "who": "",
+         "detail": ""
+        },
+        {
+         "espnId": 6,
+         "abbrev": "AJ",
+         "value": 4.0,
+         "text": "4 SV+HLD",
+         "when": "Jul 11",
+         "who": "",
+         "detail": ""
+        }
+       ]
+      },
+      {
+       "icon": "🧊",
+       "title": "Zero Hour",
+       "blurb": "Most innings thrown in a day without allowing an earned run.",
+       "entries": [
+        {
+         "espnId": 12,
+         "abbrev": "Dave",
+         "value": 62.0,
+         "text": "20.2 IP, 0 ER",
+         "when": "Apr 9",
+         "who": "",
+         "detail": ""
+        },
+        {
+         "espnId": 3,
+         "abbrev": "S+A",
+         "value": 46.0,
+         "text": "15.1 IP, 0 ER",
+         "when": "Apr 25",
+         "who": "",
+         "detail": ""
+        },
+        {
+         "espnId": 12,
+         "abbrev": "Dave",
+         "value": 46.0,
+         "text": "15.1 IP, 0 ER",
+         "when": "May 20",
+         "who": "",
+         "detail": ""
+        },
+        {
+         "espnId": 3,
+         "abbrev": "S+A",
+         "value": 46.0,
+         "text": "15.1 IP, 0 ER",
+         "when": "Jul 6",
+         "who": "",
+         "detail": ""
+        }
+       ]
+      },
+      {
+       "icon": "💥",
+       "title": "Meltdown",
+       "blurb": "Most earned runs allowed in a day. Somebody had to.",
+       "entries": [
+        {
+         "espnId": 12,
+         "abbrev": "Dave",
+         "value": 16.0,
+         "text": "16 ER in 16.1 IP",
+         "when": "May 3",
+         "who": "",
+         "detail": ""
+        },
+        {
+         "espnId": 4,
+         "abbrev": "GLIX",
+         "value": 16.0,
+         "text": "16 ER in 21.0 IP",
+         "when": "Jun 5",
+         "who": "",
+         "detail": ""
+        },
+        {
+         "espnId": 3,
+         "abbrev": "S+A",
+         "value": 16.0,
+         "text": "16 ER in 14.2 IP",
+         "when": "Aug 8",
+         "who": "",
+         "detail": ""
+        },
+        {
+         "espnId": 7,
+         "abbrev": "CORE",
+         "value": 16.0,
+         "text": "16 ER in 16.1 IP",
+         "when": "Aug 24",
+         "who": "",
+         "detail": ""
+        },
+        {
+         "espnId": 12,
+         "abbrev": "Dave",
+         "value": 16.0,
+         "text": "16 ER in 17.2 IP",
+         "when": "Sep 13",
+         "who": "",
+         "detail": ""
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "title": "Individual Performances",
+     "subtitle": "Biggest single days by a player in someone's active lineup",
+     "records": [
+      {
+       "icon": "🚀",
+       "title": "Multi-Homer Madness",
+       "blurb": "Most home runs by one player in a day.",
+       "entries": [
+        {
+         "espnId": 9,
+         "abbrev": "WEIN",
+         "value": 4.09,
+         "text": "4-for-6, 4 HR, 9 RBI",
+         "when": "Aug 28",
+         "who": "Kyle Schwarber",
+         "detail": ""
+        },
+        {
+         "espnId": 1,
+         "abbrev": "MV3",
+         "value": 4.05,
+         "text": "4-for-4, 4 HR, 5 RBI",
+         "when": "Apr 26",
+         "who": "Eugenio Suarez",
+         "detail": ""
+        },
+        {
+         "espnId": 8,
+         "abbrev": "JD",
+         "value": 3.08,
+         "text": "4-for-6, 3 HR, 8 RBI",
+         "when": "Mar 29",
+         "who": "Aaron Judge",
+         "detail": ""
+        },
+        {
+         "espnId": 4,
+         "abbrev": "GLIX",
+         "value": 3.08,
+         "text": "3-for-5, 3 HR, 8 RBI",
+         "when": "May 16",
+         "who": "Wilmer Flores",
+         "detail": ""
+        }
+       ]
+      },
+      {
+       "icon": "🧨",
+       "title": "RBI Machine",
+       "blurb": "Most RBI by one player in a day.",
+       "entries": [
+        {
+         "espnId": 9,
+         "abbrev": "WEIN",
+         "value": 9.04,
+         "text": "4-for-6, 4 HR, 9 RBI",
+         "when": "Aug 28",
+         "who": "Kyle Schwarber",
+         "detail": ""
+        },
+        {
+         "espnId": 8,
+         "abbrev": "JD",
+         "value": 9.02,
+         "text": "4-for-6, 2 HR, 9 RBI",
+         "when": "Apr 28",
+         "who": "Brandon Nimmo",
+         "detail": ""
+        },
+        {
+         "espnId": 8,
+         "abbrev": "JD",
+         "value": 8.03,
+         "text": "4-for-6, 3 HR, 8 RBI",
+         "when": "Mar 29",
+         "who": "Aaron Judge",
+         "detail": ""
+        },
+        {
+         "espnId": 4,
+         "abbrev": "GLIX",
+         "value": 8.03,
+         "text": "3-for-5, 3 HR, 8 RBI",
+         "when": "May 16",
+         "who": "Wilmer Flores",
+         "detail": ""
+        }
+       ]
+      },
+      {
+       "icon": "🧱",
+       "title": "Total Bases",
+       "blurb": "Most total bases by one player in a day.",
+       "entries": [
+        {
+         "espnId": 1,
+         "abbrev": "MV3",
+         "value": 16.0,
+         "text": "16 TB — 4-for-4, 4 HR, 5 RBI",
+         "when": "Apr 26",
+         "who": "Eugenio Suarez",
+         "detail": ""
+        },
+        {
+         "espnId": 9,
+         "abbrev": "WEIN",
+         "value": 16.0,
+         "text": "16 TB — 4-for-6, 4 HR, 9 RBI",
+         "when": "Aug 28",
+         "who": "Kyle Schwarber",
+         "detail": ""
+        },
+        {
+         "espnId": 2,
+         "abbrev": "SHAR",
+         "value": 15.0,
+         "text": "15 TB — 5-for-6, 3 HR, 3 RBI",
+         "when": "Aug 5",
+         "who": "Shea Langeliers",
+         "detail": ""
+        }
+       ]
+      },
+      {
+       "icon": "🐆",
+       "title": "Wheels",
+       "blurb": "Most stolen bases by one player in a day.",
+       "entries": [
+        {
+         "espnId": 13,
+         "abbrev": "JTL",
+         "value": 3.0,
+         "text": "3 steals",
+         "when": "Apr 17",
+         "who": "Corbin Carroll",
+         "detail": ""
+        },
+        {
+         "espnId": 1,
+         "abbrev": "MV3",
+         "value": 3.0,
+         "text": "3 steals",
+         "when": "Apr 20",
+         "who": "Brice Turang",
+         "detail": ""
+        },
+        {
+         "espnId": 9,
+         "abbrev": "WEIN",
+         "value": 3.0,
+         "text": "3 steals",
+         "when": "Apr 26",
+         "who": "Zach Neto",
+         "detail": ""
+        },
+        {
+         "espnId": 6,
+         "abbrev": "AJ",
+         "value": 3.0,
+         "text": "3 steals",
+         "when": "May 1",
+         "who": "Maikel Garcia",
+         "detail": ""
+        },
+        {
+         "espnId": 5,
+         "abbrev": "Jeff",
+         "value": 3.0,
+         "text": "3 steals",
+         "when": "May 12",
+         "who": "Jose Ramirez",
+         "detail": ""
+        },
+        {
+         "espnId": 5,
+         "abbrev": "Jeff",
+         "value": 3.0,
+         "text": "3 steals",
+         "when": "Jul 12",
+         "who": "Jose Ramirez",
+         "detail": ""
+        }
+       ]
+      },
+      {
+       "icon": "🌀",
+       "title": "Strikeout Artist",
+       "blurb": "Most strikeouts by one pitcher in a day.",
+       "entries": [
+        {
+         "espnId": 10,
+         "abbrev": "KLIN",
+         "value": 14.98,
+         "text": "15 K in 6.1 IP, 2 ER",
+         "when": "Jun 15",
+         "who": "Grant Holmes",
+         "detail": ""
+        },
+        {
+         "espnId": 12,
+         "abbrev": "Dave",
+         "value": 14.0,
+         "text": "14 K in 6.0 IP, 0 ER",
+         "when": "Apr 21",
+         "who": "Max Meyer",
+         "detail": ""
+        },
+        {
+         "espnId": 1,
+         "abbrev": "MV3",
+         "value": 13.98,
+         "text": "14 K in 7.0 IP, 2 ER",
+         "when": "Jun 8",
+         "who": "George Kirby",
+         "detail": ""
+        },
+        {
+         "espnId": 5,
+         "abbrev": "Jeff",
+         "value": 13.98,
+         "text": "14 K in 6.1 IP, 2 ER",
+         "when": "Sep 14",
+         "who": "George Kirby",
+         "detail": ""
+        }
+       ]
+      },
+      {
+       "icon": "🗿",
+       "title": "Gem of the Year",
+       "blurb": "Longest scoreless start (most innings, 0 ER).",
+       "entries": [
+        {
+         "espnId": 3,
+         "abbrev": "S+A",
+         "value": 27.13,
+         "text": "13 K in 9.0 IP, 0 ER",
+         "when": "May 25",
+         "who": "Tarik Skubal",
+         "detail": ""
+        },
+        {
+         "espnId": 5,
+         "abbrev": "Jeff",
+         "value": 27.11,
+         "text": "11 K in 9.0 IP, 0 ER",
+         "when": "Jun 27",
+         "who": "Sonny Gray",
+         "detail": ""
+        },
+        {
+         "espnId": 1,
+         "abbrev": "MV3",
+         "value": 27.09,
+         "text": "9 K in 9.0 IP, 0 ER",
+         "when": "Jul 12",
+         "who": "Garrett Crochet",
+         "detail": ""
+        },
+        {
+         "espnId": 7,
+         "abbrev": "CORE",
+         "value": 27.09,
+         "text": "9 K in 9.0 IP, 0 ER",
+         "when": "Sep 11",
+         "who": "Kevin Gausman",
+         "detail": ""
+        },
+        {
+         "espnId": 12,
+         "abbrev": "Dave",
+         "value": 27.09,
+         "text": "9 K in 9.0 IP, 0 ER",
+         "when": "Sep 18",
+         "who": "Hunter Greene",
+         "detail": ""
+        }
+       ]
+      },
+      {
+       "icon": "📜",
+       "title": "History Made",
+       "blurb": "Cycles and complete-game no-hitters while in a fantasy lineup.",
+       "entries": [
+        {
+         "espnId": 5,
+         "abbrev": "Jeff",
+         "value": 1,
+         "text": "hit for the cycle",
+         "when": "Jul 12",
+         "who": "Byron Buxton",
+         "detail": ""
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "title": "Bench Blunders",
+     "subtitle": "Production that happened on the bench — and didn't count",
+     "records": [
+      {
+       "icon": "🪑",
+       "title": "Benched Bomb",
+       "blurb": "Biggest day by a hitter sitting on the bench.",
+       "entries": [
+        {
+         "espnId": 7,
+         "abbrev": "CORE",
+         "value": 17.0,
+         "text": "4-for-6, 2 HR, 6 RBI",
+         "when": "Sep 8",
+         "who": "Josh Bell",
+         "detail": ""
+        },
+        {
+         "espnId": 2,
+         "abbrev": "SHAR",
+         "value": 15.0,
+         "text": "3-for-4, 2 HR, 5 RBI",
+         "when": "Aug 13",
+         "who": "Bryan Reynolds",
+         "detail": ""
+        },
+        {
+         "espnId": 13,
+         "abbrev": "JTL",
+         "value": 14.0,
+         "text": "2-for-4, 2 HR, 4 RBI",
+         "when": "Jul 19",
+         "who": "Anthony Volpe",
+         "detail": ""
+        }
+       ]
+      },
+      {
+       "icon": "😩",
+       "title": "Benched Ace",
+       "blurb": "Most strikeouts by a pitcher sitting on the bench.",
+       "entries": [
+        {
+         "espnId": 13,
+         "abbrev": "JTL",
+         "value": 12.0,
+         "text": "12 K in 6.1 IP, 0 ER",
+         "when": "Sep 25",
+         "who": "Nick Lodolo",
+         "detail": ""
+        },
+        {
+         "espnId": 13,
+         "abbrev": "JTL",
+         "value": 11.98,
+         "text": "12 K in 6.0 IP, 2 ER",
+         "when": "Sep 23",
+         "who": "Gavin Williams",
+         "detail": ""
+        },
+        {
+         "espnId": 7,
+         "abbrev": "CORE",
+         "value": 11.0,
+         "text": "11 K in 7.0 IP, 0 ER",
+         "when": "Jun 10",
+         "who": "Dylan Cease",
+         "detail": ""
+        },
+        {
+         "espnId": 2,
+         "abbrev": "SHAR",
+         "value": 11.0,
+         "text": "11 K in 6.0 IP, 0 ER",
+         "when": "Sep 10",
+         "who": "Blake Snell",
+         "detail": ""
+        }
+       ]
+      },
+      {
+       "icon": "🏚️",
+       "title": "Bench Home Runs",
+       "blurb": "Season total of home runs hit by benched players.",
+       "entries": [
+        {
+         "espnId": 7,
+         "abbrev": "CORE",
+         "value": 24.0,
+         "text": "24 HR · 73 RBI",
+         "when": "",
+         "who": "",
+         "detail": ""
+        },
+        {
+         "espnId": 13,
+         "abbrev": "JTL",
+         "value": 24.0,
+         "text": "24 HR · 105 RBI",
+         "when": "",
+         "who": "",
+         "detail": ""
+        },
+        {
+         "espnId": 1,
+         "abbrev": "MV3",
+         "value": 17.0,
+         "text": "17 HR · 62 RBI",
+         "when": "",
+         "who": "",
+         "detail": ""
+        }
+       ]
+      },
+      {
+       "icon": "🧯",
+       "title": "Bench Strikeouts",
+       "blurb": "Season total of strikeouts thrown from the bench.",
+       "entries": [
+        {
+         "espnId": 7,
+         "abbrev": "CORE",
+         "value": 147.0,
+         "text": "147 K · 5 QS",
+         "when": "",
+         "who": "",
+         "detail": ""
+        },
+        {
+         "espnId": 10,
+         "abbrev": "KLIN",
+         "value": 135.0,
+         "text": "135 K · 10 QS",
+         "when": "",
+         "who": "",
+         "detail": ""
+        },
+        {
+         "espnId": 13,
+         "abbrev": "JTL",
+         "value": 117.0,
+         "text": "117 K · 11 QS",
+         "when": "",
+         "who": "",
+         "detail": ""
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "title": "Best Weeks",
+     "subtitle": "Monday–Sunday totals",
+     "records": [
+      {
+       "icon": "📅",
+       "title": "Power Week",
+       "blurb": "Most home runs in a week.",
+       "entries": [
+        {
+         "espnId": 5,
+         "abbrev": "Jeff",
+         "value": 21.0,
+         "text": "21 HR",
+         "when": "Week of Jun 16",
+         "who": "",
+         "detail": ""
+        },
+        {
+         "espnId": 10,
+         "abbrev": "KLIN",
+         "value": 21.0,
+         "text": "21 HR",
+         "when": "Week of Jun 16",
+         "who": "",
+         "detail": ""
+        },
+        {
+         "espnId": 1,
+         "abbrev": "MV3",
+         "value": 21.0,
+         "text": "21 HR",
+         "when": "Week of Jun 30",
+         "who": "",
+         "detail": ""
+        },
+        {
+         "espnId": 5,
+         "abbrev": "Jeff",
+         "value": 21.0,
+         "text": "21 HR",
+         "when": "Week of Aug 18",
+         "who": "",
+         "detail": ""
+        }
+       ]
+      },
+      {
+       "icon": "🏎️",
+       "title": "Speed Week",
+       "blurb": "Most stolen bases in a week.",
+       "entries": [
+        {
+         "espnId": 5,
+         "abbrev": "Jeff",
+         "value": 16.0,
+         "text": "16 steals",
+         "when": "Week of Aug 11",
+         "who": "",
+         "detail": ""
+        },
+        {
+         "espnId": 5,
+         "abbrev": "Jeff",
+         "value": 15.0,
+         "text": "15 steals",
+         "when": "Week of Apr 7",
+         "who": "",
+         "detail": ""
+        },
+        {
+         "espnId": 1,
+         "abbrev": "MV3",
+         "value": 15.0,
+         "text": "15 steals",
+         "when": "Week of Apr 14",
+         "who": "",
+         "detail": ""
+        },
+        {
+         "espnId": 5,
+         "abbrev": "Jeff",
+         "value": 15.0,
+         "text": "15 steals",
+         "when": "Week of May 5",
+         "who": "",
+         "detail": ""
+        },
+        {
+         "espnId": 5,
+         "abbrev": "Jeff",
+         "value": 15.0,
+         "text": "15 steals",
+         "when": "Week of May 12",
+         "who": "",
+         "detail": ""
+        },
+        {
+         "espnId": 5,
+         "abbrev": "Jeff",
+         "value": 15.0,
+         "text": "15 steals",
+         "when": "Week of Jun 30",
+         "who": "",
+         "detail": ""
+        }
+       ]
+      },
+      {
+       "icon": "⚡",
+       "title": "Strikeout Week",
+       "blurb": "Most pitcher strikeouts in a week.",
+       "entries": [
+        {
+         "espnId": 1,
+         "abbrev": "MV3",
+         "value": 97.0,
+         "text": "97 K",
+         "when": "Week of Jun 30",
+         "who": "",
+         "detail": ""
+        },
+        {
+         "espnId": 3,
+         "abbrev": "S+A",
+         "value": 95.0,
+         "text": "95 K",
+         "when": "Week of Apr 21",
+         "who": "",
+         "detail": ""
+        },
+        {
+         "espnId": 12,
+         "abbrev": "Dave",
+         "value": 89.0,
+         "text": "89 K",
+         "when": "Week of Sep 15",
+         "who": "",
+         "detail": ""
+        }
+       ]
+      },
+      {
+       "icon": "🧱",
+       "title": "Bullpen Week",
+       "blurb": "Most saves + holds in a week.",
+       "entries": [
+        {
+         "espnId": 8,
+         "abbrev": "JD",
+         "value": 18.0,
+         "text": "18 SV+HLD",
+         "when": "Week of Apr 14",
+         "who": "",
+         "detail": ""
+        },
+        {
+         "espnId": 12,
+         "abbrev": "Dave",
+         "value": 13.0,
+         "text": "13 SV+HLD",
+         "when": "Week of Jun 16",
+         "who": "",
+         "detail": ""
+        },
+        {
+         "espnId": 5,
+         "abbrev": "Jeff",
+         "value": 12.0,
+         "text": "12 SV+HLD",
+         "when": "Week of May 26",
+         "who": "",
+         "detail": ""
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "title": "The Race",
+     "subtitle": "Standings rebuilt day by day from active lineups (final totals match ESPN's official numbers)",
+     "records": [
+      {
+       "icon": "👑",
+       "title": "Days in First Place",
+       "blurb": "Days spent alone or tied atop the day-by-day standings, from the second week on.",
+       "entries": [
+        {
+         "espnId": 12,
+         "abbrev": "Dave",
+         "value": 141,
+         "text": "141 days",
+         "when": "",
+         "who": "",
+         "detail": ""
+        },
+        {
+         "espnId": 5,
+         "abbrev": "Jeff",
+         "value": 50,
+         "text": "50 days",
+         "when": "",
+         "who": "",
+         "detail": ""
+        },
+        {
+         "espnId": 9,
+         "abbrev": "WEIN",
+         "value": 4,
+         "text": "4 days",
+         "when": "",
+         "who": "",
+         "detail": ""
+        },
+        {
+         "espnId": 3,
+         "abbrev": "S+A",
+         "value": 2,
+         "text": "2 days",
+         "when": "",
+         "who": "",
+         "detail": ""
+        },
+        {
+         "espnId": 6,
+         "abbrev": "AJ",
+         "value": 2,
+         "text": "2 days",
+         "when": "",
+         "who": "",
+         "detail": ""
+        }
+       ]
+      },
+      {
+       "icon": "📈",
+       "title": "Comeback Kid",
+       "blurb": "Biggest climb from a low point (mid-May on) to the final standings.",
+       "entries": [
+        {
+         "espnId": 5,
+         "abbrev": "Jeff",
+         "value": 6,
+         "text": "7th → 1st",
+         "when": "low point May 15",
+         "who": "",
+         "detail": ""
+        },
+        {
+         "espnId": 9,
+         "abbrev": "WEIN",
+         "value": 4,
+         "text": "9th → 5th",
+         "when": "low point Aug 23",
+         "who": "",
+         "detail": ""
+        },
+        {
+         "espnId": 13,
+         "abbrev": "JTL",
+         "value": 4,
+         "text": "8th → 4th",
+         "when": "low point May 16",
+         "who": "",
+         "detail": ""
+        }
+       ]
+      },
+      {
+       "icon": "📉",
+       "title": "Free Fall",
+       "blurb": "Biggest drop from a high point (mid-May on) to the final standings.",
+       "entries": [
+        {
+         "espnId": 6,
+         "abbrev": "AJ",
+         "value": 6,
+         "text": "5th → 11th",
+         "when": "high point Jun 5",
+         "who": "",
+         "detail": ""
+        },
+        {
+         "espnId": 3,
+         "abbrev": "S+A",
+         "value": 5,
+         "text": "2nd → 7th",
+         "when": "high point May 16",
+         "who": "",
+         "detail": ""
+        },
+        {
+         "espnId": 8,
+         "abbrev": "JD",
+         "value": 5,
+         "text": "3rd → 8th",
+         "when": "high point Jun 27",
+         "who": "",
+         "detail": ""
+        }
+       ]
+      },
+      {
+       "icon": "🏁",
+       "title": "Last Lead Change",
+       "blurb": "First place changed hands 29 times after the first week. The last one:",
+       "entries": [
+        {
+         "espnId": 5,
+         "abbrev": "Jeff",
+         "value": 193,
+         "text": "took over first place (tied)",
+         "when": "Sep 26",
+         "who": "",
+         "detail": ""
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "title": "Front Office",
+     "subtitle": "FAAB, trades and roster churn",
+     "records": [
+      {
+       "icon": "💰",
+       "title": "Big Spender",
+       "blurb": "Largest winning FAAB bid.",
+       "entries": [
+        {
+         "espnId": 13,
+         "abbrev": "JTL",
+         "value": 535,
+         "text": "$535",
+         "when": "Aug 14",
+         "who": "Nolan McLean",
+         "detail": ""
+        },
+        {
+         "espnId": 4,
+         "abbrev": "GLIX",
+         "value": 300,
+         "text": "$300",
+         "when": "Sep 25",
+         "who": "Luis Arraez",
+         "detail": ""
+        },
+        {
+         "espnId": 6,
+         "abbrev": "AJ",
+         "value": 263,
+         "text": "$263",
+         "when": "May 22",
+         "who": "Cedric Mullins",
+         "detail": ""
+        }
+       ]
+      },
+      {
+       "icon": "😬",
+       "title": "Overpay of the Year",
+       "blurb": "Biggest gap between the winning bid and the next-best bid.",
+       "entries": [
+        {
+         "espnId": 4,
+         "abbrev": "GLIX",
+         "value": 300,
+         "text": "$300 vs next-best $0",
+         "when": "Sep 25",
+         "who": "Luis Arraez",
+         "detail": ""
+        },
+        {
+         "espnId": 13,
+         "abbrev": "JTL",
+         "value": 215,
+         "text": "$250 vs next-best $35",
+         "when": "Jun 30",
+         "who": "Otto Lopez",
+         "detail": ""
+        },
+        {
+         "espnId": 8,
+         "abbrev": "JD",
+         "value": 146,
+         "text": "$178 vs next-best $32",
+         "when": "May 15",
+         "who": "Salvador Perez",
+         "detail": ""
+        }
+       ]
+      },
+      {
+       "icon": "🤏",
+       "title": "Photo Finish",
+       "blurb": "Largest FAAB claim won by $1 or less.",
+       "entries": [
+        {
+         "espnId": 5,
+         "abbrev": "Jeff",
+         "value": 23,
+         "text": "$23 beat $22",
+         "when": "May 18",
+         "who": "Will Benson",
+         "detail": ""
+        },
+        {
+         "espnId": 12,
+         "abbrev": "Dave",
+         "value": 13,
+         "text": "$13 beat $12",
+         "when": "Jun 3",
+         "who": "Randy Rodriguez",
+         "detail": ""
+        },
+        {
+         "espnId": 5,
+         "abbrev": "Jeff",
+         "value": 12,
+         "text": "$12 beat $11",
+         "when": "Mar 23",
+         "who": "Jose Alvarado",
+         "detail": ""
+        }
+       ]
+      },
+      {
+       "icon": "🥊",
+       "title": "Most Wanted",
+       "blurb": "Most teams bidding on one player in one waiver run.",
+       "entries": [
+        {
+         "espnId": 8,
+         "abbrev": "JD",
+         "value": 5,
+         "text": "5 teams bid · won at $183",
+         "when": "Jun 5",
+         "who": "Tanner Scott",
+         "detail": ""
+        },
+        {
+         "espnId": 5,
+         "abbrev": "Jeff",
+         "value": 5,
+         "text": "5 teams bid · won at $22",
+         "when": "May 13",
+         "who": "Matthew Boyd",
+         "detail": ""
+        },
+        {
+         "espnId": 5,
+         "abbrev": "Jeff",
+         "value": 5,
+         "text": "5 teams bid · won at $12",
+         "when": "Apr 13",
+         "who": "Phil Maton",
+         "detail": ""
+        }
+       ]
+      },
+      {
+       "icon": "🦅",
+       "title": "Best Waiver Bat",
+       "blurb": "Most R+HR+RBI+SB a pickup produced for the team that added him.",
+       "entries": [
+        {
+         "espnId": 3,
+         "abbrev": "S+A",
+         "value": 199.0,
+         "text": "73 R · 25 HR · 93 RBI · 8 SB",
+         "when": "$0",
+         "who": "Tyler Soderstrom",
+         "detail": ""
+        },
+        {
+         "espnId": 12,
+         "abbrev": "Dave",
+         "value": 188.0,
+         "text": "80 R · 30 HR · 77 RBI · 1 SB",
+         "when": "$23",
+         "who": "Spencer Torkelson",
+         "detail": ""
+        },
+        {
+         "espnId": 1,
+         "abbrev": "MV3",
+         "value": 166.0,
+         "text": "63 R · 17 HR · 64 RBI · 22 SB",
+         "when": "$4",
+         "who": "Trevor Story",
+         "detail": ""
+        }
+       ]
+      },
+      {
+       "icon": "🎣",
+       "title": "Best Waiver Starter",
+       "blurb": "Most strikeouts a pitcher pickup delivered for the team that added him.",
+       "entries": [
+        {
+         "espnId": 9,
+         "abbrev": "WEIN",
+         "value": 131.0,
+         "text": "131 K · 13 QS · 0 SV+HLD",
+         "when": "$0",
+         "who": "Merrill Kelly",
+         "detail": ""
+        },
+        {
+         "espnId": 5,
+         "abbrev": "Jeff",
+         "value": 112.0,
+         "text": "112 K · 12 QS · 0 SV+HLD",
+         "when": "$14",
+         "who": "Matthew Boyd",
+         "detail": ""
+        },
+        {
+         "espnId": 13,
+         "abbrev": "JTL",
+         "value": 101.0,
+         "text": "101 K · 11 QS · 0 SV+HLD",
+         "when": "$10",
+         "who": "Gavin Williams",
+         "detail": ""
+        }
+       ]
+      },
+      {
+       "icon": "🚒",
+       "title": "Best Waiver Reliever",
+       "blurb": "Most saves + holds from a bullpen pickup.",
+       "entries": [
+        {
+         "espnId": 7,
+         "abbrev": "CORE",
+         "value": 34.0,
+         "text": "65 K · 0 QS · 34 SV+HLD",
+         "when": "$3",
+         "who": "Tony Santillan",
+         "detail": ""
+        },
+        {
+         "espnId": 5,
+         "abbrev": "Jeff",
+         "value": 30.0,
+         "text": "77 K · 0 QS · 30 SV+HLD",
+         "when": "$7",
+         "who": "Emilio Pagan",
+         "detail": ""
+        },
+        {
+         "espnId": 3,
+         "abbrev": "S+A",
+         "value": 30.0,
+         "text": "79 K · 0 QS · 30 SV+HLD",
+         "when": "$20",
+         "who": "Alex Vesia",
+         "detail": ""
+        }
+       ]
+      },
+      {
+       "icon": "🪙",
+       "title": "Budget Burned",
+       "blurb": "Most FAAB spent over the season.",
+       "entries": [
+        {
+         "espnId": 4,
+         "abbrev": "GLIX",
+         "value": 1000,
+         "text": "$1000",
+         "when": "",
+         "who": "",
+         "detail": ""
+        },
+        {
+         "espnId": 5,
+         "abbrev": "Jeff",
+         "value": 1000,
+         "text": "$1000",
+         "when": "",
+         "who": "",
+         "detail": ""
+        },
+        {
+         "espnId": 6,
+         "abbrev": "AJ",
+         "value": 1000,
+         "text": "$1000",
+         "when": "",
+         "who": "",
+         "detail": ""
+        },
+        {
+         "espnId": 12,
+         "abbrev": "Dave",
+         "value": 1000,
+         "text": "$1000",
+         "when": "",
+         "who": "",
+         "detail": ""
+        },
+        {
+         "espnId": 13,
+         "abbrev": "JTL",
+         "value": 1000,
+         "text": "$1000",
+         "when": "",
+         "who": "",
+         "detail": ""
+        }
+       ]
+      },
+      {
+       "icon": "📝",
+       "title": "Bid Machine",
+       "blurb": "Most waiver bids placed.",
+       "entries": [
+        {
+         "espnId": 5,
+         "abbrev": "Jeff",
+         "value": 272,
+         "text": "272 bids",
+         "when": "",
+         "who": "",
+         "detail": ""
+        },
+        {
+         "espnId": 9,
+         "abbrev": "WEIN",
+         "value": 199,
+         "text": "199 bids",
+         "when": "",
+         "who": "",
+         "detail": ""
+        },
+        {
+         "espnId": 8,
+         "abbrev": "JD",
+         "value": 195,
+         "text": "195 bids",
+         "when": "",
+         "who": "",
+         "detail": ""
+        }
+       ]
+      },
+      {
+       "icon": "💔",
+       "title": "Always the Bridesmaid",
+       "blurb": "Most waiver bids that didn't go through.",
+       "entries": [
+        {
+         "espnId": 5,
+         "abbrev": "Jeff",
+         "value": 197,
+         "text": "197 failed bids",
+         "when": "",
+         "who": "",
+         "detail": ""
+        },
+        {
+         "espnId": 12,
+         "abbrev": "Dave",
+         "value": 127,
+         "text": "127 failed bids",
+         "when": "",
+         "who": "",
+         "detail": ""
+        },
+        {
+         "espnId": 8,
+         "abbrev": "JD",
+         "value": 120,
+         "text": "120 failed bids",
+         "when": "",
+         "who": "",
+         "detail": ""
+        }
+       ]
+      },
+      {
+       "icon": "🔄",
+       "title": "Churn & Burn",
+       "blurb": "Most players added off waivers.",
+       "entries": [
+        {
+         "espnId": 9,
+         "abbrev": "WEIN",
+         "value": 104,
+         "text": "104 adds",
+         "when": "",
+         "who": "",
+         "detail": ""
+        },
+        {
+         "espnId": 5,
+         "abbrev": "Jeff",
+         "value": 75,
+         "text": "75 adds",
+         "when": "",
+         "who": "",
+         "detail": ""
+        },
+        {
+         "espnId": 8,
+         "abbrev": "JD",
+         "value": 75,
+         "text": "75 adds",
+         "when": "",
+         "who": "",
+         "detail": ""
+        }
+       ]
+      },
+      {
+       "icon": "🤝",
+       "title": "Wheeler-Dealer",
+       "blurb": "Most completed trades.",
+       "entries": [
+        {
+         "espnId": 2,
+         "abbrev": "SHAR",
+         "value": 15,
+         "text": "15 trades",
+         "when": "",
+         "who": "",
+         "detail": ""
+        },
+        {
+         "espnId": 12,
+         "abbrev": "Dave",
+         "value": 13,
+         "text": "13 trades",
+         "when": "",
+         "who": "",
+         "detail": ""
+        },
+        {
+         "espnId": 5,
+         "abbrev": "Jeff",
+         "value": 11,
+         "text": "11 trades",
+         "when": "",
+         "who": "",
+         "detail": ""
+        }
+       ]
+      },
+      {
+       "icon": "💼",
+       "title": "Blockbuster",
+       "blurb": "Most players moved in a single trade.",
+       "entries": [
+        {
+         "espnId": 1,
+         "abbrev": "MV3",
+         "value": 12,
+         "text": "12 players changed hands",
+         "when": "Jul 31",
+         "who": "",
+         "detail": "",
+         "got": [
+          {
+           "espnId": 1,
+           "abbrev": "MV3",
+           "players": [
+            "Matt Strahm",
+            "Will Warren",
+            "Paul Goldschmidt",
+            "Spencer Steer",
+            "Austin Hays",
+            "Cal Raleigh"
+           ]
+          },
+          {
+           "espnId": 2,
+           "abbrev": "SHAR",
+           "players": [
+            "Felix Bautista",
+            "Shea Langeliers",
+            "Mookie Betts",
+            "Brandon Woodruff",
+            "TJ Friedl",
+            "Pete Alonso"
+           ]
+          }
+         ]
+        },
+        {
+         "espnId": 5,
+         "abbrev": "Jeff",
+         "value": 11,
+         "text": "11 players changed hands",
+         "when": "Apr 15",
+         "who": "",
+         "detail": "",
+         "got": [
+          {
+           "espnId": 5,
+           "abbrev": "Jeff",
+           "players": [
+            "Mike Trout",
+            "Marcus Semien",
+            "Ryan Helsley",
+            "Emmanuel Clase",
+            "Sonny Gray"
+           ]
+          },
+          {
+           "espnId": 7,
+           "abbrev": "CORE",
+           "players": [
+            "Gavin Lux",
+            "Max Kepler",
+            "Trevor Larnach",
+            "Jo Adell",
+            "Craig Yoho",
+            "Reese Olson"
+           ]
+          }
+         ]
+        },
+        {
+         "espnId": 2,
+         "abbrev": "SHAR",
+         "value": 8,
+         "text": "8 players changed hands",
+         "when": "Apr 21",
+         "who": "",
+         "detail": "",
+         "got": [
+          {
+           "espnId": 2,
+           "abbrev": "SHAR",
+           "players": [
+            "Michael King",
+            "Kenley Jansen",
+            "Wilyer Abreu",
+            "Corey Seager"
+           ]
+          },
+          {
+           "espnId": 9,
+           "abbrev": "WEIN",
+           "players": [
+            "Jeff Hoffman",
+            "Bryce Miller",
+            "Ian Happ",
+            "Zach Neto"
+           ]
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "icon": "🥔",
+       "title": "Hot Potato",
+       "blurb": "Player who bounced between the most fantasy teams. Credited to his last team.",
+       "entries": [
+        {
+         "espnId": 5,
+         "abbrev": "Jeff",
+         "value": 6,
+         "text": "5 teams, 5 moves",
+         "when": "",
+         "who": "Rhys Hoskins",
+         "detail": "S+A → Dave → AJ → CORE → AJ → Jeff"
+        },
+        {
+         "espnId": 13,
+         "abbrev": "JTL",
+         "value": 6,
+         "text": "5 teams, 5 moves",
+         "when": "",
+         "who": "Spencer Steer",
+         "detail": "AJ → Dave → AJ → SHAR → MV3 → JTL"
+        },
+        {
+         "espnId": 10,
+         "abbrev": "KLIN",
+         "value": 6,
+         "text": "5 teams, 5 moves",
+         "when": "",
+         "who": "Steven Kwan",
+         "detail": "AJ → Dave → SHAR → WEIN → Dave → KLIN"
+        },
+        {
+         "espnId": 13,
+         "abbrev": "JTL",
+         "value": 6,
+         "text": "4 teams, 5 moves",
+         "when": "",
+         "who": "Michael Wacha",
+         "detail": "JD → SHAR → AJ → SHAR → JD → JTL"
+        },
+        {
+         "espnId": 9,
+         "abbrev": "WEIN",
+         "value": 6,
+         "text": "5 teams, 5 moves",
+         "when": "",
+         "who": "Brady Singer",
+         "detail": "AJ → Jeff → JD → SHAR → JD → WEIN"
+        }
+       ]
+      },
+      {
+       "icon": "🏷️",
+       "title": "Sticker Shock",
+       "blurb": "Priciest non-keeper buys at the auction.",
+       "entries": [
+        {
+         "espnId": 10,
+         "abbrev": "KLIN",
+         "value": 63,
+         "text": "$63",
+         "when": "",
+         "who": "Mookie Betts",
+         "detail": ""
+        },
+        {
+         "espnId": 12,
+         "abbrev": "Dave",
+         "value": 63,
+         "text": "$63",
+         "when": "",
+         "who": "Fernando Tatis Jr.",
+         "detail": ""
+        },
+        {
+         "espnId": 4,
+         "abbrev": "GLIX",
+         "value": 62,
+         "text": "$62",
+         "when": "",
+         "who": "Juan Soto",
          "detail": ""
         }
        ]

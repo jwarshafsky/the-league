@@ -9,9 +9,10 @@ Usage:  python3 scripts/build_record_book.py [ARCHIVE_DIR] [YEAR]
 
 Everything is derived from the day-by-day lineups: a team is credited with a
 player's stats for a day only if he was in an active slot (not BE / IL) that
-day, which is how ESPN scores it. Reconstructed season totals land within ~1%
-of ESPN's official numbers (mid-day lineup swaps and games/starts caps are the
-gap), so the Race section is labelled "reconstructed".
+day, which is how ESPN scores it. Only hitting stats count
+from hitter slots and pitching stats from pitcher slots, and starts past the
+games-started cap are dropped; with those rules the rebuilt season totals match
+ESPN's official category totals exactly (checked 2025 + 2026 with RB_DEBUG=1).
 
 Existing seasons in the output file are kept; only YEAR is replaced.
 """
@@ -32,6 +33,8 @@ YEAR = int(sys.argv[2]) if len(sys.argv) > 2 else 2026
 RAW = os.path.join(ARCHIVE, "raw")
 
 BENCH, IL = 16, 17
+PITCH_SLOTS = {13, 14, 15}   # P, SP, RP
+GS = 33
 # ESPN flb stat ids used here.
 AB, H, DBL, TRP, SGL, TB, BB, HBP, SF, R, RBI, HR, SB = 0, 1, 3, 4, 7, 8, 10, 12, 13, 20, 21, 5, 23
 OUTS, P_H, P_BB, ER, K, QS, SVHD = 34, 37, 39, 45, 48, 63, 83
@@ -52,6 +55,26 @@ cats = [(i["statId"], i.get("isReverseItem", False)) for i in core["settings"]["
 # Day-by-day lineups
 # ---------------------------------------------------------------------------
 day_files = sorted(glob.glob(os.path.join(RAW, "daily/*/rosters.json.gz")))
+
+# Games-started cap: once a team passes it, later starts don't count (ESPN's
+# own day it tripped is exceededOnScoringPeriod; verified against 2025 finals).
+start_cap = {}
+with gzip.open(day_files[-1]) as f:
+    for x in (json.load(f).get("schedule") or [{}])[0].get("teams", []):
+        for lim in x.get("cumulativeScore", {}).get("statBySlot", {}).values():
+            if lim.get("statId") == GS and lim.get("limitExceeded"):
+                start_cap[x["teamId"]] = lim["exceededOnScoringPeriod"]
+
+
+def counted(g, slot, tid, sp):
+    """The part of one game's box line that counts for the team in this slot:
+    hitting stats in hitter slots, pitching stats in pitcher slots (a two-way
+    player in UTIL doesn't bank his strikeouts), nothing past the start cap."""
+    if slot in PITCH_SLOTS:
+        if sp > start_cap.get(tid, 10 ** 6) and g.get(GS, 0) >= 1:
+            return {}
+        return {k: v for k, v in g.items() if k >= 32}
+    return {k: v for k, v in g.items() if k < 32}
 team_day = collections.defaultdict(collections.Counter)      # (tid, sp) -> stats (active)
 bench_day = collections.defaultdict(collections.Counter)     # (tid, sp) -> stats (BE only)
 player_day = []                                              # (tid, sp, pid, slot, stats)
@@ -60,6 +83,7 @@ owners_of = collections.defaultdict(list)                    # pid -> [tid by da
 pname = {}
 ppos = {}
 special = []                                                 # (sp, tid, pid, label) per game
+day_owner = collections.defaultdict(dict)                    # sp -> {pid: tid}
 
 for path in day_files:
     sp = int(path.split(os.sep)[-2])
@@ -71,6 +95,7 @@ for path in day_files:
             pl = e["playerPoolEntry"]["player"]
             pid, slot = e["playerId"], e.get("lineupSlotId")
             pname[pid] = pl.get("fullName", str(pid))
+            day_owner[sp][pid] = tid
             ppos[pid] = pl.get("defaultPositionId")
             if not owners_of[pid] or owners_of[pid][-1] != tid:
                 owners_of[pid].append(tid)
@@ -78,13 +103,15 @@ for path in day_files:
             for s in pl.get("stats", []):
                 if s.get("statSplitTypeId") == 5 and s.get("statSourceId") == 0 and s.get("scoringPeriodId") == sp:
                     g = {int(k): v for k, v in s["stats"].items()}
+                    if slot not in (BENCH, IL):
+                        g = counted(g, slot, tid, sp)
                     st.update(g)
                     # Per-game feats, checked on the raw box line (a doubleheader
                     # day must not add up to a fake cycle). Active slots only.
                     if slot not in (BENCH, IL):
                         if all(g.get(k, 0) >= 1 for k in (SGL, DBL, TRP, HR)):
                             special.append((sp, tid, pid, "hit for the cycle"))
-                        if g.get(OUTS, 0) >= 27 and g.get(P_H, 0) == 0:
+                        if g.get(OUTS, 0) >= 27 and g.get(P_H, 1) == 0:
                             special.append((sp, tid, pid, "threw a no-hitter"))
             if not st:
                 continue
@@ -313,9 +340,10 @@ for sp in range(1, last_sp + 1):
 
 final_rank = {t["id"]: t.get("rankCalculatedFinal") for t in core["teams"]}
 race = []
-race.append(record("👑", "Days in First Place", "Days spent alone or tied atop the (reconstructed) standings, from the second week on.",
+race.append(record("👑", "Days in First Place", "Days spent alone or tied atop the day-by-day standings, from the second week on.",
                    top([(n, 0, entry(t, n, plural(n, "day"))) for t, n in first_days.items()], n=5)))
-cutoff = 45  # measure comebacks/collapses from mid-May on
+# Comebacks/collapses are measured from May 15 on (early-season ranks are noise).
+cutoff = next(sp for sp in range(1, last_sp + 1) if day_date(sp) >= datetime.date(YEAR, 5, 15))
 come, coll = [], []
 for t, hist in rank_hist.items():
     later = {sp: r for sp, r in hist.items() if sp >= cutoff}
@@ -336,7 +364,7 @@ if changes:
     lead = leader_by_day[last]
     race.append(record("🏁", "Last Lead Change", f"First place changed hands {plural(len(changes), 'time')} after the first week. The last one:",
                        [entry(lead[0], last, "took over first place" + (" (tied)" if len(lead) > 1 else ""), fmt_day(last))]))
-sections.append({"title": "The Race", "subtitle": "Standings reconstructed day by day from active lineups (within ~1% of ESPN's official totals)",
+sections.append({"title": "The Race", "subtitle": "Standings rebuilt day by day from active lineups (final totals match ESPN's official numbers)",
                  "records": [r for r in race if r]})
 
 # ---------------------------------------------------------------------------
@@ -376,37 +404,75 @@ for (pid, _), claims in by_claim.items():
 spent = {t["id"]: (t.get("transactionCounter") or {}).get("acquisitionBudgetSpent", 0) for t in core["teams"]}
 placed = collections.Counter(t["teamId"] for t in waivers if t["status"] != "CANCELED")
 lost = collections.Counter(t["teamId"] for t in waivers if t["status"].startswith("FAILED"))
-adds = collections.Counter(t["teamId"] for t in tx if t["type"] in ("WAIVER", "FREEAGENT") and t.get("status") == "EXECUTED")
+adds = collections.Counter(t["teamId"] for t in tx if t["type"] == "WAIVER" and t.get("status") == "EXECUTED")
 
 # Trades: the transaction log keeps only the approvals, so read the activity
 # feed, where each trade is one topic of "player X: team A -> team B" lines.
-trades, blockbuster = collections.Counter(), []
-for path in glob.glob(os.path.join(RAW, "communication/ACTIVITY_TRANSACTIONS_*.json.gz")):
-    with gzip.open(path) as f:
-        for tp in json.load(f).get("topics", []):
-            lines = [m for m in tp.get("messages", []) if m.get("messageTypeId") == 244]
-            if not lines:
-                continue
-            sides = sorted({m["from"] for m in lines} | {m["to"] for m in lines})
-            for tid in sides:
-                trades[tid] += 1
-            when = datetime.datetime.fromtimestamp(tp["date"] / 1000).strftime("%b %-d")
-            got = {tid: [pname.get(m["targetId"], str(m["targetId"])) for m in lines if m["to"] == tid] for tid in sides}
-            e = entry(sides[0], len(lines), f"{len(lines)} players changed hands", when)
-            # Two-sided entry: the page renders "A ⇄ B" and "A got …" with team names.
-            e["got"] = [{"espnId": t, "abbrev": abbrev.get(t, str(t)), "players": v} for t, v in got.items()]
-            blockbuster.append((len(lines), tp["date"], e))
+# ESPN deletes a season's feed after it rolls over (2025 is gone), so fall
+# back to the daily rosters: a player on team A one day and team B the next,
+# with no waiver/FA add in between, was traded. Same-day moves between the
+# same pair of teams form one trade.
+def trades_from_feed():
+    out = []
+    for path in glob.glob(os.path.join(RAW, "communication/ACTIVITY_TRANSACTIONS_*.json.gz")):
+        with gzip.open(path) as f:
+            for tp in json.load(f).get("topics", []):
+                lines = [(m["targetId"], m["from"], m["to"]) for m in tp.get("messages", []) if m.get("messageTypeId") == 244]
+                if lines:
+                    out.append((datetime.datetime.fromtimestamp(tp["date"] / 1000).strftime("%b %-d"), tp["date"], lines))
+    return out
 
-# Best pickups: active-lineup production for the claiming team after a waiver/FA add.
+
+def trades_from_rosters():
+    added = collections.defaultdict(set)   # pid -> scoring periods with an executed add
+    for t in tx_all.values():
+        if t["type"] in ("WAIVER", "FREEAGENT") and t.get("status") == "EXECUTED":
+            for i in t.get("items", []):
+                if i["type"] == "ADD":
+                    added[i["playerId"]].add(t.get("scoringPeriodId"))
+    groups = collections.defaultdict(list)
+    days = sorted(day_owner)
+    for prev, cur in zip(days, days[1:]):
+        for pid, tid in day_owner[cur].items():
+            was = day_owner[prev].get(pid)
+            if was is not None and was != tid and not (added[pid] & {prev, cur}):
+                groups[(cur, frozenset((was, tid)))].append((pid, was, tid))
+    return [(fmt_day(sp), sp, lines) for (sp, _), lines in sorted(groups.items(), key=lambda kv: kv[0][0])]
+
+
+trade_list = trades_from_feed() or trades_from_rosters()
+trades, blockbuster = collections.Counter(), []
+for when, order, lines in trade_list:
+    sides = sorted({f for _, f, _ in lines} | {t for _, _, t in lines})
+    for tid in sides:
+        trades[tid] += 1
+    got = {tid: [pname.get(p, str(p)) for p, _, to in lines if to == tid] for tid in sides}
+    e = entry(sides[0], len(lines), f"{len(lines)} players changed hands", when)
+    # Two-sided entry: the page renders "A ⇄ B" and "A got …" with team names.
+    e["got"] = [{"espnId": t, "abbrev": abbrev.get(t, str(t)), "players": v} for t, v in got.items()]
+    blockbuster.append((len(lines), order, e))
+if os.environ.get("RB_DEBUG"):
+    feed, ros = trades_from_feed(), trades_from_rosters()
+    print(f"trades: feed {len(feed)} ({sum(len(x[2]) for x in feed)} players), rosters {len(ros)} ({sum(len(x[2]) for x in ros)} players)")
+
+# Best pickups: active-lineup production for the claiming team after a waiver
+# claim. FREEAGENT adds here are all commissioner moves (keeper setup, manual
+# fixes) — the league runs continuous waivers — so they are not pickups.
+# Only days on or after his first add count, so a draftee who was cut and
+# re-claimed isn't credited with his pre-drop stats.
 pickup_team = {}
-for t in tx:
-    if t["type"] in ("WAIVER", "FREEAGENT") and t.get("status") == "EXECUTED":
+for t in sorted(tx, key=lambda t: t.get("scoringPeriodId") or 0):
+    if t["type"] == "WAIVER" and t.get("status") == "EXECUTED":
         for i in t.get("items", []):
             if i["type"] == "ADD":
-                pickup_team.setdefault((i["toTeamId"], i["playerId"]), t.get("bidAmount", 0))
+                pickup_team.setdefault((i["toTeamId"], i["playerId"]), (t.get("bidAmount", 0), t.get("scoringPeriodId") or 0))
+since_add = collections.defaultdict(collections.Counter)
+for tid, sp, pid, slot, st in player_day:
+    if (tid, pid) in pickup_team and slot not in (BENCH, IL) and sp >= pickup_team[(tid, pid)][1]:
+        since_add[(tid, pid)].update(st)
 bat, sp_arm, rp_arm = [], [], []
-for (tid, pid), cost in pickup_team.items():
-    st = player_team_active.get((tid, pid))
+for (tid, pid), (cost, _) in pickup_team.items():
+    st = since_add.get((tid, pid))
     if not st:
         continue
     if ppos.get(pid) in (1, 11):
@@ -441,7 +507,7 @@ sections.append({"title": "Front Office", "subtitle": "FAAB, trades and roster c
     record("🪙", "Budget Burned", "Most FAAB spent over the season.", top([(v, 0, entry(t, v, f"${v}")) for t, v in spent.items() if v])),
     record("📝", "Bid Machine", "Most waiver bids placed.", top([(v, 0, entry(t, v, plural(v, "bid"))) for t, v in placed.items()])),
     record("💔", "Always the Bridesmaid", "Most waiver bids that didn't go through.", top([(v, 0, entry(t, v, plural(v, "failed bid"))) for t, v in lost.items()])),
-    record("🔄", "Churn & Burn", "Most players added (waivers + free agents).", top([(v, 0, entry(t, v, plural(v, "add"))) for t, v in adds.items()])),
+    record("🔄", "Churn & Burn", "Most players added off waivers.", top([(v, 0, entry(t, v, plural(v, "add"))) for t, v in adds.items()])),
     record("🤝", "Wheeler-Dealer", "Most completed trades.", top([(v, 0, entry(t, v, plural(v, "trade"))) for t, v in trades.items()])),
     record("💼", "Blockbuster", "Most players moved in a single trade.", top(blockbuster)),
     record("🥔", "Hot Potato", "Player who bounced between the most fantasy teams. Credited to his last team.", top(potato)),
@@ -472,3 +538,16 @@ with open(OUT_FILE, "w") as f:
     f.write(f"const RECORD_BOOK = {json.dumps(book, ensure_ascii=False, indent=1)};\n")
 print(f"Wrote {OUT_FILE}: {YEAR}, {sum(len(s['records']) for s in sections)} records, days 1..{last_sp} "
       f"({season['firstDay']} → {season['lastDay']})")
+
+if os.environ.get("RB_DEBUG"):
+    tot = collections.defaultdict(collections.Counter)
+    for (tid, _), st in team_day.items():
+        tot[tid].update(st)
+    for t in core["teams"]:
+        c, v = tot[t["id"]], t["valuesByStat"]
+        diffs = {STAT: (int(c[sid]), int(v.get(str(sid), 0))) for STAT, sid in (("R", R), ("HR", HR), ("RBI", RBI), ("SB", SB), ("K", K), ("QS", QS), ("SVHD", SVHD))
+                 if int(c[sid]) != int(v.get(str(sid), 0))}
+        ratios = (round((c[H] + c[BB] + c[HBP]) / (c[AB] + c[BB] + c[HBP] + c[SF]), 4), round(v["17"], 4),
+                  round(c[ER] * 27 / c[OUTS], 3), round(v["47"], 3), round((c[P_H] + c[P_BB]) * 3 / c[OUTS], 3), round(v["41"], 3))
+        print(f"  {t['abbrev']:5} off by: {diffs or 'nothing'}  OBP/ERA/WHIP ours-vs-ESPN {ratios}")
+    print("  final ranks ours vs ESPN:", {abbrev[t]: (roto_ranks(cum)[0][t], final_rank[t]) for t in teams})
