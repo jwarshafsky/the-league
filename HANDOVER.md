@@ -331,7 +331,7 @@ Cap is **$350**. Per-player rules (simplified):
 - **Keeper / auction pick** → their stored price (data.js `price` shifted
   by `(CURRENT_SEASON - 2026) × $2`)
 - **Free agent** → flat $1
-- **Minor-league call-up** → flat $1
+- **Minor-league call-up** → $0 if auction-drafted (contract root "live"), $1 if the contract began with an add (root "fa"). Matches the league sheet, which §10 makes authoritative (changed 2026-11-27; was a flat $1)
 - **Keeper Price Exception** (commissioner-set in Commissioner Tools) →
   always wins, regardless of contract type
 

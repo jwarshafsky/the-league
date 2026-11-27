@@ -2202,17 +2202,35 @@ function _luxuryFreezeWindow() {
 }
 
 // Live (post-Nov-1 / pre-deadline) salary calc — auction picks at stored
-// price, FA / minors call-ups at $1 flat. Keeper-Price Exception always
+// price, FA pickups at $1, call-ups at $0 (drafted) or $1 (added). Keeper-Price Exception always
 // wins for the player's stored salary.
 // What one player counts toward the luxury tax. Shared by the team total and
 // the per-player breakdown so the two can never disagree.
 // A final-year contract that was dropped and re-added keeps its old basis so
 // it stays un-keepable (resolveCostBasis), but the salary it carries is the
 // pickup's: $1, like any FA add (Rooker, Pepiot 2026; matches the sheet).
+// Call-ups follow the league sheet's calculator (§10 makes it authoritative),
+// which prices by how the current contract started: a call-up taken in the
+// auction keeps his $0 draft price (§2: called up before the draft = $0),
+// through trades too; one whose contract began with a pickup — an in-season
+// call-up or a re-add after a drop — counts $1.
+function _callupLuxurySalary(p) {
+  const root = (typeof txContractRoot === "function" && p.playerId != null) ? txContractRoot(p.playerId) : null;
+  if (root === "live") return 0;
+  if (root === "fa") return 1;
+  // Trail unreadable: same fallback as the sheet — drafted → $0, added → $1.
+  let acq = null;
+  for (const t of (typeof ESPN_SNAPSHOT !== "undefined" ? ESPN_SNAPSHOT.teams : [])) {
+    const r = (t.roster || []).find(x => x.playerId === p.playerId);
+    if (r) { acq = r.acquisitionType; break; }
+  }
+  return acq === "DRAFT" ? 0 : 1;
+}
+
 function _luxuryCountedSalary(p) {
   if (p.priceExceptionApplied && typeof p.price === "number") return p.price;
-  if (p.contractType === "callup" || p.contractType === "fa") return 1;
-  if (p.droppedDuringSeason) return 1;
+  if (p.contractType === "fa" || p.droppedDuringSeason) return 1;
+  if (p.contractType === "callup") return _callupLuxurySalary(p);
   return typeof p.price === "number" ? p.price : 0;
 }
 
@@ -2597,7 +2615,7 @@ function renderFinancialsView() {
     <div class="keeper-projection" style="margin-bottom:14px">
       <h3 style="margin-top:0">Luxury Tax</h3>
       <div style="color:var(--text-dim);font-size:0.82rem;margin-bottom:10px">
-        Cap is $${LUXURY_TAX_CAP}. Keepers and auction picks count at their price; free agents and minor-league call-ups count at $1 each. Numbers reflect the current ESPN roster.
+        Cap is $${LUXURY_TAX_CAP}. Keepers and auction picks count at their price; free agents count at $1; minor-league call-ups count $0 if taken in the auction, $1 if added during the season (same as the league sheet). Numbers reflect the current ESPN roster.
       </div>
       ${renderLuxuryTaxTable()}
     </div>
