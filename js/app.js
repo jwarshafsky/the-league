@@ -4408,8 +4408,10 @@ function renderEligibleTable(players, teamId, teamSelections) {
           const nameEsc = escapeJsString(p.name);
           const blocked = !p.canKeepNextYear || viewOnly;
           const nameStyle = blocked ? 'color:var(--text-dim)' : '';
-          const blockedAttr = blocked ? 'disabled' : '';
-          const blockedCursor = blocked ? 'not-allowed' : 'pointer';
+          // A row that can't be kept still lets you UN-check a box that's on
+          // (e.g. a keeper picked before the season advanced past his contract).
+          const boxAttr = (on) => (viewOnly || (blocked && !on)) ? 'disabled' : '';
+          const boxCursor = (on) => (viewOnly || (blocked && !on)) ? 'not-allowed' : 'pointer';
           const editBtn = isCommishEditMode() && isCommissioner()
             ? ` <button onclick="openCommishEditor('${nameEsc}')" title="Override" style="background:none;border:none;color:var(--accent);cursor:pointer;font-size:0.85rem;padding:0 4px">✏︎</button>`
             : "";
@@ -4427,13 +4429,13 @@ function renderEligibleTable(players, teamId, teamSelections) {
               <td>${nextPriceCell}</td>
               <td><span class="contract-tag contract-${escapeHtml(p.contractStatus)}">${p.yearsRemaining != null ? (CURRENT_SEASON + p.yearsRemaining) : escapeHtml(p.contractLabel)}</span></td>
               <td style="text-align:center">
-                <input type="checkbox" ${isRule5 ? 'checked' : ''} ${blockedAttr} onchange="toggleEligibleKeeper('${teamId}','${nameEsc}','rule5',this.checked)" style="width:18px;height:18px;cursor:${blockedCursor};accent-color:var(--accent)">
+                <input type="checkbox" ${isRule5 ? 'checked' : ''} ${boxAttr(isRule5)} onchange="toggleEligibleKeeper('${teamId}','${nameEsc}','rule5',this.checked)" style="width:18px;height:18px;cursor:${boxCursor(isRule5)};accent-color:var(--accent)">
               </td>
               <td style="text-align:center">
-                <input type="checkbox" ${isKeeper ? 'checked' : ''} ${blockedAttr} onchange="toggleEligibleKeeper('${teamId}','${nameEsc}','keeper',this.checked)" style="width:18px;height:18px;cursor:${blockedCursor};accent-color:var(--green)">
+                <input type="checkbox" ${isKeeper ? 'checked' : ''} ${boxAttr(isKeeper)} onchange="toggleEligibleKeeper('${teamId}','${nameEsc}','keeper',this.checked)" style="width:18px;height:18px;cursor:${boxCursor(isKeeper)};accent-color:var(--green)">
               </td>
               <td style="text-align:center">
-                <input type="checkbox" ${isTradeBlock ? 'checked' : ''} ${blockedAttr} onchange="toggleEligibleKeeper('${teamId}','${nameEsc}','tradeBlock',this.checked)" style="width:18px;height:18px;cursor:${blockedCursor};accent-color:var(--orange)">
+                <input type="checkbox" ${isTradeBlock ? 'checked' : ''} ${boxAttr(isTradeBlock)} onchange="toggleEligibleKeeper('${teamId}','${nameEsc}','tradeBlock',this.checked)" style="width:18px;height:18px;cursor:${boxCursor(isTradeBlock)};accent-color:var(--orange)">
               </td>
             </tr>
           `;
@@ -4508,8 +4510,10 @@ function renderMinorsEligibleTable(minors, teamId, teamSelections) {
           const sourceTag = `<span class="from-minors-tag" style="background:rgba(34,197,94,0.2);color:var(--green)">MiLB (${p.yearAcquired})</span>`;
           const blocked = !isKeepable || viewOnly;
           const nameStyle = blocked ? 'color:var(--text-dim)' : '';
-          const blockedAttr = blocked ? 'disabled' : '';
-          const blockedCursor = blocked ? 'not-allowed' : 'pointer';
+          // A row that can't be kept still lets you UN-check a box that's on
+          // (e.g. a keeper picked before the season advanced past his contract).
+          const boxAttr = (on) => (viewOnly || (blocked && !on)) ? 'disabled' : '';
+          const boxCursor = (on) => (viewOnly || (blocked && !on)) ? 'not-allowed' : 'pointer';
           return `
             <tr style="${rowBg}">
               <td>
@@ -4531,13 +4535,13 @@ function renderMinorsEligibleTable(minors, teamId, teamSelections) {
               <td><span style="color:var(--text-dim)">—</span></td>
               <td><span class="contract-tag contract-${contractStatusClass}">${contractLabel}</span></td>
               <td style="text-align:center">
-                <input type="checkbox" ${isRule5 ? 'checked' : ''} ${blockedAttr} onchange="toggleEligibleKeeper('${teamId}','${nameEsc}','rule5',this.checked)" style="width:18px;height:18px;cursor:${blockedCursor};accent-color:var(--accent)">
+                <input type="checkbox" ${isRule5 ? 'checked' : ''} ${boxAttr(isRule5)} onchange="toggleEligibleKeeper('${teamId}','${nameEsc}','rule5',this.checked)" style="width:18px;height:18px;cursor:${boxCursor(isRule5)};accent-color:var(--accent)">
               </td>
               <td style="text-align:center">
-                <input type="checkbox" ${isMinorKeeper ? 'checked' : ''} ${blockedAttr} onchange="toggleEligibleKeeper('${teamId}','${nameEsc}','minorKeeper',this.checked)" style="width:18px;height:18px;cursor:${blockedCursor};accent-color:var(--green)">
+                <input type="checkbox" ${isMinorKeeper ? 'checked' : ''} ${boxAttr(isMinorKeeper)} onchange="toggleEligibleKeeper('${teamId}','${nameEsc}','minorKeeper',this.checked)" style="width:18px;height:18px;cursor:${boxCursor(isMinorKeeper)};accent-color:var(--green)">
               </td>
               <td style="text-align:center">
-                <input type="checkbox" ${isTradeBlock ? 'checked' : ''} ${blockedAttr} onchange="toggleEligibleKeeper('${teamId}','${nameEsc}','tradeBlock',this.checked)" style="width:18px;height:18px;cursor:${blockedCursor};accent-color:var(--orange)">
+                <input type="checkbox" ${isTradeBlock ? 'checked' : ''} ${boxAttr(isTradeBlock)} onchange="toggleEligibleKeeper('${teamId}','${nameEsc}','tradeBlock',this.checked)" style="width:18px;height:18px;cursor:${boxCursor(isTradeBlock)};accent-color:var(--orange)">
               </td>
             </tr>
           `;
