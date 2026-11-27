@@ -2204,19 +2204,21 @@ function _luxuryFreezeWindow() {
 // Live (post-Nov-1 / pre-deadline) salary calc — auction picks at stored
 // price, FA / minors call-ups at $1 flat. Keeper-Price Exception always
 // wins for the player's stored salary.
+// What one player counts toward the luxury tax. Shared by the team total and
+// the per-player breakdown so the two can never disagree.
+// A final-year contract that was dropped and re-added keeps its old basis so
+// it stays un-keepable (resolveCostBasis), but the salary it carries is the
+// pickup's: $1, like any FA add (Rooker, Pepiot 2026; matches the sheet).
+function _luxuryCountedSalary(p) {
+  if (p.priceExceptionApplied && typeof p.price === "number") return p.price;
+  if (p.contractType === "callup" || p.contractType === "fa") return 1;
+  if (p.droppedDuringSeason) return 1;
+  return typeof p.price === "number" ? p.price : 0;
+}
+
 function _liveLuxurySalary(team) {
   const players = (typeof getEligiblePlayers === "function") ? getEligiblePlayers(team) : [];
-  let total = 0;
-  for (const p of players) {
-    if (p.priceExceptionApplied && typeof p.price === "number") {
-      total += p.price;
-    } else if (p.contractType === "callup" || p.contractType === "fa") {
-      total += 1;
-    } else if (typeof p.price === "number") {
-      total += p.price;
-    }
-  }
-  return total;
+  return players.reduce((total, p) => total + _luxuryCountedSalary(p), 0);
 }
 
 // Public-facing salary getter. Returns the frozen value (or commish
@@ -2332,19 +2334,14 @@ function renderLuxuryTaxTable() {
   const rows = LEAGUE_DATA.teams.map(team => {
     const players = (typeof getEligiblePlayers === "function") ? getEligiblePlayers(team) : [];
     const breakdown = players.map(p => {
-      const isFa = p.contractType === "fa";
-      const isCallup = p.contractType === "callup";
       const hasOverride = p.priceExceptionApplied && typeof p.price === "number";
-      const counted = hasOverride
-        ? p.price
-        : (isCallup || isFa) ? 1
-        : (typeof p.price === "number" ? p.price : 0);
+      const counted = _luxuryCountedSalary(p);
       // A player drafted in a prior season's auction and still on the roster
       // is a "keeper" for display purposes; only current-season auction picks
       // get the "auction" badge.
       const yearAcquired = p.yearAcquired;
       const isKeeper = p.contractType === "auction" && yearAcquired != null && yearAcquired < CURRENT_SEASON;
-      return { name: p.name, type: p.contractType, isKeeper, hasOverride, price: p.price, counted };
+      return { name: p.name, type: p.contractType, isKeeper, hasOverride, price: p.price, counted, dropped: !!p.droppedDuringSeason && !hasOverride };
     });
     const liveSalary = breakdown.reduce((s, b) => s + b.counted, 0);
     // Frozen value (snapshot or commish override) wins when in window.
@@ -2390,6 +2387,7 @@ function renderLuxuryTaxTable() {
               .map(b => {
                 const note = b.type === "fa" ? "FA"
                   : b.type === "callup" ? "call-up"
+                  : b.dropped ? "FA (dropped)"
                   : b.isKeeper ? "keeper"
                   : "auction";
                 const noteHtml = `<span style="color:var(--text-dim);font-size:0.72rem">${escapeHtml(note)}</span>`;
@@ -3822,6 +3820,7 @@ function _buildEligibleMajorPlayer(r, basisTeamId, priceExceptions) {
     fromMinors: basis.fromMinors,
     contractType: basis.contractType,
     source: basis.source,
+    droppedDuringSeason: !!basis.droppedDuringSeason,
     injuryStatus: r.injuryStatus,
     contractStatus: cs.status,
     contractLabel: cs.label,
